@@ -232,7 +232,7 @@ class DeviceManager(QObject):
 
         for port_name in self.available_ports:
             try:
-                with serial.Serial(port_name, baudrate=19200, timeout=0.5) as ser:
+                with serial.Serial(port_name, baudrate = 19200, timeout = 0.5) as ser:
                     for addr in range(1, 7):
                         # Отправляем очередной запрос серийного номера
                         response = self.try_request(

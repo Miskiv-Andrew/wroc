@@ -68,11 +68,9 @@ class App:
     def setup_connections(self):
         """
             Связываем кнопки интерфейса с методами DeviceManager и сигналы с обработчиками
-        """
-       
+        """       
         self.ui.butt_search_dev.clicked.connect(self.device_manager.find_rpii_ports)
-
-        self.ui.butt_system_start.clicked.connect(self.device_manager.scan_devices) ####  ???????????????????????????????????????????????????
+        self.ui.butt_system_start.clicked.connect(self.device_manager.scan_devices) 
 
 
         # сигналы DeviceManager 
