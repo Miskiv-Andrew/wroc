@@ -1,0 +1,5 @@
+# serial_number;location_type;posit_number;address
+2400126;room;1;2
+2400127;room;2;3
+2400089;cistern;1;1
+2400128;room;3;4

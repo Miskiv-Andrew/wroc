@@ -36,7 +36,7 @@ class App:
         self.setup_connections()   
 
         # Загружаем файл состояния цистерн
-        self.load_cistern_data("devices/cistern.json")
+        self.load_cistern_data("config/cistern.json")
 
 
     def load_ui(self):
@@ -70,26 +70,30 @@ class App:
             Связываем кнопки интерфейса с методами DeviceManager и сигналы с обработчиками
         """
        
-        self.ui.pushButton.clicked.connect(self.device_manager.find_rpii_ports)
-        self.ui.pushButton_2.clicked.connect(self.device_manager.scan_devices)
+        self.ui.butt_search_dev.clicked.connect(self.device_manager.find_rpii_ports)
+
+        self.ui.butt_system_start.clicked.connect(self.device_manager.scan_devices) ####  ???????????????????????????????????????????????????
 
 
         # сигналы DeviceManager 
-        self.device_manager.ports_updated.connect(self.on_ports_updated)
+
+        # сигнал для вывода текстовой информации
+        self.device_manager.device_info.connect(self.on_show_info)
+
+        # сигнал для вывода найденных девайсов
         self.device_manager.device_found.connect(self.on_devices_updated)   
 
         # Общий сигнал для вывода ошибок
         self.device_manager.device_error.connect(self.on_objects_error)  
 
 
-    def on_ports_updated(self, ports: list[str]):
+    def on_show_info(self, info: str):
         """
-            Слот выведения найденных СОМ-портов
+            Слот выведения текстовых данных
         """
-        self.ui.textEdit.append("Список портів оновлено:")
-        for port in ports:
-            self.ui.textEdit.append(f"Знайдено розширювач портів: {port}")
-        self.ui.textEdit.append("")
+        self.ui.textEdit.append(info)
+
+
 
     def on_devices_updated(self, devices):
         """
@@ -105,7 +109,7 @@ class App:
         self.sync_devices_with_cisterns()
 
         # Начинаем процедуру опроса внешней Системы Управления
-        self.start_test_polling("devices\cistern.json")
+        self.start_test_polling("devices/cistern.json")
         
 
 

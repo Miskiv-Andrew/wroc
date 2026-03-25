@@ -1,5 +1,0 @@
-# serial_number;location_type;cistern_number;address
-2400126;room;1;2
-2400128;room;2;4
-2400089;room;3;1
-2400127;cistern;1;3
