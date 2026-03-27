@@ -68,9 +68,13 @@ class App:
     def setup_connections(self):
         """
             Связываем кнопки интерфейса с методами DeviceManager и сигналы с обработчиками
-        """       
+        """ 
+
+        # Сигнал старта поиска приборов      
         self.ui.butt_search_dev.clicked.connect(self.device_manager.find_rpii_ports)
-        self.ui.butt_system_start.clicked.connect(self.device_manager.scan_devices) 
+
+        # Сигнал старта опроса приборов  
+        self.ui.butt_system_start.clicked.connect(self.device_manager.dispatch_poll_step) 
 
 
         # сигналы DeviceManager 
@@ -84,12 +88,27 @@ class App:
         # Общий сигнал для вывода ошибок
         self.device_manager.device_error.connect(self.on_objects_error)  
 
+        # Тестовый сигнал для отработки опроса приборов
+        self.device_manager.device_response.connect(self.on_device_packet)
+
+
+
 
     def on_show_info(self, info: str):
         """
             Слот выведения текстовых данных
         """
         self.ui.textEdit.append(info)
+
+
+    def on_device_packet(self, packet):
+        """
+            Тестовый метод - отработка опроса приборов
+        """
+        sn = packet.serial_number
+        mode = packet.mode
+        size = packet.size
+        self.ui.textEdit.append(f"Packet from {sn}: mode={mode}, size={size}\n-------------------\n")
 
 
 
@@ -100,16 +119,17 @@ class App:
         self.ui.textEdit.append("Знайдено прилади:")
         for device in devices:
             if device.serial_number == "------":
-                continue
+                continue           
+
             self.ui.textEdit.append(f"Порт: {device.port}, Адреса: {device.address}, SN: {device.serial_number}")
 
         # Вносим в приборы данные про цистерны
         self.sync_devices_with_cisterns()
 
         # Начинаем процедуру опроса внешней Системы Управления
-        self.start_test_polling("devices/cistern.json")
-        
+        #self.start_test_polling("devices/cistern.json")
 
+    
 
     def on_objects_error(self, source: str, message: str):
         """

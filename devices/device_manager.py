@@ -22,6 +22,8 @@ import struct
 import json
 
 
+
+
 class DeviceManager(QObject):
     # сигналы для связи с GUI
 
@@ -50,7 +52,7 @@ class DeviceManager(QObject):
 
 
         # Глобальный объект порта (один на все приборы)
-        self.serial_port = QSerialPort()
+        self.serial_port = QSerialPort(self)
         self.serial_port.setBaudRate(19200)
 
         # Подключаем сигнал readyRead к обработчику
@@ -58,20 +60,21 @@ class DeviceManager(QObject):
 
         
         # основной таймер опроса приборов
-        self.poll_timer = QTimer()
+        self.poll_timer = QTimer(self)
         self.poll_timer.setSingleShot(True)
         self.poll_timer.timeout.connect(self.dispatch_poll_step)
 
         # таймер контроля неответа прибора
-        self.error_timer = QTimer()
+        self.error_timer = QTimer(self)
         self.error_timer.setSingleShot(True)
-        # self.error_timer.timeout.connect(self.handle_timeout)
+        self.error_timer.timeout.connect(self.handle_timeout_error)
 
         # Атрибуты опроса приборов
+        self.rx_buffer           = bytearray()  # глобальный массив для приема ответов приборов
         self.current_index       = -1           # индекс текущего прибора в цикле                 
-        self.short_interval_ms   = 5_000        # интервал между приборами
-        self.long_interval_ms    = 60_000       # пауза между циклами
-        self.timeout_interval_ms = 2_000        # таймаут ожидания ответа
+        self.short_interval_ms   = 3_000        # интервал между приборами
+        self.long_interval_ms    = 20_000       # пауза между циклами
+        self.timeout_interval_ms = 3_000        # таймаут ожидания неответа прибора
         self.max_retries         = 3            # максимально допустимое число неответов прибора  
         self.last_command = None                # хранит последнюю отправленную команду 
         self.temperature_index   = 0            # индекс температуры приборов -  каждый 10 цикл опроса получаем температуру
@@ -258,7 +261,10 @@ class DeviceManager(QObject):
                             description = "Прилад виявлено"
                         )
 
-                        device.set_full(False)
+                        # По умолчанию цистерна пустая
+                        device.set_full(False)                       
+
+                        # Добавляем прибор в список приборов
                         self.devices.append(device)
 
             except serial.SerialException as e:
@@ -404,21 +410,35 @@ class DeviceManager(QObject):
 
 
 
-
-
-
 ################################################ БЛОК CRC ######################################################
 
-    def calc_crc(self, buff: bytearray) -> int:
+    # def calc_crc(self, buff: bytearray) -> int:
+    #     """
+    #         Функция расчета CRC для массива bytearray
+    #     """ 
+    #     crc = 0
+    #     for b in buff:
+    #         crc += int(b)
+    #         if (crc & 0x0100) == 0x0100:
+    #             crc = (crc & 0xFF) + 1
+    #     return crc
+
+    def calc_crc(self, buff: bytearray | bytes) -> int:
         """
-            Функция расчета CRC для массива bytearray
-        """ 
+            Функция расчета CRC для массива байтов
+        """
         crc = 0
-        for b in buff:
+        # Приводим вход к обычному bytes, чтобы не было сюрпризов
+        data = bytes(buff)
+
+        for b in data:
+            # b гарантированно int (0..255)
             crc += b
             if (crc & 0x0100) == 0x0100:
                 crc = (crc & 0xFF) + 1
+
         return crc
+
 
     def verify_crc(self, buff: bytearray) -> bool:
         """
@@ -538,7 +558,8 @@ class DeviceManager(QObject):
         if request_type is None:
             # Обычная логика выбора команды
             if device.location_type == "room":
-                base_cmd = COMMAND_RAD_DOSE
+                base_cmd = COMMAND_RAD_DOSE   
+               
 
             elif device.location_type == "cistern":
                 if device.real_sensor == "G":
@@ -601,8 +622,9 @@ class DeviceManager(QObject):
         # Каждый 10 запрос - получаем температуру
         elif self.temperature_index >= 10:
             self.temperature_index = 0
-            request = self.make_request("temperature")  
-        
+            request = self.make_request("temperature") 
+            
+          
         # 5. Отправляем запрос через RTII порт, указанный в DeviceInfo
         try:            
             # 5. Настраиваем глобальный QSerialPort на нужный COM
@@ -615,7 +637,19 @@ class DeviceManager(QObject):
                     return
                 
             # 6. Отправляем запрос
-            self.serial_port.write(request)
+            # self.serial_port.write(request)
+
+            written = self.serial_port.write(request)
+            if written != len(request):
+                self.device_error.emit(
+                    self.devices[self.current_index].port,
+                    f"Ошибка записи: записано {written} байт из {len(request)}"
+                )
+            else:
+                hex_str = " ".join(f"0x{b:02X}" for b in request)
+                self.device_info.emit(f"Записан пакет: {hex_str}")
+
+            
 
         except serial.SerialException as e:
             # Если порт не открылся или ошибка при записи
@@ -626,6 +660,9 @@ class DeviceManager(QObject):
 
         # 6. Запускаем аварийный таймер ожидания ответа
         self.error_timer.start(self.timeout_interval_ms)
+        
+        # очищаем приемный буфер перед новым запросом
+        self.rx_buffer.clear()        
 
     def select_mode(self) -> str:
         """
@@ -654,7 +691,7 @@ class DeviceManager(QObject):
         
     def handle_timeout_error(self):
         device: DeviceInfo = self.devices[self.current_index]
-        self.device_error.emit(device.port, "Прибор не ответил")
+        self.device_error.emit(device.port, "Прибор не ответил\n")
 
         # Закрываем порт, чтобы не держать его открытым зря
         if self.serial_port.isOpen():
@@ -664,73 +701,85 @@ class DeviceManager(QObject):
         self.poll_timer.start(self.short_interval_ms)
 
 
-
-
     def handle_ready_read(self):
         try:
-            buffer = bytearray()  # буфер для данных
+            # добавляем новые байты в глобальный буфер
+            self.rx_buffer.extend(bytes(self.serial_port.readAll()))
 
-            # Ждём данные и собираем их в буфер
-            while self.serial_port.waitForReadyRead(100):
-                buffer += self.serial_port.readAll()
+            # проверяем, собрался ли полный пакет
+            if len(self.rx_buffer) < self.last_command.length:
+                # пока данных мало — ждём следующих readyRead
+                return
 
-            # Проверяем, что буфер не пустой           
-            if len(buffer) > 0:          
+            # если данных достаточно — останавливаем таймер
+            self.error_timer.stop()
 
-                # Останавливаем аварийный таймер — ответ пришёл
-                self.error_timer.stop()
-
-                # Закрываем порт, чтобы освободить COM перед следующим прибором
-                if self.serial_port.isOpen():
-                    self.serial_port.close()
-
-                # Запускаем poll_timer для перехода к следующему прибору
+            # ищем начало пакета (например, 0x55 0xAA)
+            start_index = self.rx_buffer.find(b'\x55\xAA')
+            if start_index == -1:
+                self.device_error.emit(
+                    self.devices[self.current_index].port,
+                    "Помилка: не знайдено початок пакету"
+                )
+                self.rx_buffer.clear()
                 self.poll_timer.start(self.short_interval_ms)
+                return
 
-                # Здесь будет обработка и передача сигналов
-                # 1. Проверка длины пакета
-                if len(buffer) != self.last_command.length:
-                    self.device_error.emit(
-                        self.devices[self.current_index].port,
-                        "Помилка: не співпала довжина прийнятого пакету"
-                    )
-                    self.poll_timer.start(self.short_interval_ms)
-                    return
+            # отбрасываем мусор до начала пакета
+            self.rx_buffer = self.rx_buffer[start_index:]
 
-                # 2. Проверка CRC
-                crc_calc = self.calc_crc(buffer[:-1])
-                crc_recv = buffer[-1]
-                if crc_calc != crc_recv:
-                    self.device_error.emit(
-                        self.devices[self.current_index].port,
-                        "Помилка: не співпала CRC прийнятого пакету"
-                    )
-                    self.poll_timer.start(self.short_interval_ms)
-                    return
-                
-                mode = self.select_mode()
+            # проверка длины
+            if len(self.rx_buffer) != self.last_command.length:
+                self.device_error.emit(
+                    self.devices[self.current_index].port,
+                    f"Помилка: довжина пакету {len(self.rx_buffer)}, очікувалось {self.last_command.length}"
+                )
+                self.rx_buffer.clear()
+                self.poll_timer.start(self.short_interval_ms)
+                return
 
-                # 3. Формирование объекта DevicePacket
-                packet = DevicePacket(self.devices[self.current_index].serial_number, buffer[:-1], mode)
+            # проверка CRC
+            crc_calc = self.calc_crc(self.rx_buffer[:-1])
+            crc_recv = self.rx_buffer[-1]
+            if crc_calc != crc_recv:
+                self.device_error.emit(
+                    self.devices[self.current_index].port,
+                    f"Помилка CRC: отримано {crc_recv}, очікувалось {crc_calc}"
+                )
+                self.rx_buffer.clear()
+                return
 
-                # 4. Передача пакета дальше
-                self.device_response.emit(packet)
+            # формируем пакет
+            mode = self.select_mode()
+            packet = DevicePacket(
+                self.devices[self.current_index].serial_number,
+                self.rx_buffer[:-1],
+                mode
+            )
+
+            # передаём пакет дальше
+            self.device_response.emit(packet)
+
+            # очищаем буфер для следующего запроса
+            self.rx_buffer.clear()
+
+            # закрываем порт (если логика требует освобождения COM)
+            if self.serial_port.isOpen():
+                self.serial_port.close()
+
+            # запускаем переход к следующему прибору
+            self.poll_timer.start(self.short_interval_ms)
 
         except Exception as e:
-            # Логируем или сигнализируем об ошибке
             self.device_error.emit(
                 self.devices[self.current_index].port,
                 f"Ошибка при обработке ответа: {e}"
             )
-
-            # На всякий случай закрываем порт
+            self.rx_buffer.clear()
             if self.serial_port.isOpen():
                 self.serial_port.close()
-
-            # Переходим к следующему прибору
             self.poll_timer.start(self.short_interval_ms)
 
 
     
-
-
+    
