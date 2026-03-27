@@ -1,11 +1,37 @@
 import sys
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QWidget, QGridLayout, QVBoxLayout, QPushButton
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtCore import QFile, QThread
+from PySide6.QtCore import QFile, QThread, Qt
 from devices.device_manager import DeviceManager
+from PySide6.QtGui import QAction
 import json
-
+import threading
 from PySide6.QtCore import QTimer 
+
+class DeviceCardBarrel(QWidget):
+    def __init__(self):
+        super().__init__()
+
+        loader = QUiLoader()
+        ui_file = QFile("_UI/dashboardbarrel.ui")
+        ui_file.open(QFile.ReadOnly)
+
+        self.ui = loader.load(ui_file, self)
+        ui_file.close()
+
+
+
+class DeviceCardWall(QWidget):
+    def __init__(self):
+        super().__init__()
+
+        loader = QUiLoader()
+        ui_file = QFile("_UI/dashboardwall.ui")
+        ui_file.open(QFile.ReadOnly)
+
+        self.ui = loader.load(ui_file, self)
+        ui_file.close()
+
 
 class App:
     """
@@ -38,13 +64,15 @@ class App:
         # Загружаем файл состояния цистерн
         self.load_cistern_data("config/cistern.json")
 
+        self.setup_ui()
+
 
     def load_ui(self):
         """
             Загружаем интерфейс из main_window.ui
         """
         loader = QUiLoader()                   # создаём загрузчик .ui файлов
-        ui_file = QFile("_UI/main_window.ui")  # указываем путь к файлу
+        ui_file = QFile("_UI/main_window_form.ui")  # указываем путь к файлу
         ui_file.open(QFile.ReadOnly)           # открываем файл только для чтения
         self.ui = loader.load(ui_file)         # загружаем интерфейс
         ui_file.close()                        # закрываем файл
@@ -55,6 +83,11 @@ class App:
 
         # показываем окно во весь экран
         self.ui.showMaximized()
+    
+    def setup_ui(self):
+        self.grid = self.ui.containerCard.layout()
+
+
 
     def setup_device_manager(self):
         """
@@ -62,7 +95,7 @@ class App:
         """
         self.device_manager_thread = QThread()     
         self.device_manager = DeviceManager()     
-        self.device_manager.moveToThread(self.device_manager_thread)
+        #self.device_manager.moveToThread(self.device_manager_thread)
         self.device_manager_thread.start()        
 
     def setup_connections(self):
@@ -70,11 +103,13 @@ class App:
             Связываем кнопки интерфейса с методами DeviceManager и сигналы с обработчиками
         """ 
 
-        # Сигнал старта поиска приборов      
-        self.ui.butt_search_dev.clicked.connect(self.device_manager.find_rpii_ports)
+        # Сигнал старта поиска приборов
+        self.butt_search_dev = self.ui.findChild(QAction, "butt_search_dev")      
+        self.butt_search_dev.triggered.connect(self.device_manager.find_rpii_ports)
 
-        # Сигнал старта опроса приборов  
-        self.ui.butt_system_start.clicked.connect(self.device_manager.dispatch_poll_step) 
+        # Сигнал старта опроса приборов
+        self.butt_system_start = self.ui.findChild(QAction, "butt_system_start")  
+        self.butt_system_start.triggered.connect(self.device_manager.dispatch_poll_step) 
 
 
         # сигналы DeviceManager 
@@ -90,7 +125,6 @@ class App:
 
         # Тестовый сигнал для отработки опроса приборов
         self.device_manager.device_response.connect(self.on_device_packet)
-
 
 
 
@@ -111,15 +145,37 @@ class App:
         self.ui.textEdit.append(f"Packet from {sn}: mode={mode}, size={size}\n-------------------\n")
 
 
+    def create_device_card(self, device):
+        if device.location_type == "cistern":
+            card = DeviceCardBarrel()
+        elif device.location_type == "room":
+            card = DeviceCardWall()
+        else:
+            return None
+        return card
+
 
     def on_devices_updated(self, devices):
         """
             Слот выведения найденных приборов 
         """
         self.ui.textEdit.append("Знайдено прилади:")
-        for device in devices:
-            if device.serial_number == "------":
-                continue           
+        print("on_devices_updated thread:", threading.current_thread().name)
+
+        for i, device in enumerate(devices):
+
+            card = self.create_device_card(device)
+            if card is None:
+                continue
+
+            row = i // 3
+            col = i % 3
+
+            self.grid.addWidget(card, row, col)   
+        # for device in devices:
+        #     if device.serial_number == "------":
+        #         continue           
+            
 
             self.ui.textEdit.append(f"Порт: {device.port}, Адреса: {device.address}, SN: {device.serial_number}")
 
