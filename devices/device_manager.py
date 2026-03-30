@@ -1,7 +1,8 @@
 # devices/device_manager.py
-from PySide6.QtCore import QObject, Signal, QTimer
+from PySide6.QtCore import QObject, Signal, QTimer, Slot, QIODevice
 from PySide6.QtSerialPort import QSerialPort
-from PySide6.QtCore import QIODevice
+
+
 
 import serial.tools.list_ports
 from devices.device_info import DeviceInfo
@@ -86,13 +87,62 @@ class DeviceManager(QObject):
         self.cistern_dict = {"2400089" : 1}   
 
         # Список приборов в помещении
-        self.room_dict    = {"2400126" : 1, "2400127" : 2,  "2400128" : 3}       
+        self.room_dict    = {"2400126" : 1, "2400127" : 2,  "2400128" : 3}   
+
+
+############################################################ БЛОК  ЗАВЕРШЕНИЯ РАБОТЫ ############################################################
+
+
+
+    @Slot()
+    def stop_all(self):
+        """
+            Корректно останавливает таймеры, закрывает порт и сбрасывает состояния.
+        """
+        try:
+            self.running = False
+        except Exception:
+            pass
+
+        try:
+            if hasattr(self, "poll_timer") and self.poll_timer.isActive():
+                self.poll_timer.stop()
+        except Exception:
+            pass
+
+        try:
+            if hasattr(self, "error_timer") and self.error_timer.isActive():
+                self.error_timer.stop()
+        except Exception:
+            pass
+
+        try:
+            # очистка приёмного буфера
+            if hasattr(self, "rx_buffer"):
+                self.rx_buffer.clear()
+        except Exception:
+            pass
+
+        try:
+            # корректное закрытие последовательного порта
+            if hasattr(self, "serial_port") and self.serial_port.isOpen():
+                self.serial_port.close()
+        except Exception:
+            pass
+
+        try:
+            # сброс служебных полей
+            self.current_index = -1
+            self.last_command = None
+        except Exception:
+            pass
+
 
 
 
 
 ############################################################ БЛОК  ПОИСКА ПРИБОРОВ ################################################################
-
+    @Slot()
     def find_rpii_ports(self):
         """
             Поиск доступных COM-портов, фильтрация по производителю FTDI.
@@ -406,22 +456,53 @@ class DeviceManager(QObject):
                 )
 
         if valid_devices:
-            self.device_found.emit(valid_devices)
+            """
+                self.device_found.emit(valid_devices)
+                Преобразуем каждый объект DeviceInfo в безопасный словарь.
+                Это предотвращает передачу QObject/виджетов между потоками и
+                позволяет GUI создавать виджеты исключительно в главном потоке.
+            """
+            serializable_list = [self._device_to_dict(d) for d in valid_devices]            
+
+            # Эмитим список словарей. Слот в App должен ожидать list[dict].
+            self.device_found.emit(serializable_list)
 
 
+    def _device_to_dict(self, device):
+        """
+            Преобразует объект DeviceInfo в простой словарь с только теми полями,
+            которые нужны GUI для создания/инициализации карточки прибора.
 
-################################################ БЛОК CRC ######################################################
+            Важно:
+            - Возвращаемые значения — только простые типы (str, int, None и т.д.).
+            - Никаких ссылок на QObject, QWidget или другие объекты, живущие в потоках.
+            - Это делает передачу данных между потоками безопасной.
+        """
+        return {
+            # уникальный идентификатор прибора (строка)
+            "serial_number": getattr(device, "serial_number", None),
 
-    # def calc_crc(self, buff: bytearray) -> int:
-    #     """
-    #         Функция расчета CRC для массива bytearray
-    #     """ 
-    #     crc = 0
-    #     for b in buff:
-    #         crc += int(b)
-    #         if (crc & 0x0100) == 0x0100:
-    #             crc = (crc & 0xFF) + 1
-    #     return crc
+            # порт, к которому привязан прибор (строка, например "COM3" или "/dev/ttyUSB0")
+            "port": getattr(device, "port", None),
+
+            # адрес прибора в шине (int)
+            "address": getattr(device, "address", None),
+
+            # тип прибора для отображения (строка)
+            "device_type": getattr(device, "device_type", None),
+
+            # где установлен прибор: "cistern" или "room" (строка)
+            "location_type": getattr(device, "location_type", None),
+
+            # номер позиции/цистерны (int) — может быть None для room
+            "posit_number": getattr(device, "posit_number", None),
+
+            # реальный сенсор (например "G" или "S") — пригодится для логики спектра
+            "real_sensor": getattr(device, "real_sensor", None)
+        }
+
+
+################################################ БЛОК CRC ######################################################  
 
     def calc_crc(self, buff: bytearray | bytes) -> int:
         """
@@ -542,8 +623,20 @@ class DeviceManager(QObject):
             "result_valid": result_valid
         }
 
-################################################ БЛОК ЦИКЛИЧЕСКОГО ОПРОСА ПРИБОРОВ ######################################################
-    
+################################################ БЛОК ОБНОВЛЕНИЯ ДАННЫХ ЦИСТЕРН ######################################################
+
+    @Slot(dict)
+    def set_cistern_states(self, states: dict):
+        """Обновляет состояние цистерн в объектах DeviceInfo — выполняется в потоке DeviceManager."""
+        for dev in self.devices:
+            try:
+                posit = getattr(dev, "posit_number", None)
+                if posit is not None and int(posit) in states:
+                    dev.set_full(bool(states[int(posit)]))
+            except Exception:
+                continue
+
+################################################ БЛОК ЦИКЛИЧЕСКОГО ОПРОСА ПРИБОРОВ ######################################################   
 
     def make_request(self, request_type: str = None) -> bytearray:
         """
@@ -595,7 +688,7 @@ class DeviceManager(QObject):
         return command
 
     
-
+    @Slot()
     def dispatch_poll_step(self):
         """
             Основной метод опроса приборов

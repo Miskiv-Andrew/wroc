@@ -1,12 +1,12 @@
 import sys
 from PySide6.QtWidgets import QApplication, QWidget, QGridLayout, QVBoxLayout, QPushButton
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtCore import QFile, QThread, Qt
+from PySide6.QtCore import QFile, QThread, QMetaObject, QTimer , Qt, QObject, Signal
 from devices.device_manager import DeviceManager
 from PySide6.QtGui import QAction
 import json
 import threading
-from PySide6.QtCore import QTimer 
+
 
 class DeviceCardBarrel(QWidget):
     def __init__(self):
@@ -33,12 +33,22 @@ class DeviceCardWall(QWidget):
         ui_file.close()
 
 
-class App:
+class App(QObject):
     """
         Основной класс приложения
     """
 
+    search_devices = Signal()
+    start_polling = Signal()
+    sync_cisterns_to_manager = Signal(dict)
+
+
     def __init__(self):
+
+        super().__init__()
+
+        # атрибут загруженных интерфейсов приборов
+        self.cards_by_sn = {}
 
         # атрибут менеджера приборов
         self.device_manager = None
@@ -71,11 +81,11 @@ class App:
         """
             Загружаем интерфейс из main_window.ui
         """
-        loader = QUiLoader()                   # создаём загрузчик .ui файлов
-        ui_file = QFile("_UI/main_window_form.ui")  # указываем путь к файлу
-        ui_file.open(QFile.ReadOnly)           # открываем файл только для чтения
-        self.ui = loader.load(ui_file)         # загружаем интерфейс
-        ui_file.close()                        # закрываем файл
+        loader = QUiLoader()                            # создаём загрузчик .ui файлов
+        ui_file = QFile("_UI/main_window_form.ui")      # указываем путь к файлу
+        ui_file.open(QFile.ReadOnly)                    # открываем файл только для чтения
+        self.ui = loader.load(ui_file)                  # загружаем интерфейс
+        ui_file.close()                                 # закрываем файл
 
         if self.ui is None:
             # если загрузка не удалась — выбрасываем исключение
@@ -86,7 +96,8 @@ class App:
     
     def setup_ui(self):
         self.grid = self.ui.containerCard.layout()
-
+        if self.grid is None: 
+            raise RuntimeError("containerCard layout not found in UI")
 
 
     def setup_device_manager(self):
@@ -95,7 +106,8 @@ class App:
         """
         self.device_manager_thread = QThread()     
         self.device_manager = DeviceManager()     
-        #self.device_manager.moveToThread(self.device_manager_thread)
+        self.device_manager.moveToThread(self.device_manager_thread)
+        self.device_manager_thread.finished.connect(self.device_manager.deleteLater)
         self.device_manager_thread.start()        
 
     def setup_connections(self):
@@ -104,29 +116,32 @@ class App:
         """ 
 
         # Сигнал старта поиска приборов
-        self.butt_search_dev = self.ui.findChild(QAction, "butt_search_dev")      
-        self.butt_search_dev.triggered.connect(self.device_manager.find_rpii_ports)
+        self.butt_search_dev = self.ui.findChild(QAction, "butt_search_dev") 
+        self.butt_search_dev.triggered.connect(self.search_devices.emit) 
+        self.search_devices.connect(self.device_manager.find_rpii_ports)
+        
 
         # Сигнал старта опроса приборов
-        self.butt_system_start = self.ui.findChild(QAction, "butt_system_start")  
-        self.butt_system_start.triggered.connect(self.device_manager.dispatch_poll_step) 
+        self.butt_system_start = self.ui.findChild(QAction, "butt_system_start") 
+        self.butt_system_start.triggered.connect(self.start_polling.emit) 
+        self.start_polling.connect(self.device_manager.dispatch_poll_step)  
 
+        # Сигнал передачи данных по цистернам в DeviceManager
+        self.sync_cisterns_to_manager.connect(self.device_manager.set_cistern_states)      
 
         # сигналы DeviceManager 
-
         # сигнал для вывода текстовой информации
-        self.device_manager.device_info.connect(self.on_show_info)
+        self.device_manager.device_info.connect(self.on_show_info, Qt.ConnectionType.QueuedConnection)
 
         # сигнал для вывода найденных девайсов
-        self.device_manager.device_found.connect(self.on_devices_updated)   
+        self.device_manager.device_found.connect(self.on_devices_updated, Qt.ConnectionType.QueuedConnection)   
 
         # Общий сигнал для вывода ошибок
-        self.device_manager.device_error.connect(self.on_objects_error)  
+        self.device_manager.device_error.connect(self.on_objects_error, Qt.ConnectionType.QueuedConnection)  
 
         # Тестовый сигнал для отработки опроса приборов
-        self.device_manager.device_response.connect(self.on_device_packet)
-
-
+        self.device_manager.device_response.connect(self.on_device_packet, Qt.ConnectionType.QueuedConnection) 
+  
 
     def on_show_info(self, info: str):
         """
@@ -146,9 +161,9 @@ class App:
 
 
     def create_device_card(self, device):
-        if device.location_type == "cistern":
+        if device.get("location_type") == "cistern":
             card = DeviceCardBarrel()
-        elif device.location_type == "room":
+        elif device.get("location_type") == "room":
             card = DeviceCardWall()
         else:
             return None
@@ -159,8 +174,16 @@ class App:
         """
             Слот выведения найденных приборов 
         """
-        self.ui.textEdit.append("Знайдено прилади:")
-        print("on_devices_updated thread:", threading.current_thread().name)
+        self.ui.textEdit.append("Знайдено прилади:")        
+
+        while self.grid.count():            
+            item = self.grid.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.setParent(None); 
+                w.deleteLater()
+
+        self.cards_by_sn.clear()
 
         for i, device in enumerate(devices):
 
@@ -168,16 +191,17 @@ class App:
             if card is None:
                 continue
 
+            card.posit_number = device.get("posit_number")
+            card.serial_number = device.get("serial_number")
+            self.cards_by_sn[card.serial_number] = card
+
             row = i // 3
             col = i % 3
 
-            self.grid.addWidget(card, row, col)   
-        # for device in devices:
-        #     if device.serial_number == "------":
-        #         continue           
+            self.grid.addWidget(card, row, col)               
             
+            self.ui.textEdit.append(f"Порт: {device.get('port')}, Адреса: {device.get('address')}, SN: {device.get('serial_number')}")
 
-            self.ui.textEdit.append(f"Порт: {device.port}, Адреса: {device.address}, SN: {device.serial_number}")
 
         # Вносим в приборы данные про цистерны
         self.sync_devices_with_cisterns()
@@ -219,28 +243,45 @@ class App:
             with open(json_file, "w", encoding="utf-8") as f:
                 json.dump(self.cistern_dict, f, ensure_ascii=False, indent=4)    
 
+    # def sync_devices_with_cisterns(self):
+    #     """
+    #         После окончания поиска приборов синхронизируем их состояние
+    #         с данными из cistern_dict.
+    #         Если прибор с location_type == "cistern" не имеет соответствия в словаре,
+    #         предупреждаем администратора.
+    #     """
+    #     for device in self.device_manager.devices:
+    #         # Пропускаем приборы, которые относятся к помещению
+    #         if device.location_type == "room":
+    #             continue
+
+    #         # Для приборов-цистерн проверяем соответствие
+    #         num = device.posit_number
+    #         if num in self.cistern_dict:
+    #             device.set_full(self.cistern_dict[num])
+    #         else:               
+    #             s =  (f"УВАГА: прилад с posit_number = {num} " 
+    #                  f"(location_type='cistern') не має відповідного запису " 
+    #                  f"Перевірте конфигурацію в cistern_dict та cistern.json!")
+                
+    #             self.on_objects_error("Звірка приладів і цистерн", s)
+
+
     def sync_devices_with_cisterns(self):
         """
-            После окончания поиска приборов синхронизируем их состояние
-            с данными из cistern_dict.
-            Если прибор с location_type == "cistern" не имеет соответствия в словаре,
-            предупреждаем администратора.
+            Синхронизируем только GUI-карточки с self.cistern_dict.
+            НИКОГДА не вызываем методы объектов DeviceManager из GUI-потока.
         """
-        for device in self.device_manager.devices:
-            # Пропускаем приборы, которые относятся к помещению
-            if device.location_type == "room":
+        for sn, card in self.cards_by_sn.items():
+            try:
+                # пытаемся получить posit из карточки (если карточка его сохранила)
+                posit = getattr(card, "posit_number", None) or getattr(card, "posit", None)
+                if posit is None:
+                    continue
+                # сохраняем состояние на карточке (визуальное обновление реализовать в карточке)
+                setattr(card, "is_full", bool(self.cistern_dict.get(int(posit), False)))
+            except Exception:
                 continue
-
-            # Для приборов-цистерн проверяем соответствие
-            num = device.posit_number
-            if num in self.cistern_dict:
-                device.set_full(self.cistern_dict[num])
-            else:               
-                s =  (f"УВАГА: прилад с posit_number = {num} " 
-                     f"(location_type='cistern') не має відповідного запису " 
-                     f"Перевірте конфигурацію в cistern_dict та cistern.json!")
-                
-                self.on_objects_error("Звірка приладів і цистерн", s)
 
 
     def start_test_polling(self, json_file: str):
@@ -292,17 +333,44 @@ class App:
                 updated = True
 
                 # Обновляем соответствующий прибор
-                for device in self.device_manager.devices:
-                    if device.location_type == "cistern" and device.posit_number == num:
-                        device.set_full(new_value)
-                        break
+                # for device in self.device_manager.devices:
+                #     if device.location_type == "cistern" and device.posit_number == num:
+                #         device.set_full(new_value)
+                #         break
+
+                # Обновляем только GUI‑карточки; не трогаем объекты DeviceManager из GUI‑потока
+                for sn, card in self.cards_by_sn.items():
+                    try:
+                        if getattr(card, "posit_number", None) == num or getattr(card, "posit", None) == num:
+                            setattr(card, "is_full", bool(new_value))
+                            break
+                    except Exception:
+                        continue
+
 
         # Если были изменения — перезаписываем файл cistern.json
         if updated:
-            with open(json_file, "w", encoding="utf-8") as f:
+            with open(json_file, "w", encoding="utf-8") as f:                
                 json.dump(self.cistern_dict, f, ensure_ascii=False, indent=4)
+                try:
+                    self.sync_cisterns_to_manager.emit(self.cistern_dict)
+                except Exception:
+                    pass
+
+    
+    def cleanup(self):
+        # DeviceManager корректно останавливаем в его потоке
+        try:
+            QMetaObject.invokeMethod(self.device_manager, "stop_all", Qt.ConnectionType.QueuedConnection)
+        except Exception:
+            pass
+        # Корректно завершаем поток менеджера
+        if self.device_manager_thread is not None and self.device_manager_thread.isRunning():
+            self.device_manager_thread.quit()
+            self.device_manager_thread.wait(2000)
 
 
+    
 
 
 def main():
@@ -311,6 +379,7 @@ def main():
     """
     app = QApplication(sys.argv) # создаём объект приложения
     window = App()                # создаём наш класс App (он загрузит интерфейс и настроит связи)
+    app.aboutToQuit.connect(window.cleanup)
     sys.exit(app.exec())          # запускаем цикл обработки событий и корректно завершаем работу
 
 
