@@ -16,6 +16,9 @@
   <widget class="QWidget" name="centralwidget">
    <layout class="QVBoxLayout" name="verticalLayout_2">
     <item>
+     <widget class="QLineEdit" name="lineEdit"/>
+    </item>
+    <item>
      <layout class="QVBoxLayout" name="verticalLayout">
       <item>
        <widget class="QWidget" name="containerCard" native="true">
@@ -79,6 +82,11 @@
   <action name="butt_system_start">
    <property name="text">
     <string>Старт системи</string>
+   </property>
+  </action>
+  <action name="cisternFullness">
+   <property name="text">
+    <string>Змінити наповнення</string>
    </property>
   </action>
  </widget>

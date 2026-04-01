@@ -1,14 +1,17 @@
 import sys
-from PySide6.QtWidgets import QApplication, QWidget, QGridLayout, QVBoxLayout, QPushButton
+from PySide6.QtWidgets import QApplication, QWidget, QGridLayout, QVBoxLayout, QPushButton, QLabel, QSizePolicy
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtCore import QFile, QThread, QMetaObject, QTimer , Qt, QObject, Signal
 from devices.device_manager import DeviceManager
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QPixmap
 import json
-import threading
+import threading, os
 
 
 class DeviceCardBarrel(QWidget):
+    """
+        Клас детектору у контейнері
+    """
     def __init__(self):
         super().__init__()
 
@@ -16,12 +19,53 @@ class DeviceCardBarrel(QWidget):
         ui_file = QFile("_UI/dashboardbarrel.ui")
         ui_file.open(QFile.ReadOnly)
 
-        self.ui = loader.load(ui_file, self)
+        self.ui = loader.load(ui_file)
         ui_file.close()
 
+        if self.ui is None:
+            raise RuntimeError("Не удалось загрузить dashboardbarrel.ui")
 
+        self.setLayout(QVBoxLayout())
+        self.layout().setContentsMargins(5, 5, 5, 5)
+        self.layout().addWidget(self.ui)
+        #self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        #self.ui.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+        # label = self.ui.findChild(QLabel, "barrelLabel")
+        # path = os.path.abspath("_UI/barrelresized.png")
+        # if label:
+        #     label.setPixmap(QPixmap(path))
+    
+    def set_serial(self, serial):
+        label = self.ui.findChild(QLabel, "serialLabel")
+        if label:
+            label.setText(f"SN: {serial}")
+
+    def set_position(self, position):
+        label = self.ui.findChild(QLabel, "positionLabel")
+        if label:
+            label.setText(f"{position}")
+
+    def set_status(self, status):
+        label = self.ui.findChild(QLabel, "statusLabel")
+        if label:
+            label.setText(f"{status}")
+            label.setStyleSheet(f"color: green; font-weight:bold;")
+    
+    def set_barrel_image(self, full: bool):
+        label = self.ui.findChild(QLabel, "barrelLabel")
+        if not label:
+                return
+
+        image_name = "barrelfull.png" if full else "barrelresized.png"
+        path = os.path.abspath(os.path.join("_UI", image_name))
+        label.setPixmap(QPixmap(path))
+    
 
 class DeviceCardWall(QWidget):
+    """
+        Клас настінного детектору(у кімнаті)
+    """
     def __init__(self):
         super().__init__()
 
@@ -29,8 +73,33 @@ class DeviceCardWall(QWidget):
         ui_file = QFile("_UI/dashboardwall.ui")
         ui_file.open(QFile.ReadOnly)
 
-        self.ui = loader.load(ui_file, self)
+        self.ui = loader.load(ui_file)
         ui_file.close()
+
+        if self.ui is None:
+            raise RuntimeError("Не удалось загрузить dashboardwall.ui")
+
+        self.setLayout(QVBoxLayout())
+        self.layout().setContentsMargins(5, 5, 5, 5)
+        self.layout().addWidget(self.ui)
+        #self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        #self.ui.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+ 
+    def set_serial(self, serial):
+        label = self.ui.findChild(QLabel, "serialLabel")
+        if label:
+            label.setText(f"SN: {serial}")
+    
+    def set_position(self, position):
+        label = self.ui.findChild(QLabel, "positionLabel")
+        if label:
+            label.setText(f"{position}")
+
+    def set_status(self, status):
+        label = self.ui.findChild(QLabel, "statusLabel")
+        if label:
+            label.setText(f"{status}")
+            label.setStyleSheet(f"color: green; font-weight:bold;")
 
 
 class App(QObject):
@@ -74,6 +143,7 @@ class App(QObject):
         # Загружаем файл состояния цистерн
         self.load_cistern_data("config/cistern.json")
 
+        # Розмітка контейнеру для вікон приладів
         self.setup_ui()
 
 
@@ -95,9 +165,19 @@ class App(QObject):
         self.ui.showMaximized()
     
     def setup_ui(self):
+        """
+            Розмітка(grid) для вікон приладів
+        """
         self.grid = self.ui.containerCard.layout()
-        if self.grid is None: 
-            raise RuntimeError("containerCard layout not found in UI")
+        #self.ui.containerCard.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        # outer_layout = self.ui.containerCard.layout()
+        # if outer_layout is None:
+        #     raise RuntimeError("containerCard layout not found in UI")
+
+        # nested_item = outer_layout.itemAtPosition(0, 0)
+        # self.grid = nested_item.layout() if nested_item is not None and nested_item.layout() is not None else outer_layout
+        # if self.grid is None:
+        #     raise RuntimeError("containerCard inner layout not found in UI")
 
 
     def setup_device_manager(self):
@@ -161,6 +241,9 @@ class App(QObject):
 
 
     def create_device_card(self, device):
+        """
+            Створення вікна для приладу
+        """
         if device.get("location_type") == "cistern":
             card = DeviceCardBarrel()
         elif device.get("location_type") == "room":
@@ -185,29 +268,39 @@ class App(QObject):
 
         self.cards_by_sn.clear()
 
+        width = self.ui.width()
+        card_width = 380   # same as minimumWidth
+        spacing = 20
+        columns = max(1, width // (card_width + spacing))
+
         for i, device in enumerate(devices):
 
             card = self.create_device_card(device)
             if card is None:
                 continue
-
+            if isinstance(card, DeviceCardBarrel):
+                card.set_barrel_image(bool(self.cistern_dict.get(device.get("posit_number"), False)))
             card.posit_number = device.get("posit_number")
             card.serial_number = device.get("serial_number")
             self.cards_by_sn[card.serial_number] = card
 
-            row = i // 3
-            col = i % 3
+            card.set_serial(device.get("serial_number"))
+            card.set_position(device.get("posit_number"))
+            card.set_status("● Активний")
+            
+            row = i // columns
+            col = i % columns
 
-            self.grid.addWidget(card, row, col)               
+            self.grid.addWidget(card, row, col)  
+    
             
             self.ui.textEdit.append(f"Порт: {device.get('port')}, Адреса: {device.get('address')}, SN: {device.get('serial_number')}")
-
-
+        
         # Вносим в приборы данные про цистерны
         self.sync_devices_with_cisterns()
 
         # Начинаем процедуру опроса внешней Системы Управления
-        #self.start_test_polling("devices/cistern.json")
+        self.start_test_polling("devices/cistern.json")
 
     
 
@@ -280,6 +373,7 @@ class App(QObject):
                     continue
                 # сохраняем состояние на карточке (визуальное обновление реализовать в карточке)
                 setattr(card, "is_full", bool(self.cistern_dict.get(int(posit), False)))
+                #card.set_barrel_image(card.is_full)
             except Exception:
                 continue
 
@@ -343,6 +437,7 @@ class App(QObject):
                     try:
                         if getattr(card, "posit_number", None) == num or getattr(card, "posit", None) == num:
                             setattr(card, "is_full", bool(new_value))
+                            card.set_barrel_image(card.is_full)
                             break
                     except Exception:
                         continue
