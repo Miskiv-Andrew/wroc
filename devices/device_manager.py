@@ -557,14 +557,14 @@ class DeviceManager(QObject):
         """
         
         # Проверка валидности
-        if data[4+b1] & 0x80:
+        if data[6+b1] & 0x80:
             return None
 
         # Собираем слово из двух байтов
-        temp_w = (data[3+b1]) | (data[4+b1] << 8)
+        temp_w = (data[5+b1]) | (data[6+b1] << 8)
 
         # Проверка знака
-        if data[4+b1] & 0x10:
+        if data[6+b1] & 0x10:
             temp_w = (~temp_w) & 0xFFF
             temp_w += 1
             sign = "-"
@@ -573,7 +573,7 @@ class DeviceManager(QObject):
 
         # Берём младшие 12 бит и делим на 16
         temp_r = (temp_w & 0xFFF) / 16.0
-        return f"{sign}{temp_r:.1f}°C"
+        return f"{sign}{temp_r:.1f} °C"
     
 
     def _rad_intens_data(self, data: bytearray) -> int:
@@ -593,7 +593,8 @@ class DeviceManager(QObject):
             Обработка данных ПАЕД
             Возвращает словарь с параметрами 
         """
-        num = struct.unpack('<I', data[5:9])[0]   
+        num = struct.unpack('<I', data[5:9])[0]
+        accuracy = data[9]  # 9th byte from the packet payload
         ped = 0
         
         byte_to_check = data[10]
@@ -618,6 +619,7 @@ class DeviceManager(QObject):
         
         return {
             "ped_value": ped,
+            "accuracy": accuracy,
             "high_sens_failure": high_sens_detect_failure,
             "low_sens_failure": low_sens_detector_failure,
             "result_valid": result_valid
@@ -849,7 +851,7 @@ class DeviceManager(QObject):
                 self.rx_buffer[:-1],
                 mode
             )
-
+            
             # передаём пакет дальше
             self.device_response.emit(packet)
 

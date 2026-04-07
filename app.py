@@ -4,9 +4,28 @@ from PySide6.QtUiTools import QUiLoader
 from PySide6.QtCore import QFile, QThread, QMetaObject, QTimer , Qt, QObject, Signal
 from devices.device_manager import DeviceManager
 from PySide6.QtGui import QAction, QPixmap
-import json
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
+import json, numpy as np
 import threading, os
 
+class SpectrumWidget(QWidget):
+    def __init__(self):
+        super().__init__()
+
+        self.figure = Figure()
+        self.canvas = FigureCanvas(self.figure)
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(self.canvas)
+        self.ax = self.figure.add_subplot(111)
+        self.plot()
+
+    def plot(self):
+        self.ax.clear()
+        data = np.random.normal(1000, 200, 1000)  # fake counts
+        self.ax.hist(data, bins=30)
+        self.canvas.draw()
 
 class DeviceCardBarrel(QWidget):
     """
@@ -44,13 +63,24 @@ class DeviceCardBarrel(QWidget):
     def set_position(self, position):
         label = self.ui.findChild(QLabel, "positionLabel")
         if label:
-            label.setText(f"{position}")
+            label.setText(f"Контейнер № {position}")
 
     def set_status(self, status):
         label = self.ui.findChild(QLabel, "statusLabel")
-        if label:
-            label.setText(f"{status}")
-            label.setStyleSheet(f"color: green; font-weight:bold;")
+        if status == "active":
+            color = "#2ecc71"   # green
+        elif status == "warning":
+            color = "#f1c40f"   # yellow
+        elif status == "error":
+            color = "#e74c3c"   # red
+        else:
+            color = "#7f8c8d"
+
+        label.setStyleSheet(f"""
+        QLabel {{
+            background-color: {color};
+            border-radius: 6px;
+        }} """)
     
     def set_barrel_image(self, full: bool):
         label = self.ui.findChild(QLabel, "barrelLabel")
@@ -60,6 +90,22 @@ class DeviceCardBarrel(QWidget):
         image_name = "barrelfull.png" if full else "barrelresized.png"
         path = os.path.abspath(os.path.join("_UI", image_name))
         label.setPixmap(QPixmap(path))
+    
+    def set_dose_value(self, dose, acc):
+        label = self.ui.findChild(QLabel, "doseValue")
+        if label:
+            label.setText(f"{dose:.2f} мкЗв/год ± {acc}%")
+
+    def set_temp_value(self, value):
+        label = self.ui.findChild(QLabel, "tempValue")
+        if label:
+            label.setText(f"{value}")
+    
+    def add_spectrum(self):
+        self.spectrum = SpectrumWidget()
+        layout = self.ui.spectrumWidget.layout()
+        layout.setContentsMargins(0,0,0,0)
+        layout.addWidget(self.spectrum)
     
 
 class DeviceCardWall(QWidget):
@@ -93,13 +139,47 @@ class DeviceCardWall(QWidget):
     def set_position(self, position):
         label = self.ui.findChild(QLabel, "positionLabel")
         if label:
-            label.setText(f"{position}")
+            label.setText(f"Детектор № {position}")
 
     def set_status(self, status):
         label = self.ui.findChild(QLabel, "statusLabel")
+        if status == "active":
+            color = "#2ecc71"   # green
+        elif status == "warning":
+            color = "#f1c40f"   # yellow
+        elif status == "error":
+            color = "#e74c3c"   # red
+        else:
+            color = "#7f8c8d"
+
+        label.setStyleSheet(f"""
+        QLabel {{
+            background-color: {color};
+            border-radius: 6px;
+        }} """)
+    
+    def set_dose_value(self, dose, acc):
+        label = self.ui.findChild(QLabel, "doseValue")
         if label:
-            label.setText(f"{status}")
-            label.setStyleSheet(f"color: green; font-weight:bold;")
+            label.setText(f"{dose:.2f} мкЗв/год ± {acc}%")
+
+
+    def set_temp_value(self, value):
+        label = self.ui.findChild(QLabel, "tempValue")
+        if label:
+            label.setText(f"{value}")
+
+    def add_spectrum(self):
+        self.spectrum = SpectrumWidget()
+        layout = QVBoxLayout(self.ui.spectrumWidget)
+        layout.setContentsMargins(0,0,0,0)
+        layout.addWidget(self.spectrum)
+
+    def add_spectrum(self):
+        self.spectrum = SpectrumWidget()
+        layout = self.ui.spectrumWidget.layout()
+        layout.setContentsMargins(0,0,0,0)
+        layout.addWidget(self.spectrum)
 
 
 class App(QObject):
@@ -234,6 +314,11 @@ class App(QObject):
         """
             Тестовый метод - отработка опроса приборов
         """
+        card = self.cards_by_sn.get(packet.serial_number)
+        if card is None:
+            return
+
+
         sn = packet.serial_number
         mode = packet.mode
         size = packet.size
@@ -269,7 +354,7 @@ class App(QObject):
         self.cards_by_sn.clear()
 
         width = self.ui.width()
-        card_width = 380   # same as minimumWidth
+        card_width = 400   # same as minimumWidth
         spacing = 20
         columns = max(1, width // (card_width + spacing))
 
@@ -286,7 +371,8 @@ class App(QObject):
 
             card.set_serial(device.get("serial_number"))
             card.set_position(device.get("posit_number"))
-            card.set_status("● Активний")
+            card.set_status("active")
+            card.add_spectrum()
             
             row = i // columns
             col = i % columns
