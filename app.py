@@ -344,6 +344,7 @@ class App(QObject):
         """
         self.ui.textEdit.append("Знайдено прилади:")        
 
+        # Перед виведенням нових елементів чистимо старі - перевір у ШІ
         while self.grid.count():            
             item = self.grid.takeAt(0)
             w = item.widget()
@@ -354,6 +355,9 @@ class App(QObject):
         self.cards_by_sn.clear()
 
         width = self.ui.width()
+
+        # Тут розрахуй кількість комірок і габаритні розміри комірок
+
         card_width = 400   # same as minimumWidth
         spacing = 20
         columns = max(1, width // (card_width + spacing))

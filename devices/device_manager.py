@@ -698,8 +698,10 @@ class DeviceManager(QObject):
         # 1. Инкрементируем глобальный индекс текущего прибора
         self.current_index += 1
 
+        num_dev = len(self.devices)
+
         # 2. Проверяем конец списка
-        if self.current_index >= len(self.devices):
+        if self.current_index >= num_dev:
             # цикл завершён, все приборы опрошены → длинная пауза
             self.current_index = -1
             self.poll_timer.start(self.long_interval_ms)
@@ -710,14 +712,23 @@ class DeviceManager(QObject):
 
         self.temperature_index += 1
 
-        # 4. Формируем запрос с учётом адреса прибора
-        if self.temperature_index < 10:
-            request = self.make_request()  
+        # # 4. Формируем запрос с учётом адреса прибора
+        # if self.temperature_index < 10 :
+        #     request = self.make_request()  
 
-        # Каждый 10 запрос - получаем температуру
-        elif self.temperature_index >= 10:
-            self.temperature_index = 0
-            request = self.make_request("temperature") 
+        # # Каждый 10 запрос - получаем температуру
+        # elif self.temperature_index >= 10 :
+        #     self.temperature_index = 0
+        #     request = self.make_request("temperature") 
+
+        if( self.temperature_index // num_dev) % 10 == 0:
+            request = self.make_request("temperature")
+            if self.temperature_index == num_dev * 10 + (num_dev - 1):
+                self.temperature_index = 0
+        else:
+            request = self.make_request() 
+
+
             
           
         # 5. Отправляем запрос через RTII порт, указанный в DeviceInfo
