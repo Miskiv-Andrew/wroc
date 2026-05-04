@@ -45,11 +45,11 @@ class DeviceCardBarrel(QWidget):
             raise RuntimeError("Не удалось загрузить dashboardbarrel.ui")
 
         self.setLayout(QVBoxLayout())
-        self.layout().setContentsMargins(0, 0, 0, 0)
+        self.layout().setContentsMargins(5, 5, 5, 5)
         #self.layout().setSpacing(0)
         self.layout().addWidget(self.ui)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.ui.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        #self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        #self.ui.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         # label = self.ui.findChild(QLabel, "barrelLabel")
         # path = os.path.abspath("_UI/barrelresized.png")
@@ -90,7 +90,18 @@ class DeviceCardBarrel(QWidget):
 
         image_name = "barrelfull.svg" if full else "barrelempty.svg"
         path = os.path.abspath(os.path.join("_UI", image_name))
-        label.setPixmap(QPixmap(path))
+        #label.setPixmap(QPixmap(path))
+        pixmap = QPixmap(path)
+
+        # actual_size = label.size()
+        # if actual_size.width() > 0 and actual_size.height() > 0:
+        #     scaled_pixmap = pixmap.scaled(actual_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        #     label.setPixmap(scaled_pixmap)
+        # else:
+        #     label.setScaledContents(True)
+        #     label.setPixmap(pixmap)
+        scaled_pixmap = pixmap.scaledToWidth(80, Qt.SmoothTransformation)
+        label.setPixmap(scaled_pixmap)
     
     def set_dose_value(self, dose, acc):
         label = self.ui.findChild(QLabel, "doseValue")
@@ -127,10 +138,10 @@ class DeviceCardWall(QWidget):
             raise RuntimeError("Не удалось загрузить dashboardwall.ui")
 
         self.setLayout(QVBoxLayout())
-        self.layout().setContentsMargins(0, 0, 0, 0)
+        self.layout().setContentsMargins(5, 5, 5, 5)
         self.layout().addWidget(self.ui)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.ui.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        #self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        #self.ui.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
  
     def set_serial(self, serial):
         label = self.ui.findChild(QLabel, "serialLabel")
@@ -169,12 +180,6 @@ class DeviceCardWall(QWidget):
         label = self.ui.findChild(QLabel, "tempValue")
         if label:
             label.setText(f"{value}")
-
-    def add_spectrum(self):
-        self.spectrum = SpectrumWidget()
-        layout = QVBoxLayout(self.ui.spectrumWidget)
-        layout.setContentsMargins(0,0,0,0)
-        layout.addWidget(self.spectrum)
 
     def add_spectrum(self):
         self.spectrum = SpectrumWidget()
@@ -276,7 +281,7 @@ class App(QObject):
         if self.container:
             self.grid = self.container.layout()
             #Install event filter to catch resize events
-            self.container.installEventFilter(self)
+            #self.container.installEventFilter(self)
         else:
             # Fallback
             self.grid = QGridLayout(self.container)
@@ -407,14 +412,14 @@ class App(QObject):
         width = self.container.width()
         card_width = 400
         spacing = self.grid.spacing()
-        new_columns = max(1, width // (card_width + spacing))
-        # n = len(self.cards_by_sn)
-        # if n <= 3:
-        #     new_columns = max(1, n)
-        # elif n > 3:
-        #     new_columns = math.ceil(math.sqrt(n))
-        # else:
-        #     new_columns = 1
+        #new_columns = max(1, width // (card_width + spacing))
+        n = len(self.cards_by_sn)
+        if n <= 3:
+            new_columns = max(1, n)
+        elif n > 3:
+            new_columns = math.ceil(math.sqrt(n))
+        else:
+            new_columns = 1
 
         # Check if column count actually changed
         if not hasattr(self, 'current_columns') or self.current_columns != new_columns:
@@ -463,14 +468,14 @@ class App(QObject):
         card_width = 400   # same as minimumWidth
         spacing = self.grid.spacing()
 
-        columns = max(1, width // (card_width + spacing))
-        # n = len(devices)
-        # if n <= 3:
-        #     columns = max(1, n)
-        # elif n > 3:
-        #     columns = math.ceil(math.sqrt(n))
-        # else:
-        #     columns = 1
+        #columns = max(1, width // (card_width + spacing))
+        n = len(devices)
+        if n <= 3:
+            columns = max(1, n)
+        elif n > 3:
+            columns = math.ceil(math.sqrt(n))
+        else:
+            columns = 1
         
         self.clear_layout()
 
@@ -491,7 +496,8 @@ class App(QObject):
             card.set_position(device.get("posit_number"))
             card.set_status("active")
             card.add_spectrum()
-            
+            card.setMinimumSize(0, 0)
+            card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
             row = i // columns
             col = i % columns
 
