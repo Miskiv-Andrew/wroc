@@ -721,7 +721,7 @@ class DeviceManager(QObject):
         #     self.temperature_index = 0
         #     request = self.make_request("temperature") 
 
-        if( self.temperature_index // num_dev) % 10 == 0:
+        if ((self.temperature_index // num_dev) % 10 == 0) and self.temperature_index > num_dev:
             request = self.make_request("temperature")
             if self.temperature_index == num_dev * 10 + (num_dev - 1):
                 self.temperature_index = 0

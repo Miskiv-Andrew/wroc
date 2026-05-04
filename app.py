@@ -7,7 +7,7 @@ from PySide6.QtGui import QAction, QPixmap
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 import json, numpy as np
-import threading, os
+import threading, os, math
 
 class SpectrumWidget(QWidget):
     def __init__(self):
@@ -45,10 +45,11 @@ class DeviceCardBarrel(QWidget):
             raise RuntimeError("Не удалось загрузить dashboardbarrel.ui")
 
         self.setLayout(QVBoxLayout())
-        self.layout().setContentsMargins(5, 5, 5, 5)
+        self.layout().setContentsMargins(0, 0, 0, 0)
+        #self.layout().setSpacing(0)
         self.layout().addWidget(self.ui)
-        #self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        #self.ui.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.ui.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         # label = self.ui.findChild(QLabel, "barrelLabel")
         # path = os.path.abspath("_UI/barrelresized.png")
@@ -87,7 +88,7 @@ class DeviceCardBarrel(QWidget):
         if not label:
                 return
 
-        image_name = "barrelfull.png" if full else "barrelresized.png"
+        image_name = "barrelfull.svg" if full else "barrelempty.svg"
         path = os.path.abspath(os.path.join("_UI", image_name))
         label.setPixmap(QPixmap(path))
     
@@ -126,10 +127,10 @@ class DeviceCardWall(QWidget):
             raise RuntimeError("Не удалось загрузить dashboardwall.ui")
 
         self.setLayout(QVBoxLayout())
-        self.layout().setContentsMargins(5, 5, 5, 5)
+        self.layout().setContentsMargins(0, 0, 0, 0)
         self.layout().addWidget(self.ui)
-        #self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        #self.ui.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.ui.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
  
     def set_serial(self, serial):
         label = self.ui.findChild(QLabel, "serialLabel")
@@ -181,7 +182,30 @@ class DeviceCardWall(QWidget):
         layout.setContentsMargins(0,0,0,0)
         layout.addWidget(self.spectrum)
 
+class DatabaseWindow(QWidget):
+    """
+        Клас вікна для доступу до бази даних
+    """
+    def __init__(self):
+        super().__init__()
 
+        loader = QUiLoader()
+        ui_file = QFile("_UI/db_window.ui")
+        ui_file.open(QFile.ReadOnly)
+
+        self.ui = loader.load(ui_file)
+        ui_file.close()
+
+        if self.ui is None:
+            raise RuntimeError("Не удалось загрузить db_window.ui")
+        
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.ui)
+
+        self.setWindowTitle("База даних")
+       
+        
 class App(QObject):
     """
         Основной класс приложения
@@ -248,17 +272,31 @@ class App(QObject):
         """
             Розмітка(grid) для вікон приладів
         """
-        self.grid = self.ui.containerCard.layout()
-        #self.ui.containerCard.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        # outer_layout = self.ui.containerCard.layout()
-        # if outer_layout is None:
-        #     raise RuntimeError("containerCard layout not found in UI")
+        self.container = self.ui.findChild(QWidget, "containerCard")
+        if self.container:
+            self.grid = self.container.layout()
+            #Install event filter to catch resize events
+            self.container.installEventFilter(self)
+        else:
+            # Fallback
+            self.grid = QGridLayout(self.container)
+        
 
-        # nested_item = outer_layout.itemAtPosition(0, 0)
-        # self.grid = nested_item.layout() if nested_item is not None and nested_item.layout() is not None else outer_layout
-        # if self.grid is None:
-        #     raise RuntimeError("containerCard inner layout not found in UI")
+    def eventFilter(self, obj, event):
+        """
+            Catch resize events on the container
+        """
+        if obj == self.container and event.type() == event.Type.Resize:
+            self.recalculate_grid()
+        return super().eventFilter(obj, event)
 
+    def db_window(self):
+        """
+            Вивід вікна для бази даних
+        """
+        self.window = DatabaseWindow()
+        self.window.resize(self.ui.size() * 0.7)
+        self.window.show()
 
     def setup_device_manager(self):
         """
@@ -280,11 +318,14 @@ class App(QObject):
         self.butt_search_dev.triggered.connect(self.search_devices.emit) 
         self.search_devices.connect(self.device_manager.find_rpii_ports)
         
-
         # Сигнал старта опроса приборов
         self.butt_system_start = self.ui.findChild(QAction, "butt_system_start") 
         self.butt_system_start.triggered.connect(self.start_polling.emit) 
-        self.start_polling.connect(self.device_manager.dispatch_poll_step)  
+        self.start_polling.connect(self.device_manager.dispatch_poll_step) 
+
+        # Сигнал виводу вікна для бази даних
+        self.butt_db_window = self.ui.findChild(QAction, "open_bd")
+        self.butt_db_window.triggered.connect(self.db_window) 
 
         # Сигнал передачи данных по цистернам в DeviceManager
         self.sync_cisterns_to_manager.connect(self.device_manager.set_cistern_states)      
@@ -318,12 +359,29 @@ class App(QObject):
         if card is None:
             return
 
-
         sn = packet.serial_number
         mode = packet.mode
         size = packet.size
-        self.ui.textEdit.append(f"Packet from {sn}: mode={mode}, size={size}\n-------------------\n")
+        buff = packet.buff
+        self.ui.textEdit.append(f"Packet from {sn}: mode={mode}, size={size}")
 
+        try:
+            if mode == "RadDose":
+                data = self.device_manager._paed_data(buff)
+                if data:
+                    dose = data["ped_value"]
+                    accuracy = data["accuracy"]
+                    card.set_dose_value(dose, accuracy)
+                    self.ui.textEdit.append(f"Parsed dose for {sn}:  {dose:.2f} μSv/h ± {accuracy}%\n-------------------")
+
+            elif mode == "Temperature":
+                data = self.device_manager._temp_data(buff)
+                if data:
+                    card.set_temp_value(data)
+                    self.ui.textEdit.append(f"Parsed temperature for {sn}:  {data}\n-------------------")
+
+        except Exception as e:
+            self.ui.textEdit.append(f"Error parsing packet for {sn}: {e}\n-------------------")
 
     def create_device_card(self, device):
         """
@@ -336,7 +394,58 @@ class App(QObject):
         else:
             return None
         return card
+    
+    def recalculate_grid(self):
+        """Recalculate grid rows/columns on window resize"""
+        if not self.cards_by_sn or not self.grid:
+            return
+        
+        container = self.ui.findChild(QWidget, "containerCard")
+        if not container:
+            return
+        
+        width = self.container.width()
+        card_width = 400
+        spacing = self.grid.spacing()
+        new_columns = max(1, width // (card_width + spacing))
+        # n = len(self.cards_by_sn)
+        # if n <= 3:
+        #     new_columns = max(1, n)
+        # elif n > 3:
+        #     new_columns = math.ceil(math.sqrt(n))
+        # else:
+        #     new_columns = 1
 
+        # Check if column count actually changed
+        if not hasattr(self, 'current_columns') or self.current_columns != new_columns:
+            self.current_columns = new_columns
+            self.reflow_grid()
+
+
+    def reflow_grid(self):
+        """Reorganize cards in grid with new column count"""
+        cards_list = list(self.cards_by_sn.values())
+        
+        # Clear grid
+        self.clear_layout(delete_widgets=False)
+        
+        # Re-add cards in new layout
+        for i, card in enumerate(cards_list):
+            row = i // self.current_columns
+            col = i % self.current_columns
+            self.grid.addWidget(card, row, col)
+    
+    def clear_layout(self, delete_widgets=True):
+        while self.grid.count():
+            item = self.grid.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                if delete_widgets:
+                    w.setParent(None)
+                    w.deleteLater()
+                else:
+                    # Just remove from layout, keep the widget alive
+                    w.setParent(None)
 
     def on_devices_updated(self, devices):
         """
@@ -344,31 +453,36 @@ class App(QObject):
         """
         self.ui.textEdit.append("Знайдено прилади:")        
 
-        # Перед виведенням нових елементів чистимо старі - перевір у ШІ
-        while self.grid.count():            
-            item = self.grid.takeAt(0)
-            w = item.widget()
-            if w is not None:
-                w.setParent(None); 
-                w.deleteLater()
-
         self.cards_by_sn.clear()
 
-        width = self.ui.width()
+        #container = self.ui.findChild(QWidget, "containerCard")
+        width = self.container.width()
 
         # Тут розрахуй кількість комірок і габаритні розміри комірок
 
         card_width = 400   # same as minimumWidth
-        spacing = 20
+        spacing = self.grid.spacing()
+
         columns = max(1, width // (card_width + spacing))
+        # n = len(devices)
+        # if n <= 3:
+        #     columns = max(1, n)
+        # elif n > 3:
+        #     columns = math.ceil(math.sqrt(n))
+        # else:
+        #     columns = 1
+        
+        self.clear_layout()
 
         for i, device in enumerate(devices):
 
             card = self.create_device_card(device)
             if card is None:
                 continue
+
             if isinstance(card, DeviceCardBarrel):
                 card.set_barrel_image(bool(self.cistern_dict.get(device.get("posit_number"), False)))
+
             card.posit_number = device.get("posit_number")
             card.serial_number = device.get("serial_number")
             self.cards_by_sn[card.serial_number] = card
@@ -383,7 +497,6 @@ class App(QObject):
 
             self.grid.addWidget(card, row, col)  
     
-            
             self.ui.textEdit.append(f"Порт: {device.get('port')}, Адреса: {device.get('address')}, SN: {device.get('serial_number')}")
         
         # Вносим в приборы данные про цистерны

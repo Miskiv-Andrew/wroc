@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1100</width>
-    <height>800</height>
+    <width>1088</width>
+    <height>774</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -37,15 +37,14 @@
           <verstretch>0</verstretch>
          </sizepolicy>
         </property>
+        <property name="minimumSize">
+         <size>
+          <width>0</width>
+          <height>120</height>
+         </size>
+        </property>
         <property name="readOnly">
          <bool>true</bool>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QProgressBar" name="progressBar">
-        <property name="value">
-         <number>0</number>
         </property>
        </widget>
       </item>
@@ -58,7 +57,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>1100</width>
+     <width>1088</width>
      <height>22</height>
     </rect>
    </property>
@@ -69,7 +68,14 @@
     <addaction name="butt_search_dev"/>
     <addaction name="butt_system_start"/>
    </widget>
+   <widget class="QMenu" name="menu_2">
+    <property name="title">
+     <string>База даних</string>
+    </property>
+    <addaction name="open_bd"/>
+   </widget>
    <addaction name="menu"/>
+   <addaction name="menu_2"/>
   </widget>
   <action name="butt_search_dev">
    <property name="checkable">
@@ -87,6 +93,11 @@
   <action name="cisternFullness">
    <property name="text">
     <string>Змінити наповнення</string>
+   </property>
+  </action>
+  <action name="open_bd">
+   <property name="text">
+    <string>Відкрити БД</string>
    </property>
   </action>
  </widget>
