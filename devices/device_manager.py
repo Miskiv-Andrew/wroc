@@ -142,10 +142,10 @@ class DeviceManager(QObject):
 
 
 ############################################################ БЛОК  ПОИСКА ПРИБОРОВ ################################################################
-    @Slot()
+    @Slot()   
     def find_rpii_ports(self):
         """
-            Поиск доступных COM-портов, фильтрация по производителю FTDI.
+            Поиск доступных COM-портов, фильтрация по FTDI (VID=0x0403) или производителю.
             Сохраняем только нужные порты в self.available_ports
             Если порты найдены, сразу приступаем к опросу приборов
         """
@@ -154,18 +154,22 @@ class DeviceManager(QObject):
         ports = serial.tools.list_ports.comports()
 
         for port in ports:
-            # port.manufacturer может содержать строку "FTDI"
-            if port.manufacturer and "FTDI" in port.manufacturer:
+            # FTDI VID = 0x0403
+            is_ftdi = False
+            
+            # Проверка по VID/PID
+            if port.vid is not None and port.vid == 0x0403:
+                is_ftdi = True
+            
+            # Проверка по строке производителя (запасной вариант)
+            if not is_ftdi and port.manufacturer and "FTDI" in port.manufacturer:
+                is_ftdi = True
+            
+            if is_ftdi:
                 self.available_ports.append(port.device)
 
-        # уведомляем GUI, что список портов обновился, и передаем список портов        
-        # self.ports_updated.emit(self.available_ports)     
-
-        # если порты найдены — сразу запускаем поиск приборов
         if self.available_ports:
             self.scan_devices()
-
-        # порты не найдены —  сообщаем об ошибке 
         else:
             self.device_error.emit("find_rpii_ports", "Не знайдено жодного розширювачу портів RTII")
 
@@ -278,7 +282,8 @@ class DeviceManager(QObject):
             Опрос всех доступных портов и адресов (1..6).
             Для каждого адреса отправляется запрос серийного номера.
             Ответ проверяется по длине, заголовку, CRC.
-            При успешном ответе формируется объект DeviceInfo.
+            При успешном ответе формируется объект DeviceInfo
+            и записывается в self.devices (список подключенных девайсов)
         """
 
         self.devices.clear()
@@ -318,7 +323,8 @@ class DeviceManager(QObject):
                         self.devices.append(device)
 
             except serial.SerialException as e:
-                print(f"Ошибка открытия порта {port_name}: {e}")
+                self.device_error.emit(port_name, f"Помилка відкриття порту: {e}")
+                # print(f"Ошибка открытия порта {port_name}: {e}")
 
        
         # --- Режим отладки---
@@ -334,7 +340,7 @@ class DeviceManager(QObject):
 
     def load_config_file(self) -> dict:
         """
-        Загружает конфигурацию из файла devices/config.txt.
+        Загружает конфигурацию из файла config/config.txt.
         Возвращает словарь вида:
         {
             "2400126": {"location_type": "room", "posit_number": 1, "expected_address": 2},
@@ -343,8 +349,7 @@ class DeviceManager(QObject):
         }
         """
         config_data = {}
-        try:
-            # with open("devices/config.txt", "r", encoding="utf-8") as f:
+        try:            
             with open("config/config.txt", "r", encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
@@ -462,10 +467,14 @@ class DeviceManager(QObject):
                 Это предотвращает передачу QObject/виджетов между потоками и
                 позволяет GUI создавать виджеты исключительно в главном потоке.
             """
+            self.devices = valid_devices
             serializable_list = [self._device_to_dict(d) for d in valid_devices]            
 
             # Эмитим список словарей. Слот в App должен ожидать list[dict].
             self.device_found.emit(serializable_list)
+        else:
+            self.device_found.emit([])
+            self.device_info.emit("Прилади не знайдено або не пройшли перевірку конфігурації")
 
 
     def _device_to_dict(self, device):

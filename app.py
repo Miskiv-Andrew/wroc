@@ -235,7 +235,9 @@ class App(QObject):
         self.device_manager_thread = None   
 
         # атрибут - словарь состояния цистерн - формат : номер - флаг ( 1 : True, 2 : False) 
-        self.cistern_dict = {}     
+        self.cistern_dict = {}  
+
+        self.current_columns = 1   
 
         # атрибут интерфейса
         self.ui = None
@@ -273,19 +275,40 @@ class App(QObject):
         # показываем окно во весь экран
         self.ui.showMaximized()
     
+    # def setup_ui(self):
+        # """
+        #     Розмітка(grid) для вікон приладів
+        # """
+        # self.container = self.ui.findChild(QWidget, "containerCard")
+        # if self.container:
+        #     self.grid = self.container.layout()
+        #     #Install event filter to catch resize events
+        #     #self.container.installEventFilter(self)
+        # else:
+        #     # Fallback
+        #     self.grid = QGridLayout(self.container)
+
     def setup_ui(self):
         """
             Розмітка(grid) для вікон приладів
         """
         self.container = self.ui.findChild(QWidget, "containerCard")
-        if self.container:
-            self.grid = self.container.layout()
-            #Install event filter to catch resize events
-            #self.container.installEventFilter(self)
-        else:
-            # Fallback
-            self.grid = QGridLayout(self.container)
         
+        if self.container is None:
+            # Если контейнер не найден, создаём его и размещаем в centralwidget
+            self.container = QWidget(self.ui.centralwidget)
+            layout = QVBoxLayout(self.ui.centralwidget)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.addWidget(self.container)
+        
+        self.grid = self.container.layout()
+        
+        if self.grid is None:
+            # Если у контейнера нет layout, создаём QGridLayout
+            self.grid = QGridLayout(self.container)
+            self.grid.setSpacing(5)
+            self.container.setLayout(self.grid)
+            
 
     def eventFilter(self, obj, event):
         """
@@ -325,7 +348,10 @@ class App(QObject):
         
         # Сигнал старта опроса приборов
         self.butt_system_start = self.ui.findChild(QAction, "butt_system_start") 
-        self.butt_system_start.triggered.connect(self.start_polling.emit) 
+
+        # self.butt_system_start.triggered.connect(self.start_polling.emit) 
+        self.butt_system_start.triggered.connect(self.start_polling_and_test_system)
+
         self.start_polling.connect(self.device_manager.dispatch_poll_step) 
 
         # Сигнал виводу вікна для бази даних
@@ -388,6 +414,18 @@ class App(QObject):
         except Exception as e:
             self.ui.textEdit.append(f"Error parsing packet for {sn}: {e}\n-------------------")
 
+    # def create_device_card(self, device):
+    #     """
+    #         Створення вікна для приладу
+    #     """
+    #     if device.get("location_type") == "cistern":
+    #         card = DeviceCardBarrel()
+    #     elif device.get("location_type") == "room":
+    #         card = DeviceCardWall()
+    #     else:
+    #         return None
+    #     return card
+    
     def create_device_card(self, device):
         """
             Створення вікна для приладу
@@ -397,8 +435,14 @@ class App(QObject):
         elif device.get("location_type") == "room":
             card = DeviceCardWall()
         else:
+            # Неизвестный тип расположения - выводим ошибку и возвращаем None
+            self.ui.textEdit.append(
+                f"Помилка: невідомий тип розташування '{device.get('location_type')}' "
+                f"для приладу SN {device.get('serial_number')}"
+            )
             return None
         return card
+
     
     def recalculate_grid(self):
         """Recalculate grid rows/columns on window resize"""
@@ -456,19 +500,16 @@ class App(QObject):
         """
             Слот выведения найденных приборов 
         """
+        if not devices:
+            self.ui.textEdit.append("Прилади не знайдено. Перевірте підключення та спробуйте ще раз.")
+            self.cards_by_sn.clear()
+            self.clear_layout()
+            return
+        
         self.ui.textEdit.append("Знайдено прилади:")        
 
-        self.cards_by_sn.clear()
+        self.cards_by_sn.clear()      
 
-        #container = self.ui.findChild(QWidget, "containerCard")
-        width = self.container.width()
-
-        # Тут розрахуй кількість комірок і габаритні розміри комірок
-
-        card_width = 400   # same as minimumWidth
-        spacing = self.grid.spacing()
-
-        #columns = max(1, width // (card_width + spacing))
         n = len(devices)
         if n <= 3:
             columns = max(1, n)
@@ -509,7 +550,7 @@ class App(QObject):
         self.sync_devices_with_cisterns()
 
         # Начинаем процедуру опроса внешней Системы Управления
-        self.start_test_polling("devices/cistern.json")
+        # self.start_test_polling("devices/cistern.json")
 
     
 
@@ -543,37 +584,34 @@ class App(QObject):
             self.cistern_dict = {i: False for i in range(1, 21)}
             # перезаписываем файл дефолтным содержимым
             with open(json_file, "w", encoding="utf-8") as f:
-                json.dump(self.cistern_dict, f, ensure_ascii=False, indent=4)    
+                json.dump(self.cistern_dict, f, ensure_ascii=False, indent=4)   
 
     # def sync_devices_with_cisterns(self):
     #     """
-    #         После окончания поиска приборов синхронизируем их состояние
-    #         с данными из cistern_dict.
-    #         Если прибор с location_type == "cistern" не имеет соответствия в словаре,
-    #         предупреждаем администратора.
+    #         Синхронизируем только GUI-карточки с self.cistern_dict.
+    #         НИКОГДА не вызываем методы объектов DeviceManager из GUI-потока.
     #     """
-    #     for device in self.device_manager.devices:
-    #         # Пропускаем приборы, которые относятся к помещению
-    #         if device.location_type == "room":
+    #     for sn, card in self.cards_by_sn.items():
+    #         try:
+    #             # пытаемся получить posit из карточки (если карточка его сохранила)
+    #             posit = getattr(card, "posit_number", None) or getattr(card, "posit", None)
+    #             if posit is None:
+    #                 continue
+    #             # сохраняем состояние на карточке (визуальное обновление реализовать в карточке)
+    #             setattr(card, "is_full", bool(self.cistern_dict.get(int(posit), False)))
+    #             #card.set_barrel_image(card.is_full)
+    #         except Exception:
     #             continue
-
-    #         # Для приборов-цистерн проверяем соответствие
-    #         num = device.posit_number
-    #         if num in self.cistern_dict:
-    #             device.set_full(self.cistern_dict[num])
-    #         else:               
-    #             s =  (f"УВАГА: прилад с posit_number = {num} " 
-    #                  f"(location_type='cistern') не має відповідного запису " 
-    #                  f"Перевірте конфигурацію в cistern_dict та cistern.json!")
-                
-    #             self.on_objects_error("Звірка приладів і цистерн", s)
-
 
     def sync_devices_with_cisterns(self):
         """
             Синхронизируем только GUI-карточки с self.cistern_dict.
             НИКОГДА не вызываем методы объектов DeviceManager из GUI-потока.
         """
+        # Проверка: если cistern_dict пуст или не загружен - принудительно загружаем
+        if not self.cistern_dict:
+            self.load_cistern_data("config/cistern.json")
+        
         for sn, card in self.cards_by_sn.items():
             try:
                 # пытаемся получить posit из карточки (если карточка его сохранила)
@@ -582,7 +620,7 @@ class App(QObject):
                     continue
                 # сохраняем состояние на карточке (визуальное обновление реализовать в карточке)
                 setattr(card, "is_full", bool(self.cistern_dict.get(int(posit), False)))
-                #card.set_barrel_image(card.is_full)
+                # card.set_barrel_image(card.is_full)  # раскомментировать если нужно обновить иконку
             except Exception:
                 continue
 
@@ -672,6 +710,17 @@ class App(QObject):
         if self.device_manager_thread is not None and self.device_manager_thread.isRunning():
             self.device_manager_thread.quit()
             self.device_manager_thread.wait(2000)
+
+    def start_polling_and_test_system(self):
+        """
+            Слот, запускаемый по нажатию кнопки "Старт системы".
+            Запускает циклический опрос приборов и имитацию опроса внешней системы.
+        """
+        # Запуск основного опроса приборов
+        self.start_polling.emit()
+        
+        # Запуск имитации опроса внешней системы (состояние цистерн)
+        self.start_test_polling("devices/cistern.json")
 
 
     
