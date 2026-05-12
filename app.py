@@ -574,23 +574,7 @@ class App(QObject):
             with open(json_file, "w", encoding="utf-8") as f:
                 json.dump(self.cistern_dict, f, ensure_ascii=False, indent=4)   
 
-    # def sync_devices_with_cisterns(self):
-    #     """
-    #         Синхронизируем только GUI-карточки с self.cistern_dict.
-    #         НИКОГДА не вызываем методы объектов DeviceManager из GUI-потока.
-    #     """
-    #     for sn, card in self.cards_by_sn.items():
-    #         try:
-    #             # пытаемся получить posit из карточки (если карточка его сохранила)
-    #             posit = getattr(card, "posit_number", None) or getattr(card, "posit", None)
-    #             if posit is None:
-    #                 continue
-    #             # сохраняем состояние на карточке (визуальное обновление реализовать в карточке)
-    #             setattr(card, "is_full", bool(self.cistern_dict.get(int(posit), False)))
-    #             #card.set_barrel_image(card.is_full)
-    #         except Exception:
-    #             continue
-
+    
     def sync_devices_with_cisterns(self):
         """
             Синхронизируем только GUI-карточки с self.cistern_dict.

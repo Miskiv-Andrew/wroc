@@ -823,85 +823,194 @@ class DeviceManager(QObject):
         self.poll_timer.start(self.short_interval_ms)
 
 
+    # def handle_ready_read(self):
+    #     try:
+    #         # добавляем новые байты в глобальный буфер
+    #         self.rx_buffer.extend(bytes(self.serial_port.readAll()))
+
+    #         # проверяем, собрался ли полный пакет
+    #         if len(self.rx_buffer) < self.last_command.length:
+    #             # пока данных мало — ждём следующих readyRead
+    #             return
+
+    #         # если данных достаточно — останавливаем таймер
+    #         self.error_timer.stop()
+
+    #         # ищем начало пакета (например, 0x55 0xAA)
+    #         start_index = self.rx_buffer.find(b'\x55\xAA')
+    #         if start_index == -1:
+    #             self.device_error.emit(
+    #                 self.devices[self.current_index].port,
+    #                 "Помилка: не знайдено початок пакету"
+    #             )
+    #             self.rx_buffer.clear()
+    #             self.poll_timer.start(self.short_interval_ms)
+    #             return
+
+    #         # отбрасываем мусор до начала пакета
+    #         self.rx_buffer = self.rx_buffer[start_index:]
+
+    #         # проверка длины
+    #         if len(self.rx_buffer) != self.last_command.length:
+    #             self.device_error.emit(
+    #                 self.devices[self.current_index].port,
+    #                 f"Помилка: довжина пакету {len(self.rx_buffer)}, очікувалось {self.last_command.length}"
+    #             )
+    #             self.rx_buffer.clear()
+    #             self.poll_timer.start(self.short_interval_ms)
+    #             return
+
+    #         # проверка CRC
+    #         crc_calc = self.calc_crc(self.rx_buffer[:-1])
+    #         crc_recv = self.rx_buffer[-1]
+    #         if crc_calc != crc_recv:
+    #             self.device_error.emit(
+    #                 self.devices[self.current_index].port,
+    #                 f"Помилка CRC: отримано {crc_recv}, очікувалось {crc_calc}"
+    #             )
+    #             self.rx_buffer.clear()
+    #             return
+
+    #         # формируем пакет
+    #         mode = self.select_mode()
+    #         packet = DevicePacket(
+    #             self.devices[self.current_index].serial_number,
+    #             self.rx_buffer[:-1],
+    #             mode
+    #         )
+            
+    #         # передаём пакет дальше
+    #         self.device_response.emit(packet)
+
+    #         # очищаем буфер для следующего запроса
+    #         self.rx_buffer.clear()
+
+    #         # закрываем порт (если логика требует освобождения COM)
+    #         if self.serial_port.isOpen():
+    #             self.serial_port.close()
+
+    #         # запускаем переход к следующему прибору
+    #         self.poll_timer.start(self.short_interval_ms)
+
+    #     except Exception as e:
+    #         self.device_error.emit(
+    #             self.devices[self.current_index].port,
+    #             f"Ошибка при обработке ответа: {e}"
+    #         )
+    #         self.rx_buffer.clear()
+    #         if self.serial_port.isOpen():
+    #             self.serial_port.close()
+    #         self.poll_timer.start(self.short_interval_ms)
+
     def handle_ready_read(self):
+        """
+            Обработка входящих данных от прибора.
+            Алгоритм:
+            1. Добавляем новые байты в буфер.
+            2. Ищем в буфере заголовок 0x55 0xAA.
+            3. Если заголовок не найден:
+            - Если буфер превысил разумный размер (5 * last_command.length) - очищаем.
+            - Иначе ждём следующих данных.
+            4. Если заголовок найден:
+            - Проверяем, достаточно ли байт от заголовка до конца буфера для полного пакета.
+            - Если недостаточно - ждём следующих данных.
+            - Если достаточно - отбрасываем мусор до заголовка, извлекаем пакет, обрабатываем.
+        """
         try:
-            # добавляем новые байты в глобальный буфер
+            # Добавляем новые байты в глобальный буфер
             self.rx_buffer.extend(bytes(self.serial_port.readAll()))
 
-            # проверяем, собрался ли полный пакет
-            if len(self.rx_buffer) < self.last_command.length:
-                # пока данных мало — ждём следующих readyRead
+            # # Защита от переполнения буфера мусором (максимум 5 пакетов мусора)
+            # max_buffer_size = self.last_command.length * 5 if self.last_command else 1024
+            # if len(self.rx_buffer) > max_buffer_size:
+                # self.device_error.emit(
+                    # self.devices[self.current_index].port,
+                    # f"Буфер переповнений ({len(self.rx_buffer)} байт). Очищення."
+                # )
+                # self.rx_buffer.clear()
+                # self.poll_timer.start(self.short_interval_ms)
+                # return
+
+            # Ищем заголовок пакета
+            start_index = self.rx_buffer.find(b'\x55\xAA')
+            
+            if start_index == -1:
+                # Заголовок не найден - ждём следующих данных, буфер не очищаем
                 return
 
-            # если данных достаточно — останавливаем таймер
+            # Проверяем, достаточно ли байт от заголовка для полного пакета
+            required_bytes = self.last_command.length
+            available_bytes_from_start = len(self.rx_buffer) - start_index
+
+            if available_bytes_from_start < required_bytes:
+                # Не хватает данных - ждём следующий readyRead
+                return
+
+            # --- Здесь мы точно имеем полный пакет от заголовка ---
+            
+            # Отбрасываем мусор до заголовка
+            if start_index > 0:
+                self.rx_buffer = self.rx_buffer[start_index:]
+            
+            # Извлекаем пакет (ровно required_bytes байт)
+            packet_data = self.rx_buffer[:required_bytes]
+            
+            # Очищаем буфер полностью после извлечения пакета
+            self.rx_buffer.clear()
+
+            # Останавливаем таймер ожидания
             self.error_timer.stop()
 
-            # ищем начало пакета (например, 0x55 0xAA)
-            start_index = self.rx_buffer.find(b'\x55\xAA')
-            if start_index == -1:
-                self.device_error.emit(
-                    self.devices[self.current_index].port,
-                    "Помилка: не знайдено початок пакету"
-                )
-                self.rx_buffer.clear()
-                self.poll_timer.start(self.short_interval_ms)
-                return
-
-            # отбрасываем мусор до начала пакета
-            self.rx_buffer = self.rx_buffer[start_index:]
-
-            # проверка длины
-            if len(self.rx_buffer) != self.last_command.length:
-                self.device_error.emit(
-                    self.devices[self.current_index].port,
-                    f"Помилка: довжина пакету {len(self.rx_buffer)}, очікувалось {self.last_command.length}"
-                )
-                self.rx_buffer.clear()
-                self.poll_timer.start(self.short_interval_ms)
-                return
-
-            # проверка CRC
-            crc_calc = self.calc_crc(self.rx_buffer[:-1])
-            crc_recv = self.rx_buffer[-1]
+            # Проверка CRC
+            crc_calc = self.calc_crc(packet_data[:-1])
+            crc_recv = packet_data[-1]
             if crc_calc != crc_recv:
                 self.device_error.emit(
                     self.devices[self.current_index].port,
-                    f"Помилка CRC: отримано {crc_recv}, очікувалось {crc_calc}"
+                    f"Помилка CRC: отримано {crc_recv}, обчислено {crc_calc}"
                 )
-                self.rx_buffer.clear()
+                # Буфер уже очищен от обработанных данных, продолжаем опрос
+                self._finish_current_poll()
                 return
 
-            # формируем пакет
+            # Формируем пакет
             mode = self.select_mode()
             packet = DevicePacket(
                 self.devices[self.current_index].serial_number,
-                self.rx_buffer[:-1],
+                packet_data[:-1],  # без CRC
                 mode
             )
             
-            # передаём пакет дальше
+            # Передаём пакет дальше
             self.device_response.emit(packet)
 
-            # очищаем буфер для следующего запроса
-            self.rx_buffer.clear()
-
-            # закрываем порт (если логика требует освобождения COM)
-            if self.serial_port.isOpen():
-                self.serial_port.close()
-
-            # запускаем переход к следующему прибору
-            self.poll_timer.start(self.short_interval_ms)
+            # Завершаем опрос текущего прибора
+            self._finish_current_poll()
 
         except Exception as e:
             self.device_error.emit(
-                self.devices[self.current_index].port,
-                f"Ошибка при обработке ответа: {e}"
+                self.devices[self.current_index].port if self.current_index < len(self.devices) else "unknown",
+                f"Помилка при обробці відповіді: {e}"
             )
             self.rx_buffer.clear()
             if self.serial_port.isOpen():
                 self.serial_port.close()
             self.poll_timer.start(self.short_interval_ms)
+            
+            
+    # Дополнительный метод _finish_current_poll для избежания дублирования кода
 
-
+    def _finish_current_poll(self):
+        """
+            Завершает опрос текущего прибора:
+            - Закрывает порт (если требуется)
+            - Запускает таймер для перехода к следующему прибору
+        """
+        # Закрываем порт, если он открыт
+        if self.serial_port.isOpen():
+            self.serial_port.close()
+        
+        # Запускаем переход к следующему прибору
+        self.poll_timer.start(self.short_interval_ms)
     
     
