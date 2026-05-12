@@ -390,7 +390,7 @@ class App(QObject):
         if card is None:
             return
 
-        sn = packet.serial_number
+        sn   = packet.serial_number
         mode = packet.mode
         size = packet.size
         buff = packet.buff
@@ -412,19 +412,7 @@ class App(QObject):
                     self.ui.textEdit.append(f"Parsed temperature for {sn}:  {data}\n-------------------")
 
         except Exception as e:
-            self.ui.textEdit.append(f"Error parsing packet for {sn}: {e}\n-------------------")
-
-    # def create_device_card(self, device):
-    #     """
-    #         Створення вікна для приладу
-    #     """
-    #     if device.get("location_type") == "cistern":
-    #         card = DeviceCardBarrel()
-    #     elif device.get("location_type") == "room":
-    #         card = DeviceCardWall()
-    #     else:
-    #         return None
-    #     return card
+            self.ui.textEdit.append(f"Error parsing packet for {sn}: {e}\n-------------------")    
     
     def create_device_card(self, device):
         """

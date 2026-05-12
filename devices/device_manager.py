@@ -704,6 +704,12 @@ class DeviceManager(QObject):
         """
             Основной метод опроса приборов
         """
+        if not self.devices:
+            # Нет приборов для опроса - останавливаем таймер и выходим
+            self.poll_timer.stop()
+            self.device_info.emit("Немає приладів для опитування. Виконайте пошук приладів.")
+            return
+        
         # 1. Инкрементируем глобальный индекс текущего прибора
         self.current_index += 1
 
@@ -721,39 +727,31 @@ class DeviceManager(QObject):
 
         self.temperature_index += 1
 
-        # # 4. Формируем запрос с учётом адреса прибора
-        # if self.temperature_index < 10 :
-        #     request = self.make_request()  
-
-        # # Каждый 10 запрос - получаем температуру
-        # elif self.temperature_index >= 10 :
-        #     self.temperature_index = 0
-        #     request = self.make_request("temperature") 
-
+     
+        # # Каждый 10 запрос - отправляем запрос температуры   
         if ((self.temperature_index // num_dev) % 10 == 0) and self.temperature_index > num_dev:
             request = self.make_request("temperature")
             if self.temperature_index == num_dev * 10 + (num_dev - 1):
                 self.temperature_index = 0
         else:
             request = self.make_request() 
-
-
             
           
         # 5. Отправляем запрос через RTII порт, указанный в DeviceInfo
         try:            
             # 5. Настраиваем глобальный QSerialPort на нужный COM
-            self.serial_port.setPortName(device.port)
+            self.serial_port.setPortName(device.port)          
 
             if not self.serial_port.isOpen():
+                # Проверяем, не занят ли порт другим процессом
                 if not self.serial_port.open(QIODevice.ReadWrite):
-                    self.device_error.emit(device.port, "Не удалось открыть порт")
-                    self.poll_timer.start(self.short_interval_ms) 
+                    self.device_error.emit(device.port, f"Не вдалося відкрити порт {device.port}. Можливо, порт зайнятий іншим процесом.")
+                    # Сбрасываем состояние порта
+                    self.serial_port.clearError()
+                    self.poll_timer.start(self.short_interval_ms)
                     return
                 
             # 6. Отправляем запрос
-            # self.serial_port.write(request)
-
             written = self.serial_port.write(request)
             if written != len(request):
                 self.device_error.emit(
@@ -770,14 +768,21 @@ class DeviceManager(QObject):
             # Если порт не открылся или ошибка при записи
             self.device_error.emit(device.port, f"Ошибка работы с портом: {e}")
             self.poll_timer.start(self.short_interval_ms)        
-            return     
-       
+            return    
 
-        # 6. Запускаем аварийный таймер ожидания ответа
-        self.error_timer.start(self.timeout_interval_ms)
-        
-        # очищаем приемный буфер перед новым запросом
-        self.rx_buffer.clear()        
+        # Очищаем приемный буфер перед новым запросом
+        self.rx_buffer.clear()
+
+        # 6. Запускаем аварийный таймер ожидания ответа ТОЛЬКО если запись прошла успешно
+        # Если была ошибка записи - таймер не запускаем, переходим к следующему прибору
+        if written == len(request):
+            self.error_timer.start(self.timeout_interval_ms)
+        else:
+            # Ошибка записи - порт закрываем и переходим к следующему прибору без запуска таймера
+            if self.serial_port.isOpen():
+                self.serial_port.close()
+            self.poll_timer.start(self.short_interval_ms)
+            return     
 
     def select_mode(self) -> str:
         """
