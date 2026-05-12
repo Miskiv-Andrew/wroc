@@ -767,7 +767,9 @@ class DeviceManager(QObject):
         except serial.SerialException as e:
             # Если порт не открылся или ошибка при записи
             self.device_error.emit(device.port, f"Ошибка работы с портом: {e}")
-            self.poll_timer.start(self.short_interval_ms)        
+            self.poll_timer.start(self.short_interval_ms) 
+            self.serial_port.clearError()
+            self.serial_port.close()      
             return    
 
         # Очищаем приемный буфер перед новым запросом
