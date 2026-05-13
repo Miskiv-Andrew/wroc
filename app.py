@@ -242,6 +242,11 @@ class App(QObject):
         # атрибут интерфейса
         self.ui = None
 
+        self.barrel_container = None
+        self.barrel_grid = None
+        self.wall_container = None
+        self.wall_layout = None
+
         # загрузка формы из .ui файла
         self.load_ui() 
 
@@ -288,27 +293,41 @@ class App(QObject):
         #     # Fallback
         #     self.grid = QGridLayout(self.container)
 
+    # def setup_ui(self):
+    #     """
+    #         Розмітка(grid) для вікон приладів
+    #     """
+    #     self.container = self.ui.findChild(QWidget, "containerCard")
+        
+    #     if self.container is None:
+    #         # Если контейнер не найден, создаём его и размещаем в centralwidget
+    #         self.container = QWidget(self.ui.centralwidget)
+    #         layout = QVBoxLayout(self.ui.centralwidget)
+    #         layout.setContentsMargins(0, 0, 0, 0)
+    #         layout.addWidget(self.container)
+        
+    #     self.grid = self.container.layout()
+        
+    #     if self.grid is None:
+    #         # Если у контейнера нет layout, создаём QGridLayout
+    #         self.grid = QGridLayout(self.container)
+    #         self.grid.setSpacing(5)
+    #         self.container.setLayout(self.grid)
+    
     def setup_ui(self):
-        """
-            Розмітка(grid) для вікон приладів
-        """
-        self.container = self.ui.findChild(QWidget, "containerCard")
-        
-        if self.container is None:
-            # Если контейнер не найден, создаём его и размещаем в centralwidget
-            self.container = QWidget(self.ui.centralwidget)
-            layout = QVBoxLayout(self.ui.centralwidget)
-            layout.setContentsMargins(0, 0, 0, 0)
-            layout.addWidget(self.container)
-        
-        self.grid = self.container.layout()
-        
-        if self.grid is None:
-            # Если у контейнера нет layout, создаём QGridLayout
-            self.grid = QGridLayout(self.container)
-            self.grid.setSpacing(5)
-            self.container.setLayout(self.grid)
-            
+        self.barrel_container = self.ui.findChild(QWidget, "containerCard")
+        self.wall_container = self.ui.findChild(QWidget, "containerWall")
+
+        self.barrel_grid = self.barrel_container.layout()
+        if self.barrel_grid is None:
+            self.barrel_grid = QGridLayout(self.barrel_container)
+            self.barrel_grid.setSpacing(5)
+            self.barrel_container.setLayout(self.barrel_grid)
+
+        self.wall_layout = self.wall_container.layout()
+        if self.wall_layout is None:
+            self.wall_layout = QVBoxLayout(self.wall_container)
+            self.wall_container.setLayout(self.wall_layout)
 
     def eventFilter(self, obj, event):
         """
@@ -472,17 +491,88 @@ class App(QObject):
             col = i % self.current_columns
             self.grid.addWidget(card, row, col)
     
+    # def clear_layout(self, delete_widgets=True):
+    #     while self.grid.count():
+    #         item = self.grid.takeAt(0)
+    #         w = item.widget()
+    #         if w is not None:
+    #             if delete_widgets:
+    #                 w.setParent(None)
+    #                 w.deleteLater()
+    #             else:
+    #                 # Just remove from layout, keep the widget alive
+    #                 w.setParent(None)
+
     def clear_layout(self, delete_widgets=True):
-        while self.grid.count():
-            item = self.grid.takeAt(0)
-            w = item.widget()
-            if w is not None:
-                if delete_widgets:
-                    w.setParent(None)
-                    w.deleteLater()
-                else:
-                    # Just remove from layout, keep the widget alive
-                    w.setParent(None)
+        for layout in (self.barrel_grid, self.wall_layout):
+            if layout is None:
+                continue
+            while layout.count():
+                item = layout.takeAt(0)
+                if item is None:
+                    break
+                w = item.widget()
+                if w is not None:
+                    if delete_widgets:
+                        w.setParent(None)
+                        w.deleteLater()
+                    else:
+                        w.setParent(None)
+
+    # def on_devices_updated(self, devices):
+    #     """
+    #         Слот выведения найденных приборов 
+    #     """
+    #     if not devices:
+    #         self.ui.textEdit.append("Прилади не знайдено. Перевірте підключення та спробуйте ще раз.")
+    #         self.cards_by_sn.clear()
+    #         self.clear_layout()
+    #         return
+        
+    #     self.ui.textEdit.append("Знайдено прилади:")        
+    #     self.cards_by_sn.clear()      
+
+    #     n = len(devices)
+    #     if n <= 3:
+    #         columns = max(1, n)
+    #     elif n > 3:
+    #         columns = math.ceil(math.sqrt(n))
+    #     else:
+    #         columns = 1
+        
+    #     self.clear_layout()
+
+    #     for i, device in enumerate(devices):
+
+    #         card = self.create_device_card(device)
+    #         if card is None:
+    #             continue
+
+    #         if isinstance(card, DeviceCardBarrel):
+    #             card.set_barrel_image(bool(self.cistern_dict.get(device.get("posit_number"), False)))
+
+    #         card.posit_number = device.get("posit_number")
+    #         card.serial_number = device.get("serial_number")
+    #         self.cards_by_sn[card.serial_number] = card
+
+    #         card.set_serial(device.get("serial_number"))
+    #         card.set_position(device.get("posit_number"))
+    #         card.set_status("active")
+    #         #card.add_spectrum()
+    #         card.setMinimumSize(0, 0)
+    #         card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+    #         row = i // columns
+    #         col = i % columns
+
+    #         self.grid.addWidget(card, row, col)  
+    
+    #         self.ui.textEdit.append(f"Порт: {device.get('port')}, Адреса: {device.get('address')}, SN: {device.get('serial_number')}")
+        
+    #     # Вносим в приборы данные про цистерны
+    #     self.sync_devices_with_cisterns()
+
+    #     # Начинаем процедуру опроса внешней Системы Управления
+    #     # self.start_test_polling("devices/cistern.json")
 
     def on_devices_updated(self, devices):
         """
@@ -493,23 +583,18 @@ class App(QObject):
             self.cards_by_sn.clear()
             self.clear_layout()
             return
-        
-        self.ui.textEdit.append("Знайдено прилади:")        
 
-        self.cards_by_sn.clear()      
-
-        n = len(devices)
-        if n <= 3:
-            columns = max(1, n)
-        elif n > 3:
-            columns = math.ceil(math.sqrt(n))
-        else:
-            columns = 1
-        
+        self.ui.textEdit.append("Знайдено прилади:")
+        self.cards_by_sn.clear()
         self.clear_layout()
 
-        for i, device in enumerate(devices):
+        barrel_devices = [i for i in devices if i.get("location_type") == "cistern"]
+        wall_devices = [i for i in devices if i.get("location_type") == "room"]
 
+        columns = max(1, math.ceil(math.sqrt(len(barrel_devices)))) if barrel_devices else 1
+
+        barrel_index = 0
+        for device in barrel_devices + wall_devices:
             card = self.create_device_card(device)
             if card is None:
                 continue
@@ -524,21 +609,26 @@ class App(QObject):
             card.set_serial(device.get("serial_number"))
             card.set_position(device.get("posit_number"))
             card.set_status("active")
-            card.add_spectrum()
             card.setMinimumSize(0, 0)
             card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-            row = i // columns
-            col = i % columns
 
-            self.grid.addWidget(card, row, col)  
-    
-            self.ui.textEdit.append(f"Порт: {device.get('port')}, Адреса: {device.get('address')}, SN: {device.get('serial_number')}")
-        
+            if isinstance(card, DeviceCardBarrel):
+                row = barrel_index // columns
+                col = barrel_index % columns
+                self.barrel_grid.addWidget(card, row, col)
+                barrel_index += 1
+            else:
+                self.wall_layout.addWidget(card)
+
+            self.ui.textEdit.append(
+                f"Порт: {device.get('port')}, Адреса: {device.get('address')}, SN: {device.get('serial_number')}"
+            )
+
         # Вносим в приборы данные про цистерны
         self.sync_devices_with_cisterns()
 
         # Начинаем процедуру опроса внешней Системы Управления
-        # self.start_test_polling("devices/cistern.json")
+        self.start_test_polling("devices/cistern.json")
 
     
 

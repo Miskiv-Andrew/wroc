@@ -59,7 +59,7 @@ background-color: rgb(248, 248, 249)
      <property name="frameShadow">
       <enum>QFrame::Shadow::Raised</enum>
      </property>
-     <layout class="QGridLayout" name="gridLayout_3">
+     <layout class="QGridLayout" name="gridLayout_3" rowstretch="1,5,2">
       <property name="leftMargin">
        <number>5</number>
       </property>
@@ -72,23 +72,6 @@ background-color: rgb(248, 248, 249)
       <property name="bottomMargin">
        <number>5</number>
       </property>
-      <item row="2" column="0">
-       <widget class="QWidget" name="spectrumWidget" native="true">
-        <property name="minimumSize">
-         <size>
-          <width>0</width>
-          <height>80</height>
-         </size>
-        </property>
-        <property name="maximumSize">
-         <size>
-          <width>16777215</width>
-          <height>300</height>
-         </size>
-        </property>
-        <layout class="QVBoxLayout" name="verticalLayout_2"/>
-       </widget>
-      </item>
       <item row="1" column="0">
        <widget class="QFrame" name="measureSection">
         <property name="sizePolicy">
@@ -100,6 +83,7 @@ background-color: rgb(248, 248, 249)
         <property name="styleSheet">
          <string notr="true">#measureSection {
 border: 1px solid black;
+border-radius: 8px
 }</string>
         </property>
         <property name="frameShape">
@@ -207,7 +191,7 @@ border: 1px solid black;
        </widget>
       </item>
       <item row="0" column="0">
-       <widget class="QFrame" name="statusSection">
+       <widget class="QFrame" name="infoSection">
         <property name="sizePolicy">
          <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
           <horstretch>0</horstretch>
@@ -215,8 +199,9 @@ border: 1px solid black;
          </sizepolicy>
         </property>
         <property name="styleSheet">
-         <string notr="true">#statusSection {
+         <string notr="true">#infoSection {
 border: 1px solid black;
+border-radius: 8px
 }</string>
         </property>
         <property name="frameShape">
@@ -267,31 +252,99 @@ border: 1px solid black;
              </property>
             </widget>
            </item>
+          </layout>
+         </item>
+        </layout>
+       </widget>
+      </item>
+      <item row="2" column="0">
+       <widget class="QFrame" name="statusSection">
+        <property name="styleSheet">
+         <string notr="true">#statusSection {
+border: 1px solid black;
+border-radius: 8px
+}</string>
+        </property>
+        <property name="frameShape">
+         <enum>QFrame::Shape::StyledPanel</enum>
+        </property>
+        <property name="frameShadow">
+         <enum>QFrame::Shadow::Raised</enum>
+        </property>
+        <layout class="QHBoxLayout" name="horizontalLayout_6">
+         <item>
+          <layout class="QHBoxLayout" name="horizontalLayout_5">
            <item>
-            <widget class="QLabel" name="statusLabel">
-             <property name="minimumSize">
-              <size>
-               <width>12</width>
-               <height>24</height>
-              </size>
-             </property>
-             <property name="maximumSize">
-              <size>
-               <width>12</width>
-               <height>24</height>
-              </size>
-             </property>
-             <property name="styleSheet">
-              <string notr="true">background-color: rgb(86, 86, 86);
-border-radius: 6px</string>
-             </property>
-             <property name="text">
-              <string/>
-             </property>
-             <property name="alignment">
-              <set>Qt::AlignmentFlag::AlignCenter</set>
-             </property>
-            </widget>
+            <layout class="QVBoxLayout" name="verticalLayout">
+             <item>
+              <widget class="QLabel" name="lowDetectorLabel">
+               <property name="text">
+                <string>&lt;div style='line-height:80%'&gt;Низькочутливий&lt;br&gt;детектор&lt;/div&gt;</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QLabel" name="lowDetectorValue">
+               <property name="text">
+                <string/>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </item>
+           <item>
+            <layout class="QVBoxLayout" name="verticalLayout_2">
+             <item>
+              <widget class="QLabel" name="highDetectorLabel">
+               <property name="text">
+                <string>&lt;div style='line-height:80%'&gt;Високочутливий&lt;br&gt;детектор&lt;/div&gt;</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QLabel" name="highDetectorValue">
+               <property name="text">
+                <string/>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </item>
+           <item>
+            <layout class="QVBoxLayout" name="verticalLayout_4">
+             <item>
+              <widget class="QLabel" name="validityLabel">
+               <property name="text">
+                <string>&lt;div style='line-height:80%'&gt;Валідність&lt;br&gt;результатів&lt;/div&gt;</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QLabel" name="validityValue">
+               <property name="text">
+                <string/>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </item>
+           <item>
+            <layout class="QVBoxLayout" name="verticalLayout_6">
+             <item>
+              <widget class="QLabel" name="statusLabel">
+               <property name="text">
+                <string>Статус:</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QLabel" name="statusValue">
+               <property name="text">
+                <string/>
+               </property>
+              </widget>
+             </item>
+            </layout>
            </item>
           </layout>
          </item>
