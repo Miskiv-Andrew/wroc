@@ -39,6 +39,9 @@ class DeviceManager(QObject):
 
     # сигнал передачи данных опроса в GUI
     device_response = Signal(object)   
+
+     # сигнал передачи ошибки CRC в GUI
+    device_connection_status = Signal(str, bool, bool)  # (serial_number, connected, crc_error)
                            
 
     def __init__(self):
@@ -815,6 +818,13 @@ class DeviceManager(QObject):
         device: DeviceInfo = self.devices[self.current_index]
         self.device_error.emit(device.port, "Прибор не ответил\n")
 
+        # Отправляем сигнал о потере связи
+        self.device_connection_status.emit(
+            device.serial_number,
+            False,  # connected = False
+            False   # crc_error = False (не актуально)
+            )
+
         # Закрываем порт, чтобы не держать его открытым зря
         if self.serial_port.isOpen():
             self.serial_port.close()
@@ -823,84 +833,6 @@ class DeviceManager(QObject):
         self.poll_timer.start(self.short_interval_ms)
 
 
-    # def handle_ready_read(self):
-    #     try:
-    #         # добавляем новые байты в глобальный буфер
-    #         self.rx_buffer.extend(bytes(self.serial_port.readAll()))
-
-    #         # проверяем, собрался ли полный пакет
-    #         if len(self.rx_buffer) < self.last_command.length:
-    #             # пока данных мало — ждём следующих readyRead
-    #             return
-
-    #         # если данных достаточно — останавливаем таймер
-    #         self.error_timer.stop()
-
-    #         # ищем начало пакета (например, 0x55 0xAA)
-    #         start_index = self.rx_buffer.find(b'\x55\xAA')
-    #         if start_index == -1:
-    #             self.device_error.emit(
-    #                 self.devices[self.current_index].port,
-    #                 "Помилка: не знайдено початок пакету"
-    #             )
-    #             self.rx_buffer.clear()
-    #             self.poll_timer.start(self.short_interval_ms)
-    #             return
-
-    #         # отбрасываем мусор до начала пакета
-    #         self.rx_buffer = self.rx_buffer[start_index:]
-
-    #         # проверка длины
-    #         if len(self.rx_buffer) != self.last_command.length:
-    #             self.device_error.emit(
-    #                 self.devices[self.current_index].port,
-    #                 f"Помилка: довжина пакету {len(self.rx_buffer)}, очікувалось {self.last_command.length}"
-    #             )
-    #             self.rx_buffer.clear()
-    #             self.poll_timer.start(self.short_interval_ms)
-    #             return
-
-    #         # проверка CRC
-    #         crc_calc = self.calc_crc(self.rx_buffer[:-1])
-    #         crc_recv = self.rx_buffer[-1]
-    #         if crc_calc != crc_recv:
-    #             self.device_error.emit(
-    #                 self.devices[self.current_index].port,
-    #                 f"Помилка CRC: отримано {crc_recv}, очікувалось {crc_calc}"
-    #             )
-    #             self.rx_buffer.clear()
-    #             return
-
-    #         # формируем пакет
-    #         mode = self.select_mode()
-    #         packet = DevicePacket(
-    #             self.devices[self.current_index].serial_number,
-    #             self.rx_buffer[:-1],
-    #             mode
-    #         )
-            
-    #         # передаём пакет дальше
-    #         self.device_response.emit(packet)
-
-    #         # очищаем буфер для следующего запроса
-    #         self.rx_buffer.clear()
-
-    #         # закрываем порт (если логика требует освобождения COM)
-    #         if self.serial_port.isOpen():
-    #             self.serial_port.close()
-
-    #         # запускаем переход к следующему прибору
-    #         self.poll_timer.start(self.short_interval_ms)
-
-    #     except Exception as e:
-    #         self.device_error.emit(
-    #             self.devices[self.current_index].port,
-    #             f"Ошибка при обработке ответа: {e}"
-    #         )
-    #         self.rx_buffer.clear()
-    #         if self.serial_port.isOpen():
-    #             self.serial_port.close()
-    #         self.poll_timer.start(self.short_interval_ms)
 
     def handle_ready_read(self):
         """
@@ -918,18 +850,7 @@ class DeviceManager(QObject):
         """
         try:
             # Добавляем новые байты в глобальный буфер
-            self.rx_buffer.extend(bytes(self.serial_port.readAll()))
-
-            # # Защита от переполнения буфера мусором (максимум 5 пакетов мусора)
-            # max_buffer_size = self.last_command.length * 5 if self.last_command else 1024
-            # if len(self.rx_buffer) > max_buffer_size:
-                # self.device_error.emit(
-                    # self.devices[self.current_index].port,
-                    # f"Буфер переповнений ({len(self.rx_buffer)} байт). Очищення."
-                # )
-                # self.rx_buffer.clear()
-                # self.poll_timer.start(self.short_interval_ms)
-                # return
+            self.rx_buffer.extend(bytes(self.serial_port.readAll()))        
 
             # Ищем заголовок пакета
             start_index = self.rx_buffer.find(b'\x55\xAA')
@@ -946,7 +867,7 @@ class DeviceManager(QObject):
                 # Не хватает данных - ждём следующий readyRead
                 return
 
-            # --- Здесь мы точно имеем полный пакет от заголовка ---
+            # --- Здесь мы имеем полный пакет от заголовка ---
             
             # Отбрасываем мусор до заголовка
             if start_index > 0:
@@ -965,13 +886,27 @@ class DeviceManager(QObject):
             crc_calc = self.calc_crc(packet_data[:-1])
             crc_recv = packet_data[-1]
             if crc_calc != crc_recv:
+                # Отправляем сигнал о CRC ошибке (связь есть, но пакет повреждён)
+                self.device_connection_status.emit(
+                self.devices[self.current_index].serial_number,
+                True,   # connected = True (связь есть)
+                True    # crc_error = True
+                )
+
                 self.device_error.emit(
                     self.devices[self.current_index].port,
                     f"Помилка CRC: отримано {crc_recv}, обчислено {crc_calc}"
                 )
-                # Буфер уже очищен от обработанных данных, продолжаем опрос
+                # CRC не совпало, чистим буфер, закрываем порт
                 self._finish_current_poll()
                 return
+
+            # После успешной проверки CRC сигнализируем о нормальной связи
+            self.device_connection_status.emit(
+                    self.devices[self.current_index].serial_number,
+                    True,   # connected = True
+                    False   # crc_error = False
+                )
 
             # Формируем пакет
             mode = self.select_mode()

@@ -120,6 +120,96 @@ class DeviceCardBarrel(QWidget):
         layout.addWidget(self.spectrum)
     
 
+    def set_detector_status(self, low_failure: bool, high_failure: bool, result_valid: bool):
+        """
+        Устанавливает состояние детекторов и валидность результата.
+        low_failure: True - отказ низкочувствительного детектора, False - норма
+        high_failure: True - отказ высокочувствительного детектора, False - норма
+        result_valid: True - результат валидный, False - невалидный
+        """
+        # Низкочувствительный детектор
+        low_label = self.ui.findChild(QLabel, "lowDetectorValue")
+        if low_label:
+            if not low_failure:
+                low_label.setText("Відмова")
+                low_label.setStyleSheet("color: red; font: 600 11pt 'Segoe UI';")
+            else:
+                low_label.setText("Норма")
+                low_label.setStyleSheet("color: green; font: 600 11pt 'Segoe UI';")
+        
+        # Высокочувствительный детектор
+        high_label = self.ui.findChild(QLabel, "highDetectorValue")
+        if high_label:
+            if not high_failure:
+                high_label.setText("Відмова")
+                high_label.setStyleSheet("color: red; font: 600 11pt 'Segoe UI';")
+            else:
+                high_label.setText("Норма")
+                high_label.setStyleSheet("color: green; font: 600 11pt 'Segoe UI';")
+        
+        # Валидность результата
+        valid_label = self.ui.findChild(QLabel, "validityValue")
+        if valid_label:
+            if result_valid:
+                valid_label.setText("Норма")
+                valid_label.setStyleSheet("color: green; font: 600 11pt 'Segoe UI';")
+            else:
+                valid_label.setText("Невалідний")
+                valid_label.setStyleSheet("color: red; font: 600 11pt 'Segoe UI';")
+
+        # status_label = self.ui.findChild(QLabel, "statusValue")
+        # status_label.setText("Норма")
+        # status_label.setStyleSheet("color: green; font: 600 11pt 'Segoe UI';")
+   
+    def set_connection_status(self, connected: bool, crc_error: bool = False):
+        """
+        Устанавливает статус связи с прибором.
+        connected: True - связь есть, False - нет связи
+        crc_error: True - ошибка CRC (пакет получен, но повреждён)
+        """
+        status_label = self.ui.findChild(QLabel, "statusValue")
+        low_label = self.ui.findChild(QLabel, "lowDetectorValue")
+        high_label = self.ui.findChild(QLabel, "highDetectorValue")
+        valid_label = self.ui.findChild(QLabel, "validityValue")
+        
+        if not connected:
+            # Нет связи
+            if status_label:
+                status_label.setText("Немає зв'язку")
+                status_label.setStyleSheet("color: red; font: 600 11pt 'Segoe UI';")
+            if low_label:
+                low_label.setText("-----")
+                low_label.setStyleSheet("color: red; font: 600 11pt 'Segoe UI';")
+            if high_label:
+                high_label.setText("-----")
+                high_label.setStyleSheet("color: red; font: 600 11pt 'Segoe UI';")
+            if valid_label:
+                valid_label.setText("-----")
+                valid_label.setStyleSheet("color: red; font: 600 11pt 'Segoe UI';")
+        
+        elif crc_error:
+            # Ошибка CRC (связь есть, но пакет повреждён)
+            if status_label:
+                status_label.setText("Норма")
+                status_label.setStyleSheet("color: green; font: 600 11pt 'Segoe UI';")
+            if low_label:
+                low_label.setText("-----")
+                low_label.setStyleSheet("color: red; font: 600 11pt 'Segoe UI';")
+            if high_label:
+                high_label.setText("-----")
+                high_label.setStyleSheet("color: red; font: 600 11pt 'Segoe UI';")
+            if valid_label:
+                valid_label.setText("Помилка CRC")
+                valid_label.setStyleSheet("color: red; font: 600 11pt 'Segoe UI';")
+        
+        else:
+            # Нормальная связь
+            if status_label:
+                status_label.setText("Норма")
+                status_label.setStyleSheet("color: green; font: 600 11pt 'Segoe UI';")
+
+        
+
 class DeviceCardWall(QWidget):
     """
         Клас настінного детектору(у кімнаті)
@@ -186,6 +276,96 @@ class DeviceCardWall(QWidget):
         layout = self.ui.spectrumWidget.layout()
         layout.setContentsMargins(0,0,0,0)
         layout.addWidget(self.spectrum)
+
+    
+    def set_detector_status(self, low_failure: bool, high_failure: bool, result_valid: bool):
+        """
+        Устанавливает состояние детекторов и валидность результата.
+        low_failure: True - отказ низкочувствительного детектора, False - норма
+        high_failure: True - отказ высокочувствительного детектора, False - норма
+        result_valid: True - результат валидный, False - невалидный
+        """
+        # Низкочувствительный детектор
+        low_label = self.ui.findChild(QLabel, "lowDetectorValue")
+        if low_label:
+            if not low_failure:
+                low_label.setText("Відмова")
+                low_label.setStyleSheet("color: red; font: 600 11pt 'Segoe UI';")
+            else:
+                low_label.setText("Норма")
+                low_label.setStyleSheet("color: green; font: 600 11pt 'Segoe UI';")
+        
+        # Высокочувствительный детектор
+        high_label = self.ui.findChild(QLabel, "highDetectorValue")
+        if high_label:
+            if not high_failure:
+                high_label.setText("Відмова")
+                high_label.setStyleSheet("color: red; font: 600 11pt 'Segoe UI';")
+            else:
+                high_label.setText("Норма")
+                high_label.setStyleSheet("color: green; font: 600 11pt 'Segoe UI';")
+        
+        # Валидность результата
+        valid_label = self.ui.findChild(QLabel, "validityValue")
+        if valid_label:
+            if result_valid:
+                valid_label.setText("Норма")
+                valid_label.setStyleSheet("color: green; font: 600 11pt 'Segoe UI';")
+            else:
+                valid_label.setText("Невалідний")
+                valid_label.setStyleSheet("color: red; font: 600 11pt 'Segoe UI';")
+
+        # status_label = self.ui.findChild(QLabel, "statusValue")
+        # status_label.setText("Норма")
+        # status_label.setStyleSheet("color: green; font: 600 11pt 'Segoe UI';")
+
+    def set_connection_status(self, connected: bool, crc_error: bool = False):
+        """
+        Устанавливает статус связи с прибором.
+        connected: True - связь есть, False - нет связи
+        crc_error: True - ошибка CRC (пакет получен, но повреждён)
+        """
+        status_label = self.ui.findChild(QLabel, "statusValue")
+        low_label = self.ui.findChild(QLabel, "lowDetectorValue")
+        high_label = self.ui.findChild(QLabel, "highDetectorValue")
+        valid_label = self.ui.findChild(QLabel, "validityValue")
+        
+        if not connected:
+            # Нет связи
+            if status_label:
+                status_label.setText("Немає зв'язку")
+                status_label.setStyleSheet("color: red; font: 600 11pt 'Segoe UI';")
+            if low_label:
+                low_label.setText("-----")
+                low_label.setStyleSheet("color: red; font: 600 11pt 'Segoe UI';")
+            if high_label:
+                high_label.setText("-----")
+                high_label.setStyleSheet("color: red; font: 600 11pt 'Segoe UI';")
+            if valid_label:
+                valid_label.setText("-----")
+                valid_label.setStyleSheet("color: red; font: 600 11pt 'Segoe UI';")
+        
+        elif crc_error:
+            # Ошибка CRC (связь есть, но пакет повреждён)
+            if status_label:
+                status_label.setText("Норма")
+                status_label.setStyleSheet("color: green; font: 600 11pt 'Segoe UI';")
+            if low_label:
+                low_label.setText("-----")
+                low_label.setStyleSheet("color: red; font: 600 11pt 'Segoe UI';")
+            if high_label:
+                high_label.setText("-----")
+                high_label.setStyleSheet("color: red; font: 600 11pt 'Segoe UI';")
+            if valid_label:
+                valid_label.setText("Помилка CRC")
+                valid_label.setStyleSheet("color: red; font: 600 11pt 'Segoe UI';")
+        
+        else:
+            # Нормальная связь
+            if status_label:
+                status_label.setText("Норма")
+                status_label.setStyleSheet("color: green; font: 600 11pt 'Segoe UI';")
+
 
 class DatabaseWindow(QWidget):
     """
@@ -392,6 +572,9 @@ class App(QObject):
 
         # Тестовый сигнал для отработки опроса приборов
         self.device_manager.device_response.connect(self.on_device_packet, Qt.ConnectionType.QueuedConnection) 
+
+        # сигнал для информирования о состоянии связи
+        self.device_manager.device_connection_status.connect(self.on_device_connection_status, Qt.ConnectionType.QueuedConnection)
   
 
     def on_show_info(self, info: str):
@@ -400,16 +583,16 @@ class App(QObject):
         """
         self.ui.textEdit.append(info)
 
-
+   
     def on_device_packet(self, packet):
         """
-            Тестовый метод - отработка опроса приборов
+            Обработка пакетов от приборов
         """
         card = self.cards_by_sn.get(packet.serial_number)
         if card is None:
             return
 
-        sn   = packet.serial_number
+        sn = packet.serial_number
         mode = packet.mode
         size = packet.size
         buff = packet.buff
@@ -423,6 +606,13 @@ class App(QObject):
                     accuracy = data["accuracy"]
                     card.set_dose_value(dose, accuracy)
                     self.ui.textEdit.append(f"Parsed dose for {sn}:  {dose:.2f} μSv/h ± {accuracy}%\n-------------------")
+                    
+                    # Добавлено: установка состояния детекторов и валидности
+                    card.set_detector_status(
+                        low_failure=data.get("low_sens_failure", True),
+                        high_failure=data.get("high_sens_failure", True),
+                        result_valid=data.get("result_valid", False)
+                    )
 
             elif mode == "Temperature":
                 data = self.device_manager._temp_data(buff)
@@ -431,7 +621,8 @@ class App(QObject):
                     self.ui.textEdit.append(f"Parsed temperature for {sn}:  {data}\n-------------------")
 
         except Exception as e:
-            self.ui.textEdit.append(f"Error parsing packet for {sn}: {e}\n-------------------")    
+            self.ui.textEdit.append(f"Error parsing packet for {sn}: {e}\n-------------------")
+    
     
     def create_device_card(self, device):
         """
@@ -783,6 +974,14 @@ class App(QObject):
         
         # Запуск имитации опроса внешней системы (состояние цистерн)
         self.start_test_polling("devices/cistern.json")
+    
+    def on_device_connection_status(self, serial_number: str, connected: bool, crc_error: bool):
+        """
+        Обработка изменения статуса связи прибора
+        """
+        card = self.cards_by_sn.get(serial_number)
+        if card:
+            card.set_connection_status(connected, crc_error)
 
 
     

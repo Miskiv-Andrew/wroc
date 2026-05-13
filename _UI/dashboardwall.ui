@@ -286,7 +286,10 @@ border-radius: 8px
              <item>
               <widget class="QLabel" name="lowDetectorValue">
                <property name="text">
-                <string/>
+                <string>-----</string>
+               </property>
+               <property name="alignment">
+                <set>Qt::AlignmentFlag::AlignCenter</set>
                </property>
               </widget>
              </item>
@@ -304,7 +307,10 @@ border-radius: 8px
              <item>
               <widget class="QLabel" name="highDetectorValue">
                <property name="text">
-                <string/>
+                <string>-----</string>
+               </property>
+               <property name="alignment">
+                <set>Qt::AlignmentFlag::AlignCenter</set>
                </property>
               </widget>
              </item>
@@ -322,7 +328,10 @@ border-radius: 8px
              <item>
               <widget class="QLabel" name="validityValue">
                <property name="text">
-                <string/>
+                <string>-----</string>
+               </property>
+               <property name="alignment">
+                <set>Qt::AlignmentFlag::AlignCenter</set>
                </property>
               </widget>
              </item>
@@ -340,7 +349,10 @@ border-radius: 8px
              <item>
               <widget class="QLabel" name="statusValue">
                <property name="text">
-                <string/>
+                <string>-----</string>
+               </property>
+               <property name="alignment">
+                <set>Qt::AlignmentFlag::AlignCenter</set>
                </property>
               </widget>
              </item>
