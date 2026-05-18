@@ -1,7 +1,7 @@
 import sys
 from PySide6.QtWidgets import QApplication, QWidget, QGridLayout, QVBoxLayout, QPushButton, QLabel, QSizePolicy
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtCore import QFile, QThread, QMetaObject, QTimer , Qt, QObject, Signal
+from PySide6.QtCore import QFile, QThread, QMetaObject, QTimer , Qt, QObject, Signal, QDateTime
 from devices.device_manager import DeviceManager
 from PySide6.QtGui import QAction, QPixmap
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -19,20 +19,60 @@ class SpectrumWidget(QWidget):
         layout = QVBoxLayout(self)
         layout.addWidget(self.canvas)
         self.ax = self.figure.add_subplot(111)
-        self.plot()
+        self.data = []  # хранение текущих данных
 
+    def update_data(self, data):
+        """Обновляет данные и перерисовывает график"""
+        self.data = data
+        self.plot()
+    
     def plot(self):
         self.ax.clear()
-        data = np.random.normal(1000, 200, 1000)  # fake counts
-        self.ax.hist(data, bins=30)
+        if self.data and len(self.data) > 0:
+            # Отрисовка спектра (гистограмма или линейный график)
+            self.ax.plot(self.data, linewidth=0.5)
+            self.ax.set_xlabel("Канал")
+            self.ax.set_ylabel("Кількість імпульсів")
+        else:
+            self.ax.text(0.5, 0.5, "Немає даних", transform=self.ax.transAxes, ha='center')
         self.canvas.draw()
 
 class DeviceCardBarrel(QWidget):
     """
         Клас детектору у контейнері
     """
-    def __init__(self):
+    # def __init__(self):
+    #     super().__init__()
+
+    #     loader = QUiLoader()
+    #     ui_file = QFile("_UI/dashboardbarrel.ui")
+    #     ui_file.open(QFile.ReadOnly)
+
+    #     self.ui = loader.load(ui_file)
+    #     ui_file.close()
+
+    #     if self.ui is None:
+    #         raise RuntimeError("Не удалось загрузить dashboardbarrel.ui")
+
+    #     self.setLayout(QVBoxLayout())
+    #     self.layout().setContentsMargins(5, 5, 5, 5)
+    #     #self.layout().setSpacing(0)
+    #     self.layout().addWidget(self.ui)
+    #     #self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+    #     #self.ui.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+    #     # label = self.ui.findChild(QLabel, "barrelLabel")
+    #     # path = os.path.abspath("_UI/barrelresized.png")
+    #     # if label:
+    #     #     label.setPixmap(QPixmap(path))
+
+    #     # Инициализация спектральных данных
+    #     self.spectrum_buffer = [0] * 1024   # массив для накопления спектра (1024 канала)
+    #     self.spectrum_counter = 0           # счётчик полученных спектров (0..600)
+
+    def __init__(self, parent_app=None):
         super().__init__()
+        self.parent_app = parent_app
 
         loader = QUiLoader()
         ui_file = QFile("_UI/dashboardbarrel.ui")
@@ -46,15 +86,20 @@ class DeviceCardBarrel(QWidget):
 
         self.setLayout(QVBoxLayout())
         self.layout().setContentsMargins(5, 5, 5, 5)
-        #self.layout().setSpacing(0)
         self.layout().addWidget(self.ui)
-        #self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        #self.ui.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
-        # label = self.ui.findChild(QLabel, "barrelLabel")
-        # path = os.path.abspath("_UI/barrelresized.png")
-        # if label:
-        #     label.setPixmap(QPixmap(path))
+        # Инициализация спектральных данных
+        self.spectrum_buffer = [0] * 1024   # массив для накопления спектра (1024 канала)
+        self.spectrum_counter = 0           # счётчик полученных спектров (0..600)
+        
+        # История активности
+        self.activity_history = []
+
+        # Подключение кнопки построения гистограммы
+        btn_hist = self.ui.findChild(QPushButton, "makeHist")
+        if btn_hist:
+            btn_hist.clicked.connect(self.plot_activity_histogram)
+
     
     def set_serial(self, serial):
         label = self.ui.findChild(QLabel, "serialLabel")
@@ -208,6 +253,147 @@ class DeviceCardBarrel(QWidget):
                 status_label.setText("Норма")
                 status_label.setStyleSheet("color: green; font: 600 11pt 'Segoe UI';")
 
+    # app.py - класс DeviceCardBarrel - метод add_spectrum_data
+
+    def add_spectrum_data(self, channels):
+        """
+        Добавляет полученный массив спектра к накопленному буферу
+        channels: list[int] - 1024 канала
+        """
+        if len(channels) != 1024:
+            return
+        
+        # Почленное сложение
+        for i in range(1024):
+            self.spectrum_buffer[i] += channels[i]
+        
+        self.spectrum_counter += 1
+        
+        # Опционально: обновление отображения спектра
+        self.update_spectrum_display()
+        
+        # Проверка: достигнут ли лимит 600 спектров
+        if self.spectrum_counter >= 600:
+            self.calculate_activity()
+
+    def is_spectrum_ready(self) -> bool:
+        """Проверяет, накоплено ли 600 спектров"""
+        return self.spectrum_counter >= 600
+
+    def reset_spectrum(self):
+        """
+            Сбрасывает накопленный спектр и счётчик
+        """
+        self.spectrum_buffer = [0] * 1024
+        self.spectrum_counter = 0
+        self.update_spectrum_display()  # очистить график
+
+    def get_spectrum_buffer(self):
+        """Возвращает накопленный буфер спектра"""
+        return self.spectrum_buffer
+
+    def get_spectrum_counter(self):
+        """Возвращает текущее значение счётчика"""
+        return self.spectrum_counter
+
+    def update_spectrum_display(self):
+        """
+        Отображает текущий накопленный спектр в spectrumWidget
+        """
+        # Проверяем, есть ли виджет спектра
+        if hasattr(self, 'spectrum') and self.spectrum:
+            # Передаём данные в SpectrumWidget для отрисовки
+            self.spectrum.update_data(self.spectrum_buffer)
+
+    # app.py - класс DeviceCardBarrel - метод calculate_activity
+
+    def calculate_activity(self):
+        """
+        Расчёт активности раствора на основе накопленного спектра (600 спектров = ~30 минут)
+        Сохраняет результат в историю и сбрасывает буфер для следующего цикла.
+        """
+               
+        # Заглушка расчёта активности
+        # Позже формула будет заменена на реальную
+        total_counts = sum(self.spectrum_buffer)
+        
+        # Условная формула (заглушка)
+        activity = total_counts / 600 / 1000  # кБк
+        
+        # Сохраняем в историю с текущей датой/временем
+        timestamp = QDateTime.currentDateTime()
+        
+        self.activity_history.append({
+            "timestamp": timestamp,
+            "activity": activity
+        })
+        
+        # Выводим в лог
+        if hasattr(self, 'parent_app') and self.parent_app:
+            self.parent_app.ui.textEdit.append(
+                f"Цистерна №{self.posit_number}: розраховано активність = {activity:.2f} кБк "
+                f"(сумарно {total_counts} імпульсів за 600 спектрів)"
+            )
+        
+        # Сбрасываем буфер и счётчик для следующего цикла накопления
+        self.reset_spectrum()
+
+    # app.py - класс DeviceCardBarrel - метод plot_activity_histogram
+
+    def plot_activity_histogram(self):
+        """
+        Строит гистограмму активности по сохранённой истории.
+        Вызывается по кнопке "Побудувати" на вкладке "Гістограма".
+        """
+        from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+        from matplotlib.figure import Figure
+        
+        if not self.activity_history:
+            if hasattr(self, 'parent_app') and self.parent_app:
+                self.parent_app.ui.textEdit.append(
+                    f"Цистерна №{self.posit_number}: немає даних активності для побудови графіка"
+                )
+            return
+        
+        # Получаем виджет для гистограммы
+        hist_widget = self.ui.findChild(QWidget, "histogramWidget")
+        if not hist_widget:
+            return
+        
+        # Очищаем старый график
+        for child in hist_widget.children():
+            if isinstance(child, FigureCanvas):
+                child.deleteLater()
+        
+        # Создаём новый график
+        figure = Figure()
+        canvas = FigureCanvas(figure)
+        ax = figure.add_subplot(111)
+        
+        # Подготовка данных
+        activities = [item["activity"] for item in self.activity_history]
+        indices = range(1, len(activities) + 1)
+        
+        # Построение гистограммы (столбцы)
+        ax.bar(indices, activities, width=0.8, color='steelblue')
+        ax.set_xlabel("Номер вимірювання")
+        ax.set_ylabel("Активність, кБк")
+        ax.set_title(f"Активність цистерни №{self.posit_number}")
+        ax.grid(True, alpha=0.3)
+        
+        # Добавляем подписи над столбцами
+        if activities:
+            max_activity = max(activities)
+            for i, act in enumerate(activities):
+                ax.text(i + 1, act + 0.01 * max_activity, f"{act:.1f}", 
+                        ha='center', va='bottom', fontsize=8)
+        
+        canvas.draw()
+        
+        # Размещаем график
+        layout = QVBoxLayout(hist_widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(canvas)
         
 
 class DeviceCardWall(QWidget):
@@ -620,6 +806,42 @@ class App(QObject):
                     card.set_temp_value(data)
                     self.ui.textEdit.append(f"Parsed temperature for {sn}:  {data}\n-------------------")
 
+
+            # app.py - метод on_device_packet, добавить после обработки Temperature
+
+            elif mode == "GetSpectre":
+                # packet.buff содержит словарь с данными спектра от _parse_spectrum_data
+                if isinstance(packet.buff, dict):
+                    channels = packet.buff.get("channels", [])
+                    paed_value = packet.buff.get("paed_value", 0.0)
+                    test_byte = packet.buff.get("test_byte", 0)
+                    result_valid = packet.buff.get("valid", False)
+                    
+                    self.ui.textEdit.append(f"Spectrum for {sn}: {len(channels)} channels, PAED={paed_value:.2f} μSv/h, valid={result_valid}")
+                    
+                    # Передаём данные в карточку прибора
+                    card.add_spectrum_data(channels)
+                    
+                    # Обновляем ПАЕД (из спектрального пакета)
+                    card.set_dose_value(paed_value, 0)  # точность для спектра пока не выводим
+                    
+                    # Обновляем состояние детекторов из test_byte
+                    # test_byte: D0=1 - отказ высокочувствительного, D1=1 - отказ низкочувствительного
+                    high_failure = bool(test_byte & 0b00000001)
+                    low_failure = bool(test_byte & 0b00000010)
+                    # result_valid уже получен
+                    
+                    card.set_detector_status(low_failure, high_failure, result_valid)
+                    
+                    # Проверяем, достигнут ли лимит в 600 спектров
+                    if card.is_spectrum_ready():
+                        # Заглушка расчёта активности
+                        self.ui.textEdit.append(f"Розрахунок активності для {sn} (600 спектрів накопичено)")
+                        # Здесь будет расчёт активности на основе card.get_spectrum_buffer()
+                        card.reset_spectrum()
+                else:
+                    self.ui.textEdit.append(f"Помилка: отримано некоректні дані спектру для {sn}")
+
         except Exception as e:
             self.ui.textEdit.append(f"Error parsing packet for {sn}: {e}\n-------------------")
     
@@ -878,6 +1100,45 @@ class App(QObject):
                 continue
 
 
+    def sync_devices_with_cisterns(self):
+        """
+            Синхронизируем только GUI-карточки с self.cistern_dict.
+            НИКОГДА не вызываем методы объектов DeviceManager из GUI-потока.
+        """
+        if not self.cistern_dict:
+            self.load_cistern_data("config/cistern.json")
+        
+        for sn, card in self.cards_by_sn.items():
+            try:
+                posit = getattr(card, "posit_number", None) or getattr(card, "posit", None)
+                if posit is None:
+                    continue
+                
+                old_full = getattr(card, "is_full", False)
+                new_full = bool(self.cistern_dict.get(int(posit), False))
+                
+                # Сохраняем новое состояние
+                card.is_full = new_full
+                card.set_barrel_image(new_full)
+                
+                # Если цистерна стала пустой - сбрасываем спектральные данные
+                if old_full != new_full and not new_full:
+                    # Цистерна опустошена - сброс спектра
+                    if hasattr(card, 'reset_spectrum'):
+                        card.reset_spectrum()
+                        # Выводим информацию в лог
+                        self.ui.textEdit.append(f"Цистерна №{posit} спорожнена. Спектр скинуто.")
+                
+                # Если цистерна стала полной - сброс спектра (начало нового накопления)
+                if old_full != new_full and new_full:
+                    if hasattr(card, 'reset_spectrum'):
+                        card.reset_spectrum()
+                        self.ui.textEdit.append(f"Цистерна №{posit} заповнена. Початок накопичення спектру.")
+                        
+            except Exception as e:
+                continue
+
+
     def start_test_polling(self, json_file: str):
         """
             Запускаем имитационный опрос Системы Управления( состояние заполненности цистерн ).
@@ -890,62 +1151,112 @@ class App(QObject):
         self.timer.start()   
    
 
-    def poll_system(self, json_file: str, new_data: dict = None):
-        """
-            Опрос Системы Управления.
-            Сравниваем новые данные new_data со словарём self.cistern_dict.
-            При изменении обновляем словарь, приборы и файл.
-            Если в новых данных есть номер цистерны, которого нет в словаре —
-            фиксируем ошибку и предупреждаем администратора.
-        """
+    # def poll_system(self, json_file: str, new_data: dict = None):
+    #     """
+    #         Опрос Системы Управления.
+    #         Сравниваем новые данные new_data со словарём self.cistern_dict.
+    #         При изменении обновляем словарь, приборы и файл.
+    #         Если в новых данных есть номер цистерны, которого нет в словаре —
+    #         фиксируем ошибку и предупреждаем администратора.
+    #     """
 
-        # Если new_data не передан — используем пустой словарь (имитация)
+    #     # Если new_data не передан — используем пустой словарь (имитация)
+    #     if new_data is None:
+    #         text = self.ui.lineEdit.text().strip()
+    #         if text == "Full":
+    #             new_data = {1: True}                
+    #         elif text == "Empty":
+    #             new_data = {1: False}                
+    #         else:  # Некорректный ввод — игнорируем                
+    #             return
+
+    #     updated = False
+    #     for num, new_value in new_data.items():
+    #         if num not in self.cistern_dict:
+    #             # Ошибка: цистерна отсутствует в конфигурации
+    #             print(
+    #                 f"УВАГА: отримано дані по цистерні №{num}, "
+    #                 f"якої немає у конфігурації cistern_dict. "
+    #                 f"Перевірте налаштування та файл cistern.json!"
+    #             )
+    #             continue
+
+    #         current_value = self.cistern_dict[num]
+    #         if new_value != current_value:
+    #             print(f"Зміна стану цистерни №{num}: {current_value} → {new_value}")
+    #             self.cistern_dict[num] = new_value
+    #             updated = True
+
+    #             # Обновляем соответствующий прибор
+    #             # for device in self.device_manager.devices:
+    #             #     if device.location_type == "cistern" and device.posit_number == num:
+    #             #         device.set_full(new_value)
+    #             #         break
+
+    #             # Обновляем только GUI‑карточки; не трогаем объекты DeviceManager из GUI‑потока
+    #             for sn, card in self.cards_by_sn.items():
+    #                 try:
+    #                     if getattr(card, "posit_number", None) == num or getattr(card, "posit", None) == num:
+    #                         setattr(card, "is_full", bool(new_value))
+    #                         card.set_barrel_image(card.is_full)
+    #                         break
+    #                 except Exception:
+    #                     continue
+
+
+    #     # Если были изменения — перезаписываем файл cistern.json
+    #     if updated:
+    #         with open(json_file, "w", encoding="utf-8") as f:                
+    #             json.dump(self.cistern_dict, f, ensure_ascii=False, indent=4)
+    #             try:
+    #                 self.sync_cisterns_to_manager.emit(self.cistern_dict)
+    #             except Exception:
+    #                 pass
+
+    def poll_system(self, json_file: str, new_data: dict = None):
         if new_data is None:
             text = self.ui.lineEdit.text().strip()
             if text == "Full":
-                new_data = {1: True}                
+                new_data = {1: True}
             elif text == "Empty":
-                new_data = {1: False}                
-            else:  # Некорректный ввод — игнорируем                
+                new_data = {1: False}
+            else:
                 return
 
         updated = False
         for num, new_value in new_data.items():
             if num not in self.cistern_dict:
-                # Ошибка: цистерна отсутствует в конфигурации
-                print(
-                    f"УВАГА: отримано дані по цистерні №{num}, "
-                    f"якої немає у конфігурації cistern_dict. "
-                    f"Перевірте налаштування та файл cistern.json!"
-                )
+                # ошибка: цистерна отсутствует
                 continue
 
             current_value = self.cistern_dict[num]
             if new_value != current_value:
-                print(f"Зміна стану цистерни №{num}: {current_value} → {new_value}")
                 self.cistern_dict[num] = new_value
                 updated = True
 
-                # Обновляем соответствующий прибор
-                # for device in self.device_manager.devices:
-                #     if device.location_type == "cistern" and device.posit_number == num:
-                #         device.set_full(new_value)
-                #         break
-
-                # Обновляем только GUI‑карточки; не трогаем объекты DeviceManager из GUI‑потока
+                # Обновляем GUI‑карточки и сбрасываем спектр при изменении состояния
                 for sn, card in self.cards_by_sn.items():
-                    try:
-                        if getattr(card, "posit_number", None) == num or getattr(card, "posit", None) == num:
-                            setattr(card, "is_full", bool(new_value))
-                            card.set_barrel_image(card.is_full)
-                            break
-                    except Exception:
-                        continue
+                    if getattr(card, "posit_number", None) == num or getattr(card, "posit", None) == num:
+                        old_full = getattr(card, "is_full", False)
+                        card.is_full = new_value
+                        card.set_barrel_image(new_value)
+                        
+                        # Если состояние изменилось
+                        if old_full != new_value:
+                            if new_value:
+                                # Цистерна стала полной - сброс спектра для нового цикла накопления
+                                if hasattr(card, 'reset_spectrum'):
+                                    card.reset_spectrum()
+                                    self.ui.textEdit.append(f"Цистерна №{num} заповнена. Початок накопичення спектру.")
+                            else:
+                                # Цистерна стала пустой - сброс спектра
+                                if hasattr(card, 'reset_spectrum'):
+                                    card.reset_spectrum()
+                                    self.ui.textEdit.append(f"Цистерна №{num} спорожнена. Спектр скинуто.")
+                        break
 
-
-        # Если были изменения — перезаписываем файл cistern.json
         if updated:
-            with open(json_file, "w", encoding="utf-8") as f:                
+            with open(json_file, "w", encoding="utf-8") as f:
                 json.dump(self.cistern_dict, f, ensure_ascii=False, indent=4)
                 try:
                     self.sync_cisterns_to_manager.emit(self.cistern_dict)
@@ -981,10 +1292,7 @@ class App(QObject):
         """
         card = self.cards_by_sn.get(serial_number)
         if card:
-            card.set_connection_status(connected, crc_error)
-
-
-    
+            card.set_connection_status(connected, crc_error)    
 
 
 def main():

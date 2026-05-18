@@ -35,6 +35,13 @@ class DeviceInfo:
         self.real_sensor = real_sensor 
         self.state_spectre = state_spectre  
 
+        # Атрибуты для работы со спектром
+        self.spectrum_buffer = [0] * 1024   # массив для накопления спектра (1024 канала)
+        self.spectrum_counter = 0           # счётчик полученных спектров (0..600)
+        self.spectrum_active = False        # флаг, что идёт набор спектра
+
+        self.start_spectre_retries = 0  # счётчик неудачных попыток запуска спектра (максимум 3)
+
 
     def set_full(self, value: bool):
         """
@@ -50,6 +57,39 @@ class DeviceInfo:
         """
         with self.__lock:
             return self.__full
+        
+    def reset_spectrum(self):
+        """
+            Обнуляет буфер спектра и счётчик
+        """
+        self.spectrum_buffer = [0] * 1024
+        self.spectrum_counter = 0
+
+    def add_to_spectrum(self, channels):
+        """
+            Почленно складывает полученный массив с буфером
+        """
+        for i in range(1024):
+            self.spectrum_buffer[i] += channels[i]
+        self.spectrum_counter += 1
+
+    def get_spectrum_buffer(self):
+        """
+            Возвращает текущий буфер спектра
+        """
+        return self.spectrum_buffer
+
+    def get_spectrum_counter(self):
+        """
+            Возвращает текущее значение счётчика
+        """
+        return self.spectrum_counter
+
+    def is_spectrum_ready(self):
+        """
+            Проверяет, достигнут ли лимит в 600 получений
+        """
+        return self.spectrum_counter >= 600
 
     def __repr__(self):
         """

@@ -636,6 +636,45 @@ class DeviceManager(QObject):
             "low_sens_failure": low_sens_detector_failure,
             "result_valid": result_valid
         }
+    
+
+
+    def _parse_spectrum_data(self, data: bytearray) -> dict:
+        """
+        Парсинг ответа GET_SIMPLE_SPECTRE (2076 байт)
+        Возвращает словарь:
+            - channels: list[int] - 1024 канала спектра (little-endian, 2 байта на канал)
+            - paed_value: float - значение ПАЕД из байт 2056-2059
+            - test_byte: int - байт 2061 (статус детекторов и валидности)
+            - valid: bool - флаг валидности (D2 из test_byte)
+        """
+        # 1. Массив спектра: 1024 канала * 2 байта = 2048 байт, начиная с байта 6
+        channels = []
+        for i in range(1024):
+            # little-endian: младший байт первый
+            low_byte = data[6 + i * 2]
+            high_byte = data[6 + i * 2 + 1]
+            value = (high_byte << 8) | low_byte
+            channels.append(value)
+        
+        # 2. ПАЕД из байт 2056-2059 (4 байта, little-endian unsigned int)
+        paed_raw = struct.unpack('<I', data[2056:2060])[0]
+        # Пересчёт ПАЕД по коэффициенту (аналогично _paed_data)
+        paed_value = paed_raw * 0.1 if (data[2061] & 0x80) else paed_raw * 0.01
+        
+        # 3. Тестовый байт (байт 2061)
+        test_byte = data[2061]
+        
+        # 4. Валидность результата (D2 = 1 - невалидный, D2 = 0 - валидный)
+        # В _paed_data: result_valid = True (валидный) если бит НЕ установлен
+        result_valid = not (test_byte & 0b00000100)
+        
+        return {
+            "channels": channels,
+            "paed_value": paed_value,
+            "test_byte": test_byte,
+            "valid": result_valid
+        }
 
 ################################################ БЛОК ОБНОВЛЕНИЯ ДАННЫХ ЦИСТЕРН ######################################################
 
@@ -652,6 +691,55 @@ class DeviceManager(QObject):
 
 ################################################ БЛОК ЦИКЛИЧЕСКОГО ОПРОСА ПРИБОРОВ ######################################################   
 
+    # def make_request(self, request_type: str = None) -> bytearray:
+    #     """
+    #         Формирует запрос к текущему прибору на основе его состояния.
+    #         Если указан request_type — выбираем команду по нему.
+    #     """
+    #     device: DeviceInfo = self.devices[self.current_index]
+
+    #     base_cmd = None
+
+    #     # Стандартный режим работы - ПАЕД или спектр
+    #     if request_type is None:
+    #         # Обычная логика выбора команды
+    #         if device.location_type == "room":
+    #             base_cmd = COMMAND_RAD_DOSE                  
+
+    #         elif device.location_type == "cistern":
+    #             if device.real_sensor == "G":
+    #                 base_cmd = COMMAND_RAD_DOSE
+    #             elif device.real_sensor == "S":
+    #                 if not device.get_full():
+    #                     base_cmd = COMMAND_RAD_DOSE
+    #                 else:
+    #                     if not device.state_spectre:
+    #                         base_cmd = COMMAND_START_SIMPLE_SPECTRE
+    #                         device.state_spectre = True
+    #                     else:
+    #                         base_cmd = COMMAND_GET_SIMPLE_SPECTRE
+    #             else:
+    #                 raise ValueError(f"Unknown real_sensor: {device.real_sensor}")
+    #         else:
+    #             raise ValueError(f"Unknown location_type: {device.location_type}")
+            
+    #     # Запрашиваем температуру
+    #     elif request_type == "temperature":
+    #         base_cmd = COMMAND_TEMP
+
+
+    #     # Запоминаем команду
+    #     self.last_command = base_cmd
+
+    #     # Добавляем адрес и контрольную сумму
+    #     command = bytearray(base_cmd.data)
+    #     command[3] = device.address
+    #     crc = self.calc_crc(command)
+    #     command.append(crc)
+
+    #     return command
+    
+
     def make_request(self, request_type: str = None) -> bytearray:
         """
             Формирует запрос к текущему прибору на основе его состояния.
@@ -666,19 +754,23 @@ class DeviceManager(QObject):
             # Обычная логика выбора команды
             if device.location_type == "room":
                 base_cmd = COMMAND_RAD_DOSE   
-               
 
             elif device.location_type == "cistern":
                 if device.real_sensor == "G":
                     base_cmd = COMMAND_RAD_DOSE
                 elif device.real_sensor == "S":
                     if not device.get_full():
+                        # Цистерна не полная - ПАЕД
                         base_cmd = COMMAND_RAD_DOSE
+                        device.spectrum_active = False
                     else:
-                        if not device.state_spectre:
+                        # Цистерна полная - работа со спектром
+                        if not device.spectrum_active:
+                            # Спектр ещё не запущен - запускаем
                             base_cmd = COMMAND_START_SIMPLE_SPECTRE
-                            device.state_spectre = True
+                            device.spectrum_active = True
                         else:
+                            # Спектр уже запущен - получаем данные
                             base_cmd = COMMAND_GET_SIMPLE_SPECTRE
                 else:
                     raise ValueError(f"Unknown real_sensor: {device.real_sensor}")
@@ -688,7 +780,6 @@ class DeviceManager(QObject):
         # Запрашиваем температуру
         elif request_type == "temperature":
             base_cmd = COMMAND_TEMP
-
 
         # Запоминаем команду
         self.last_command = base_cmd
@@ -814,24 +905,166 @@ class DeviceManager(QObject):
         else:
             return "UnknownMode"
         
+    # def handle_timeout_error(self):
+    #     device: DeviceInfo = self.devices[self.current_index]
+    #     self.device_error.emit(device.port, "Прибор не ответил\n")
+
+    #     # Отправляем сигнал о потере связи
+    #     self.device_connection_status.emit(
+    #         device.serial_number,
+    #         False,  # connected = False
+    #         False   # crc_error = False (не актуально)
+    #         )
+
+    #     # Закрываем порт, чтобы не держать его открытым зря
+    #     if self.serial_port.isOpen():
+    #         self.serial_port.close()
+
+    #     # Запускаем poll_timer для перехода к следующему прибору
+    #     self.poll_timer.start(self.short_interval_ms)
+
     def handle_timeout_error(self):
         device: DeviceInfo = self.devices[self.current_index]
-        self.device_error.emit(device.port, "Прибор не ответил\n")
-
+        
         # Отправляем сигнал о потере связи
         self.device_connection_status.emit(
             device.serial_number,
             False,  # connected = False
-            False   # crc_error = False (не актуально)
-            )
+            False   # crc_error = False
+        )
+        
+        # Сбрасываем spectrum_active при таймауте для спектральных режимов
+        if device.spectrum_active:
+            device.spectrum_active = False
+            device.start_spectre_retries = 0
+        
+        self.device_error.emit(device.port, "Прибор не ответил\n")
 
-        # Закрываем порт, чтобы не держать его открытым зря
         if self.serial_port.isOpen():
             self.serial_port.close()
 
-        # Запускаем poll_timer для перехода к следующему прибору
         self.poll_timer.start(self.short_interval_ms)
 
+
+
+    # def handle_ready_read(self):
+    #     """
+    #         Обработка входящих данных от прибора.
+    #         Алгоритм:
+    #         1. Добавляем новые байты в буфер.
+    #         2. Ищем в буфере заголовок 0x55 0xAA.
+    #         3. Если заголовок не найден:
+    #         - Если буфер превысил разумный размер (5 * last_command.length) - очищаем.
+    #         - Иначе ждём следующих данных.
+    #         4. Если заголовок найден:
+    #         - Проверяем, достаточно ли байт от заголовка до конца буфера для полного пакета.
+    #         - Если недостаточно - ждём следующих данных.
+    #         - Если достаточно - отбрасываем мусор до заголовка, извлекаем пакет, обрабатываем.
+    #     """
+    #     try:
+    #         # Добавляем новые байты в глобальный буфер
+    #         self.rx_buffer.extend(bytes(self.serial_port.readAll()))        
+
+    #         # Ищем заголовок пакета
+    #         start_index = self.rx_buffer.find(b'\x55\xAA')
+            
+    #         if start_index == -1:
+    #             # Заголовок не найден - ждём следующих данных, буфер не очищаем
+    #             return
+
+    #         # Проверяем, достаточно ли байт от заголовка для полного пакета
+    #         required_bytes = self.last_command.length
+    #         available_bytes_from_start = len(self.rx_buffer) - start_index
+
+    #         if available_bytes_from_start < required_bytes:
+    #             # Не хватает данных - ждём следующий readyRead
+    #             return
+
+    #         # --- Здесь мы имеем полный пакет от заголовка ---
+            
+    #         # Отбрасываем мусор до заголовка
+    #         if start_index > 0:
+    #             self.rx_buffer = self.rx_buffer[start_index:]
+            
+    #         # Извлекаем пакет (ровно required_bytes байт)
+    #         packet_data = self.rx_buffer[:required_bytes]
+            
+    #         # Очищаем буфер полностью после извлечения пакета
+    #         self.rx_buffer.clear()
+
+    #         # Останавливаем таймер ожидания
+    #         self.error_timer.stop()
+
+    #         # Проверка CRC
+    #         crc_calc = self.calc_crc(packet_data[:-1])
+    #         crc_recv = packet_data[-1]
+    #         if crc_calc != crc_recv:
+    #             # Отправляем сигнал о CRC ошибке (связь есть, но пакет повреждён)
+    #             self.device_connection_status.emit(
+    #             self.devices[self.current_index].serial_number,
+    #             True,   # connected = True (связь есть)
+    #             True    # crc_error = True
+    #             )
+
+    #             self.device_error.emit(
+    #                 self.devices[self.current_index].port,
+    #                 f"Помилка CRC: отримано {crc_recv}, обчислено {crc_calc}"
+    #             )
+    #             # CRC не совпало, чистим буфер, закрываем порт
+    #             self._finish_current_poll()
+    #             return
+
+    #         # После успешной проверки CRC сигнализируем о нормальной связи
+    #         self.device_connection_status.emit(
+    #                 self.devices[self.current_index].serial_number,
+    #                 True,   # connected = True
+    #                 False   # crc_error = False
+    #             )           
+            
+    #         # Определяем режим команды
+    #         mode = self.select_mode()
+
+    #         # Если это получение спектра - парсим данные
+    #         if mode == "GetSpectre":
+    #             try:
+    #                 spectre_data = self._parse_spectrum_data(packet_data[:-1])  # без CRC
+    #                 # Создаём пакет со спектральными данными вместо сырого буфера
+    #                 packet = DevicePacket(
+    #                     self.devices[self.current_index].serial_number,
+    #                     spectre_data,  # передаём словарь с данными спектра
+    #                     mode
+    #                 )
+    #             except Exception as e:
+    #                 self.device_error.emit(
+    #                     self.devices[self.current_index].port,
+    #                     f"Помилка парсингу спектру: {e}"
+    #                 )
+    #                 self._finish_current_poll()
+    #                 return
+    #         else:
+    #             # Для остальных режимов - передаём сырой буфер
+    #             packet = DevicePacket(
+    #                 self.devices[self.current_index].serial_number,
+    #                 packet_data[:-1],
+    #                 mode
+    #             )
+
+
+    #         # Передаём пакет дальше
+    #         self.device_response.emit(packet)
+
+    #         # Завершаем опрос текущего прибора
+    #         self._finish_current_poll()
+
+    #     except Exception as e:
+    #         self.device_error.emit(
+    #             self.devices[self.current_index].port if self.current_index < len(self.devices) else "unknown",
+    #             f"Помилка при обробці відповіді: {e}"
+    #         )
+    #         self.rx_buffer.clear()
+    #         if self.serial_port.isOpen():
+    #             self.serial_port.close()
+    #         self.poll_timer.start(self.short_interval_ms)
 
 
     def handle_ready_read(self):
@@ -850,7 +1083,18 @@ class DeviceManager(QObject):
         """
         try:
             # Добавляем новые байты в глобальный буфер
-            self.rx_buffer.extend(bytes(self.serial_port.readAll()))        
+            self.rx_buffer.extend(bytes(self.serial_port.readAll()))
+
+            # Защита от переполнения буфера мусором (максимум 5 пакетов мусора)
+            max_buffer_size = self.last_command.length * 5 if self.last_command else 1024
+            if len(self.rx_buffer) > max_buffer_size:
+                self.device_error.emit(
+                    self.devices[self.current_index].port,
+                    f"Буфер переповнений ({len(self.rx_buffer)} байт). Очищення."
+                )
+                self.rx_buffer.clear()
+                self._finish_current_poll()
+                return
 
             # Ищем заголовок пакета
             start_index = self.rx_buffer.find(b'\x55\xAA')
@@ -867,7 +1111,7 @@ class DeviceManager(QObject):
                 # Не хватает данных - ждём следующий readyRead
                 return
 
-            # --- Здесь мы имеем полный пакет от заголовка ---
+            # --- Здесь мы точно имеем полный пакет от заголовка ---
             
             # Отбрасываем мусор до заголовка
             if start_index > 0:
@@ -876,7 +1120,7 @@ class DeviceManager(QObject):
             # Извлекаем пакет (ровно required_bytes байт)
             packet_data = self.rx_buffer[:required_bytes]
             
-            # Очищаем буфер полностью после извлечения пакета
+            # Очищаем буфер
             self.rx_buffer.clear()
 
             # Останавливаем таймер ожидания
@@ -886,37 +1130,89 @@ class DeviceManager(QObject):
             crc_calc = self.calc_crc(packet_data[:-1])
             crc_recv = packet_data[-1]
             if crc_calc != crc_recv:
-                # Отправляем сигнал о CRC ошибке (связь есть, но пакет повреждён)
+                # Отправляем сигнал о CRC ошибке
                 self.device_connection_status.emit(
-                self.devices[self.current_index].serial_number,
-                True,   # connected = True (связь есть)
-                True    # crc_error = True
+                    self.devices[self.current_index].serial_number,
+                    True,   # connected = True
+                    True    # crc_error = True
                 )
-
                 self.device_error.emit(
                     self.devices[self.current_index].port,
                     f"Помилка CRC: отримано {crc_recv}, обчислено {crc_calc}"
                 )
-                # CRC не совпало, чистим буфер, закрываем порт
+                # Сбрасываем spectrum_active при ошибке CRC для спектральных команд
+                mode = self.select_mode()
+                if mode in ["StartSpectre", "GetSpectre"]:
+                    self.devices[self.current_index].spectrum_active = False
                 self._finish_current_poll()
                 return
 
-            # После успешной проверки CRC сигнализируем о нормальной связи
+            # Отправляем сигнал о нормальной связи
             self.device_connection_status.emit(
-                    self.devices[self.current_index].serial_number,
-                    True,   # connected = True
-                    False   # crc_error = False
-                )
-
-            # Формируем пакет
-            mode = self.select_mode()
-            packet = DevicePacket(
                 self.devices[self.current_index].serial_number,
-                packet_data[:-1],  # без CRC
-                mode
+                True,   # connected = True
+                False   # crc_error = False
             )
+
+            # Определяем режим команды
+            mode = self.select_mode()
+
+            # Если это запуск спектра - проверяем байт 7 (Res)
+            if mode == "StartSpectre":
+                # Байт 7 (считая с 0) - это packet_data[7] после заголовка 0x55 0xAA и адреса
+                res_byte = packet_data[7]  # 1 - успех, 0 - провал
+                
+                if res_byte == 0:
+                    # Прибор не начал набор спектра
+                    device = self.devices[self.current_index]
+                    device.start_spectre_retries += 1
+                    
+                    if device.start_spectre_retries >= 3:
+                        # 3 неудачные попытки - сброс и ошибка
+                        device.spectrum_active = False
+                        device.start_spectre_retries = 0
+                        self.device_error.emit(
+                            device.port,
+                            f"Не вдалося запустити набір спектру після 3 спроб (SN: {device.serial_number})"
+                        )
+                    else:
+                        # Повторяем START в следующем цикле
+                        device.spectrum_active = False
+                        self.device_info.emit(f"Повторна спроба запуску спектру для {device.serial_number} (спроба {device.start_spectre_retries})")
+                    
+                    # Не создаём пакет, переходим к следующему прибору
+                    self._finish_current_poll()
+                    return
+                else:
+                    # Успешный запуск - сбрасываем счётчик попыток
+                    self.devices[self.current_index].start_spectre_retries = 0
+
+            # Если это получение спектра - парсим данные
+            if mode == "GetSpectre":
+                try:
+                    spectre_data = self._parse_spectrum_data(packet_data[:-1])  # без CRC
+                    packet = DevicePacket(
+                        self.devices[self.current_index].serial_number,
+                        spectre_data,
+                        mode
+                    )
+                except Exception as e:
+                    self.device_error.emit(
+                        self.devices[self.current_index].port,
+                        f"Помилка парсингу спектру: {e}"
+                    )
+                    self.devices[self.current_index].spectrum_active = False
+                    self._finish_current_poll()
+                    return
+            else:
+                # Для остальных режимов - передаём сырой буфер
+                packet = DevicePacket(
+                    self.devices[self.current_index].serial_number,
+                    packet_data[:-1],
+                    mode
+                )
             
-            # Передаём пакет дальше
+            # передаём пакет дальше
             self.device_response.emit(packet)
 
             # Завершаем опрос текущего прибора
@@ -931,8 +1227,9 @@ class DeviceManager(QObject):
             if self.serial_port.isOpen():
                 self.serial_port.close()
             self.poll_timer.start(self.short_interval_ms)
-            
-            
+        
+                
+                
     # Дополнительный метод _finish_current_poll для избежания дублирования кода
 
     def _finish_current_poll(self):
