@@ -1,3 +1,5 @@
+# devices/device_package.py
+
 class DevicePacket:
     def __init__(self, serial_number: str, buff: bytearray, mode: str):
         self.serial_number = serial_number   # строка, серийный номер прибора

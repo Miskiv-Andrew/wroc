@@ -1,3 +1,5 @@
+# devices/device_info.py
+
 from dataclasses import dataclass
 import threading
 
@@ -7,9 +9,13 @@ class DeviceInfo:
         Класс для хранения информации о приборе.
     """
 
+    # def __init__(self, port: str, address: int, serial_number: str, device_type: str = "БДБГ-09S-23", 
+    #              description: str = "", no_answer:int = 0, old_ped:float = 0.0, 
+    #              real_sensor:str = "G", state_spectre:bool = False):
+        
     def __init__(self, port: str, address: int, serial_number: str, device_type: str = "БДБГ-09S-23", 
-                 description: str = "", no_answer:int = 0, old_ped:float = 0.0, 
-                 real_sensor:str = "G", state_spectre:bool = False):
+             description: str = "", no_answer:int = 0, old_ped:float = 0.0, 
+             real_sensor:str = "G", state_spectre:bool = False):
         
         # Атрибуты, получаемые при поиске приборов
         self.port = port                    # COM-порт, к которому подключен прибор
@@ -41,6 +47,9 @@ class DeviceInfo:
         self.spectrum_active = False        # флаг, что идёт набор спектра
 
         self.start_spectre_retries = 0  # счётчик неудачных попыток запуска спектра (максимум 3)
+
+        # Атрибут для хранения последнего значения ПАЕД
+        self.last_paed = 0.0
 
 
     def set_full(self, value: bool):
@@ -90,6 +99,18 @@ class DeviceInfo:
             Проверяет, достигнут ли лимит в 600 получений
         """
         return self.spectrum_counter >= 600
+    
+    def set_last_paed(self, value: float):
+        """
+            Устанавливает последнее полученное значение ПАЕД
+        """
+        self.last_paed = value
+
+    def get_last_paed(self) -> float:
+        """
+            Возвращает последнее полученное значение ПАЕД
+        """
+        return self.last_paed
 
     def __repr__(self):
         """
