@@ -97,6 +97,7 @@
     <addaction name="butt_system_start"/>
     <addaction name="separator"/>
     <addaction name="butt_system_stop_3"/>
+    <addaction name="butt_replace_device"/>
    </widget>
    <widget class="QMenu" name="menu_2">
     <property name="title">
@@ -145,6 +146,14 @@
     <string>Зупинка системи</string>
    </property>
   </action>
+  <action name="butt_replace_device">
+    <property name="enabled">
+        <bool>false</bool>
+    </property>
+    <property name="text">
+        <string>Заміна приладу</string>
+    </property>
+    </action>
  </widget>
  <resources/>
  <connections/>

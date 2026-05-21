@@ -771,6 +771,8 @@ class App(QObject):
         # Розмітка контейнеру для вікон приладів
         self.setup_ui()
 
+        self.missing_device_sn = None
+
 
     def load_ui(self):
         """
@@ -787,42 +789,8 @@ class App(QObject):
             raise RuntimeError("Не удалось загрузить main_window.ui")
 
         # показываем окно во весь экран
-        self.ui.showMaximized()
-    
-    # def setup_ui(self):
-        # """
-        #     Розмітка(grid) для вікон приладів
-        # """
-        # self.container = self.ui.findChild(QWidget, "containerCard")
-        # if self.container:
-        #     self.grid = self.container.layout()
-        #     #Install event filter to catch resize events
-        #     #self.container.installEventFilter(self)
-        # else:
-        #     # Fallback
-        #     self.grid = QGridLayout(self.container)
+        self.ui.showMaximized() 
 
-    # def setup_ui(self):
-    #     """
-    #         Розмітка(grid) для вікон приладів
-    #     """
-    #     self.container = self.ui.findChild(QWidget, "containerCard")
-        
-    #     if self.container is None:
-    #         # Если контейнер не найден, создаём его и размещаем в centralwidget
-    #         self.container = QWidget(self.ui.centralwidget)
-    #         layout = QVBoxLayout(self.ui.centralwidget)
-    #         layout.setContentsMargins(0, 0, 0, 0)
-    #         layout.addWidget(self.container)
-        
-    #     self.grid = self.container.layout()
-        
-    #     if self.grid is None:
-    #         # Если у контейнера нет layout, создаём QGridLayout
-    #         self.grid = QGridLayout(self.container)
-    #         self.grid.setSpacing(5)
-    #         self.container.setLayout(self.grid)
-    
     def setup_ui(self):
         self.barrel_container = self.ui.findChild(QWidget, "containerCard")
         self.wall_container = self.ui.findChild(QWidget, "containerWall")
@@ -844,15 +812,7 @@ class App(QObject):
         """
         if obj == self.container and event.type() == event.Type.Resize:
             self.recalculate_grid()
-        return super().eventFilter(obj, event)
-
-    # def db_window(self):
-    #     """
-    #         Вивід вікна для бази даних
-    #     """
-    #     self.window = DatabaseWindow()
-    #     self.window.resize(self.ui.size() * 0.7)
-    #     self.window.show()
+        return super().eventFilter(obj, event)   
 
 
     def db_window(self):
@@ -921,6 +881,14 @@ class App(QObject):
 
         self.device_manager.system_event.connect(self.on_system_event)
 
+        # Сигнал пропажи прибора
+        self.device_manager.device_missing.connect(self.on_device_missing)
+
+        # Пункт меню замены прибора
+        self.butt_replace_device = self.ui.findChild(QAction, "butt_replace_device")
+        if self.butt_replace_device:
+            self.butt_replace_device.triggered.connect(self.open_replace_dialog)
+
 
     def on_system_event(self, serial_number, event_type, description):
         device_id = self.db_manager.get_device_id(serial_number) if serial_number else None
@@ -931,102 +899,7 @@ class App(QObject):
         """
             Слот выведения текстовых данных
         """
-        self.ui.textEdit.append(info)   
-   
-
-    # def on_device_packet(self, packet):
-    #     """
-    #         Обработка пакетов от приборов
-    #     """
-    #     card = self.cards_by_sn.get(packet.serial_number)
-    #     if card is None:
-    #         return
-
-    #     sn = packet.serial_number
-    #     mode = packet.mode
-    #     size = packet.size
-    #     buff = packet.buff
-    #     self.ui.textEdit.append(f"Packet from {sn}: mode={mode}, size={size}")
-
-    #     try:
-    #         if mode == "RadDose":
-    #             data = self.device_manager._paed_data(buff)
-    #             if data:
-    #                 dose = data["ped_value"]
-    #                 accuracy = data["accuracy"]
-    #                 card.set_dose_value(dose, accuracy)
-    #                 self.ui.textEdit.append(f"Parsed dose for {sn}:  {dose:.2f} μSv/h ± {accuracy}%\n-------------------")
-                    
-    #                 # Установка состояния детекторов
-    #                 low_failure = data.get("low_sens_failure", True)
-    #                 high_failure = data.get("high_sens_failure", True)
-    #                 result_valid = data.get("result_valid", False)
-                    
-    #                 card.set_detector_status(low_failure, high_failure, result_valid)
-                    
-    #                 # Сохранение в БД для настенных детекторов
-    #                 if card.location_type == "room":
-    #                     device_id = self.db_manager.get_device_id(sn)
-    #                     if device_id is not None:
-    #                         # Получаем последнюю известную температуру из карточки
-    #                         # (температура обновляется отдельно в режиме Temperature)
-    #                         temp_value = getattr(card, 'last_temperature', 0.0)
-    #                         self.db_manager.buffer_wall_measurement(
-    #                             device_id=device_id,
-    #                             paed=dose,
-    #                             temperature=temp_value,
-    #                             low_status=1 if low_failure else 0,
-    #                             high_status=1 if high_failure else 0,
-    #                             valid=1 if result_valid else 0
-    #                         )
-    #                     else:
-    #                         self.ui.textEdit.append(f"Помилка: прилад {sn} не знайдено в БД")
-
-    #         elif mode == "Temperature":
-    #             data = self.device_manager._temp_data(buff)
-    #             if data:
-    #                 card.set_temp_value(data)
-    #                 # Сохраняем последнюю температуру для использования в RadDose
-    #                 try:
-    #                     temp_float = float(data.split()[0])
-    #                     card.last_temperature = temp_float
-    #                 except:
-    #                     pass
-    #                 self.ui.textEdit.append(f"Parsed temperature for {sn}:  {data}\n-------------------")
-
-    #         elif mode == "StartSpectre":
-    #             self.ui.textEdit.append(f"Початок збору спектру для {sn}")
-
-    #         elif mode == "GetSpectre":
-    #             if isinstance(packet.buff, dict):
-    #                 channels = packet.buff.get("channels", [])
-    #                 paed_value = packet.buff.get("paed_value", 0.0)
-    #                 test_byte = packet.buff.get("test_byte", 0)
-    #                 result_valid = packet.buff.get("valid", False)
-                    
-    #                 self.ui.textEdit.append(f"Spectrum for {sn}: {len(channels)} channels, PAED={paed_value:.2f} μSv/h, valid={result_valid}")
-                    
-    #                 # Передаём данные в карточку прибора
-    #                 card.add_spectrum_data(channels)
-                    
-    #                 # Обновляем ПАЕД (из спектрального пакета)
-    #                 card.set_dose_value(paed_value, 0)
-                    
-    #                 # Обновляем состояние детекторов из test_byte
-    #                 high_failure = bool(test_byte & 0b00000001)
-    #                 low_failure = bool(test_byte & 0b00000010)
-    #                 card.set_detector_status(low_failure, high_failure, result_valid)
-                    
-    #                 # Проверяем, достигнут ли лимит в 600 спектров
-    #                 if card.is_spectrum_ready():
-    #                     # Сохранение измерения цистерны в БД будет в calculate_activity
-    #                     pass
-    #             else:
-    #                 self.ui.textEdit.append(f"Помилка: отримано некоректні дані спектру для {sn}")
-
-    #     except Exception as e:
-    #         self.ui.textEdit.append(f"Error parsing packet for {sn}: {e}\n-------------------")
-
+        self.ui.textEdit.append(info)    
 
     def on_device_packet(self, packet):
         """
@@ -1220,18 +1093,7 @@ class App(QObject):
             row = i // self.current_columns
             col = i % self.current_columns
             self.grid.addWidget(card, row, col)
-    
-    # def clear_layout(self, delete_widgets=True):
-    #     while self.grid.count():
-    #         item = self.grid.takeAt(0)
-    #         w = item.widget()
-    #         if w is not None:
-    #             if delete_widgets:
-    #                 w.setParent(None)
-    #                 w.deleteLater()
-    #             else:
-    #                 # Just remove from layout, keep the widget alive
-    #                 w.setParent(None)
+ 
 
     def clear_layout(self, delete_widgets=True):
         for layout in (self.barrel_grid, self.wall_layout):
@@ -1247,62 +1109,7 @@ class App(QObject):
                         w.setParent(None)
                         w.deleteLater()
                     else:
-                        w.setParent(None)
-
-    # def on_devices_updated(self, devices):
-    #     """
-    #         Слот выведения найденных приборов 
-    #     """
-    #     if not devices:
-    #         self.ui.textEdit.append("Прилади не знайдено. Перевірте підключення та спробуйте ще раз.")
-    #         self.cards_by_sn.clear()
-    #         self.clear_layout()
-    #         return
-        
-    #     self.ui.textEdit.append("Знайдено прилади:")        
-    #     self.cards_by_sn.clear()      
-
-    #     n = len(devices)
-    #     if n <= 3:
-    #         columns = max(1, n)
-    #     elif n > 3:
-    #         columns = math.ceil(math.sqrt(n))
-    #     else:
-    #         columns = 1
-        
-    #     self.clear_layout()
-
-    #     for i, device in enumerate(devices):
-
-    #         card = self.create_device_card(device)
-    #         if card is None:
-    #             continue
-
-    #         if isinstance(card, DeviceCardBarrel):
-    #             card.set_barrel_image(bool(self.cistern_dict.get(device.get("posit_number"), False)))
-
-    #         card.posit_number = device.get("posit_number")
-    #         card.serial_number = device.get("serial_number")
-    #         self.cards_by_sn[card.serial_number] = card
-
-    #         card.set_serial(device.get("serial_number"))
-    #         card.set_position(device.get("posit_number"))
-    #         card.set_status("active")
-    #         #card.add_spectrum()
-    #         card.setMinimumSize(0, 0)
-    #         card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-    #         row = i // columns
-    #         col = i % columns
-
-    #         self.grid.addWidget(card, row, col)  
-    
-    #         self.ui.textEdit.append(f"Порт: {device.get('port')}, Адреса: {device.get('address')}, SN: {device.get('serial_number')}")
-        
-    #     # Вносим в приборы данные про цистерны
-    #     self.sync_devices_with_cisterns()
-
-    #     # Начинаем процедуру опроса внешней Системы Управления
-    #     # self.start_test_polling("devices/cistern.json")
+                        w.setParent(None)  
 
     def on_devices_updated(self, devices):
         """
@@ -1465,60 +1272,7 @@ class App(QObject):
         self.timer = QTimer()
         self.timer.setInterval(30_000)  # 30 секунд
         self.timer.timeout.connect(lambda: self.poll_system(json_file))
-        self.timer.start()   
-   
-
-   
-
-    # def poll_system(self, json_file: str, new_data: dict = None):
-    #     if new_data is None:
-    #         text = self.ui.lineEdit.text().strip()
-    #         if text == "Full":
-    #             new_data = {1: True}
-    #         elif text == "Empty":
-    #             new_data = {1: False}
-    #         else:
-    #             return
-
-    #     updated = False
-    #     for num, new_value in new_data.items():
-    #         if num not in self.cistern_dict:
-    #             # ошибка: цистерна отсутствует
-    #             continue
-
-    #         current_value = self.cistern_dict[num]
-    #         if new_value != current_value:
-    #             self.cistern_dict[num] = new_value
-    #             updated = True
-
-    #             # Обновляем GUI‑карточки и сбрасываем спектр при изменении состояния
-    #             for sn, card in self.cards_by_sn.items():
-    #                 if getattr(card, "posit_number", None) == num or getattr(card, "posit", None) == num:
-    #                     old_full = getattr(card, "is_full", False)
-    #                     card.is_full = new_value
-    #                     card.set_barrel_image(new_value)
-                        
-    #                     # Если состояние изменилось
-    #                     if old_full != new_value:
-    #                         if new_value:
-    #                             # Цистерна стала полной - сброс спектра для нового цикла накопления
-    #                             if hasattr(card, 'reset_spectrum'):
-    #                                 card.reset_spectrum()
-    #                                 self.ui.textEdit.append(f"Цистерна №{num} заповнена. Початок накопичення спектру.")
-    #                         else:
-    #                             # Цистерна стала пустой - сброс спектра
-    #                             if hasattr(card, 'reset_spectrum'):
-    #                                 card.reset_spectrum()
-    #                                 self.ui.textEdit.append(f"Цистерна №{num} спорожнена. Спектр скинуто.")
-    #                     break
-
-    #     if updated:
-    #         with open(json_file, "w", encoding="utf-8") as f:
-    #             json.dump(self.cistern_dict, f, ensure_ascii=False, indent=4)
-    #             try:
-    #                 self.sync_cisterns_to_manager.emit(self.cistern_dict)
-    #             except Exception:
-    #                 pass
+        self.timer.start() 
 
 
     def poll_system(self, json_file: str, new_data: dict = None):
@@ -1625,7 +1379,38 @@ class App(QObject):
         """
         card = self.cards_by_sn.get(serial_number)
         if card:
-            card.set_connection_status(connected, crc_error)    
+            card.set_connection_status(connected, crc_error)   
+
+    def on_device_missing(self, serial_number: str):
+        """Прибор пропал — активируем пункт меню замены"""
+        if hasattr(self, 'butt_replace_device') and self.butt_replace_device:
+            self.butt_replace_device.setEnabled(True)
+        self.missing_device_sn = serial_number
+
+    def open_replace_dialog(self):
+        """Открывает диалог замены прибора"""
+        from dialogs.device_replace_dialog import DeviceReplaceDialog
+        
+        # Собираем список пропавших приборов из DeviceManager
+        missing_devices = []
+        for device in self.device_manager.devices:
+            if device.no_answer_count >= 5:
+                missing_devices.append({
+                    "serial_number": device.serial_number,
+                    "location_type": device.location_type,
+                    "position_number": device.posit_number
+                })
+        
+        if not missing_devices:
+            self.ui.textEdit.append("Немає приладів для заміни")
+            return
+        
+        dialog = DeviceReplaceDialog(self.db_manager, missing_devices, self.ui)
+        dialog.exec()
+        
+        # После закрытия диалога деактивируем пункт меню
+        if self.butt_replace_device:
+            self.butt_replace_device.setEnabled(False) 
 
 
 def main():

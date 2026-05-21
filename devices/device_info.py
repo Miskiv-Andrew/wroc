@@ -51,6 +51,8 @@ class DeviceInfo:
         # Атрибут для хранения последнего значения ПАЕД
         self.last_paed = 0.0
 
+        self.no_answer_count = 0  # счётчик неответов прибора
+
 
     def set_full(self, value: bool):
         """
