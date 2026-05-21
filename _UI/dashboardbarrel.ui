@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>568</width>
-    <height>414</height>
+    <height>419</height>
    </rect>
   </property>
   <property name="sizePolicy">
@@ -68,7 +68,7 @@ background-color: rgb(248, 248, 249);
      <property name="frameShadow">
       <enum>QFrame::Shadow::Raised</enum>
      </property>
-     <layout class="QGridLayout" name="gridLayout_3">
+     <layout class="QGridLayout" name="gridLayout_3" rowstretch="1,3,3,1">
       <property name="leftMargin">
        <number>5</number>
       </property>
@@ -99,12 +99,27 @@ border-radius: 8px
          <enum>QFrame::Shadow::Raised</enum>
         </property>
         <layout class="QHBoxLayout" name="horizontalLayout_5">
+         <property name="leftMargin">
+          <number>5</number>
+         </property>
+         <property name="topMargin">
+          <number>5</number>
+         </property>
+         <property name="rightMargin">
+          <number>5</number>
+         </property>
+         <property name="bottomMargin">
+          <number>5</number>
+         </property>
          <item>
           <layout class="QHBoxLayout" name="horizontalLayout_2">
            <item>
             <layout class="QVBoxLayout" name="verticalLayout_9">
              <item>
               <widget class="QLabel" name="lowDetectorLabel">
+               <property name="styleSheet">
+                <string notr="true">border-right: 1px black</string>
+               </property>
                <property name="text">
                 <string>Низькочутливий детектор</string>
                </property>
@@ -208,7 +223,7 @@ border-radius: 8px
              <item>
               <widget class="QLabel" name="statusLabel">
                <property name="text">
-                <string>Статус:</string>
+                <string>&lt;div style='line-height:80%'&gt;Статус&lt;/div&gt;</string>
                </property>
               </widget>
              </item>
@@ -267,13 +282,23 @@ border-radius: 8px
            <item>
             <widget class="QLabel" name="positionLabel">
              <property name="styleSheet">
-              <string notr="true">font: 700 11pt &quot;Segoe UI&quot;;</string>
+              <string notr="true">font: 11pt &quot;Segoe UI&quot;;</string>
              </property>
              <property name="text">
-              <string>Цистерна №</string>
+              <string>Цистерна: №</string>
              </property>
              <property name="alignment">
               <set>Qt::AlignmentFlag::AlignLeading|Qt::AlignmentFlag::AlignLeft|Qt::AlignmentFlag::AlignVCenter</set>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QLabel" name="positionValue">
+             <property name="styleSheet">
+              <string notr="true">font: 700 11pt &quot;Segoe UI&quot;;</string>
+             </property>
+             <property name="text">
+              <string/>
              </property>
             </widget>
            </item>
@@ -296,16 +321,29 @@ border-radius: 8px
            <item>
             <widget class="QLabel" name="serialLabel">
              <property name="styleSheet">
-              <string notr="true">font: 700 11pt &quot;Segoe UI&quot;;</string>
+              <string notr="true">font: 11pt &quot;Segoe UI&quot;;</string>
              </property>
              <property name="text">
               <string>SN:</string>
              </property>
              <property name="alignment">
-              <set>Qt::AlignmentFlag::AlignCenter</set>
+              <set>Qt::AlignmentFlag::AlignRight|Qt::AlignmentFlag::AlignTrailing|Qt::AlignmentFlag::AlignVCenter</set>
              </property>
              <property name="margin">
               <number>0</number>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QLabel" name="serialValue">
+             <property name="styleSheet">
+              <string notr="true">font: 700 11pt &quot;Segoe UI&quot;;</string>
+             </property>
+             <property name="text">
+              <string/>
+             </property>
+             <property name="alignment">
+              <set>Qt::AlignmentFlag::AlignCenter</set>
              </property>
             </widget>
            </item>
@@ -458,6 +496,9 @@ border-radius: 8px
              <property name="text">
               <string>—  °C</string>
              </property>
+             <property name="alignment">
+              <set>Qt::AlignmentFlag::AlignLeading|Qt::AlignmentFlag::AlignLeft|Qt::AlignmentFlag::AlignVCenter</set>
+             </property>
             </widget>
            </item>
            <item row="4" column="1">
@@ -469,12 +510,24 @@ font: 600 11pt &quot;Segoe UI&quot;;</string>
              <property name="text">
               <string>Не готовий</string>
              </property>
+             <property name="alignment">
+              <set>Qt::AlignmentFlag::AlignLeading|Qt::AlignmentFlag::AlignLeft|Qt::AlignmentFlag::AlignVCenter</set>
+             </property>
             </widget>
            </item>
            <item row="0" column="0">
             <widget class="QLabel" name="doseLabel">
+             <property name="font">
+              <font>
+               <family>Segoe UI</family>
+               <pointsize>11</pointsize>
+               <italic>false</italic>
+               <bold>true</bold>
+              </font>
+             </property>
              <property name="styleSheet">
               <string notr="true">font: 700 11pt &quot;Segoe UI&quot;;
+
 </string>
              </property>
              <property name="text">
@@ -544,6 +597,12 @@ border-bottom: 1px solid black
              <property name="alignment">
               <set>Qt::AlignmentFlag::AlignLeading|Qt::AlignmentFlag::AlignLeft|Qt::AlignmentFlag::AlignVCenter</set>
              </property>
+             <property name="margin">
+              <number>0</number>
+             </property>
+             <property name="indent">
+              <number>-1</number>
+             </property>
             </widget>
            </item>
            <item row="4" column="0">
@@ -598,7 +657,7 @@ border-bottom: 1px solid black
            <item row="0" column="4" rowspan="5">
             <widget class="QLabel" name="barrelLabel">
              <property name="text">
-              <string>TextLabel</string>
+              <string/>
              </property>
             </widget>
            </item>

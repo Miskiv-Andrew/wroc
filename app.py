@@ -52,14 +52,14 @@ class DeviceCardBarrel(QWidget):
         #self.ui.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
     
     def set_serial(self, serial):
-        label = self.ui.findChild(QLabel, "serialLabel")
+        label = self.ui.findChild(QLabel, "serialValue")
         if label:
-            label.setText(f"SN: {serial}")
-
+            label.setText(f"{serial}")
+    
     def set_position(self, position):
-        label = self.ui.findChild(QLabel, "positionLabel")
+        label = self.ui.findChild(QLabel, "positionValue")
         if label:
-            label.setText(f"Контейнер № {position}")
+            label.setText(f"{position}")
     
     def set_barrel_image(self, full: bool):
         label = self.ui.findChild(QLabel, "barrelLabel")
@@ -212,14 +212,14 @@ class DeviceCardWall(QWidget):
         #self.ui.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
  
     def set_serial(self, serial):
-        label = self.ui.findChild(QLabel, "serialLabel")
+        label = self.ui.findChild(QLabel, "serialValue")
         if label:
-            label.setText(f"SN: {serial}")
+            label.setText(f"{serial}")
     
     def set_position(self, position):
-        label = self.ui.findChild(QLabel, "positionLabel")
+        label = self.ui.findChild(QLabel, "positionValue")
         if label:
-            label.setText(f"Детектор № {position}")
+            label.setText(f"{position}")
     
     def set_dose_value(self, dose, acc):
         label = self.ui.findChild(QLabel, "doseValue")

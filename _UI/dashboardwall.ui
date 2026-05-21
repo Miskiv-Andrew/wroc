@@ -59,7 +59,7 @@ background-color: rgb(248, 248, 249)
      <property name="frameShadow">
       <enum>QFrame::Shadow::Raised</enum>
      </property>
-     <layout class="QGridLayout" name="gridLayout_3" rowstretch="1,5,2">
+     <layout class="QGridLayout" name="gridLayout_3" rowstretch="1,5,1">
       <property name="leftMargin">
        <number>5</number>
       </property>
@@ -216,10 +216,20 @@ border-radius: 8px
            <item>
             <widget class="QLabel" name="positionLabel">
              <property name="styleSheet">
+              <string notr="true">font: 11pt &quot;Segoe UI&quot;;</string>
+             </property>
+             <property name="text">
+              <string>Детектор: №</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QLabel" name="positionValue">
+             <property name="styleSheet">
               <string notr="true">font: 700 11pt &quot;Segoe UI&quot;;</string>
              </property>
              <property name="text">
-              <string>Детектор №</string>
+              <string/>
              </property>
             </widget>
            </item>
@@ -242,10 +252,23 @@ border-radius: 8px
            <item>
             <widget class="QLabel" name="serialLabel">
              <property name="styleSheet">
-              <string notr="true">font: 700 11pt &quot;Segoe UI&quot;;</string>
+              <string notr="true">font: 11pt &quot;Segoe UI&quot;;</string>
              </property>
              <property name="text">
               <string>SN:</string>
+             </property>
+             <property name="alignment">
+              <set>Qt::AlignmentFlag::AlignRight|Qt::AlignmentFlag::AlignTrailing|Qt::AlignmentFlag::AlignVCenter</set>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QLabel" name="serialValue">
+             <property name="styleSheet">
+              <string notr="true">font: 700 11pt &quot;Segoe UI&quot;;</string>
+             </property>
+             <property name="text">
+              <string/>
              </property>
              <property name="alignment">
               <set>Qt::AlignmentFlag::AlignCenter</set>
@@ -272,6 +295,18 @@ border-radius: 8px
          <enum>QFrame::Shadow::Raised</enum>
         </property>
         <layout class="QHBoxLayout" name="horizontalLayout_6">
+         <property name="leftMargin">
+          <number>5</number>
+         </property>
+         <property name="topMargin">
+          <number>5</number>
+         </property>
+         <property name="rightMargin">
+          <number>5</number>
+         </property>
+         <property name="bottomMargin">
+          <number>5</number>
+         </property>
          <item>
           <layout class="QHBoxLayout" name="horizontalLayout_5">
            <item>
@@ -280,6 +315,9 @@ border-radius: 8px
               <widget class="QLabel" name="lowDetectorLabel">
                <property name="text">
                 <string>&lt;div style='line-height:80%'&gt;Низькочутливий&lt;br&gt;детектор&lt;/div&gt;</string>
+               </property>
+               <property name="alignment">
+                <set>Qt::AlignmentFlag::AlignCenter</set>
                </property>
               </widget>
              </item>
@@ -302,6 +340,9 @@ border-radius: 8px
                <property name="text">
                 <string>&lt;div style='line-height:80%'&gt;Високочутливий&lt;br&gt;детектор&lt;/div&gt;</string>
                </property>
+               <property name="alignment">
+                <set>Qt::AlignmentFlag::AlignCenter</set>
+               </property>
               </widget>
              </item>
              <item>
@@ -323,6 +364,9 @@ border-radius: 8px
                <property name="text">
                 <string>&lt;div style='line-height:80%'&gt;Валідність&lt;br&gt;результатів&lt;/div&gt;</string>
                </property>
+               <property name="alignment">
+                <set>Qt::AlignmentFlag::AlignCenter</set>
+               </property>
               </widget>
              </item>
              <item>
@@ -342,7 +386,10 @@ border-radius: 8px
              <item>
               <widget class="QLabel" name="statusLabel">
                <property name="text">
-                <string>Статус:</string>
+                <string>&lt;div style='line-height:80%'&gt;Статус&lt;br&gt;&lt;/div&gt;</string>
+               </property>
+               <property name="alignment">
+                <set>Qt::AlignmentFlag::AlignCenter</set>
                </property>
               </widget>
              </item>
