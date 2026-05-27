@@ -1,3 +1,5 @@
+# devices/device_info.py
+
 from dataclasses import dataclass
 import threading
 
@@ -7,9 +9,13 @@ class DeviceInfo:
         Класс для хранения информации о приборе.
     """
 
+    # def __init__(self, port: str, address: int, serial_number: str, device_type: str = "БДБГ-09S-23", 
+    #              description: str = "", no_answer:int = 0, old_ped:float = 0.0, 
+    #              real_sensor:str = "G", state_spectre:bool = False):
+        
     def __init__(self, port: str, address: int, serial_number: str, device_type: str = "БДБГ-09S-23", 
-                 description: str = "", no_answer:int = 0, old_ped:float = 0.0, 
-                 real_sensor:str = "G", state_spectre:bool = False):
+             description: str = "", no_answer:int = 0, old_ped:float = 0.0, 
+             real_sensor:str = "G", state_spectre:bool = False):
         
         # Атрибуты, получаемые при поиске приборов
         self.port = port                    # COM-порт, к которому подключен прибор
@@ -35,6 +41,18 @@ class DeviceInfo:
         self.real_sensor = real_sensor 
         self.state_spectre = state_spectre  
 
+        # Атрибуты для работы со спектром
+        self.spectrum_buffer = [0] * 1024   # массив для накопления спектра (1024 канала)
+        self.spectrum_counter = 0           # счётчик полученных спектров (0..600)
+        self.spectrum_active = False        # флаг, что идёт набор спектра
+
+        self.start_spectre_retries = 0  # счётчик неудачных попыток запуска спектра (максимум 3)
+
+        # Атрибут для хранения последнего значения ПАЕД
+        self.last_paed = 0.0
+
+        self.no_answer_count = 0  # счётчик неответов прибора
+
 
     def set_full(self, value: bool):
         """
@@ -50,6 +68,51 @@ class DeviceInfo:
         """
         with self.__lock:
             return self.__full
+        
+    def reset_spectrum(self):
+        """
+            Обнуляет буфер спектра и счётчик
+        """
+        self.spectrum_buffer = [0] * 1024
+        self.spectrum_counter = 0
+
+    def add_to_spectrum(self, channels):
+        """
+            Почленно складывает полученный массив с буфером
+        """
+        for i in range(1024):
+            self.spectrum_buffer[i] += channels[i]
+        self.spectrum_counter += 1
+
+    def get_spectrum_buffer(self):
+        """
+            Возвращает текущий буфер спектра
+        """
+        return self.spectrum_buffer
+
+    def get_spectrum_counter(self):
+        """
+            Возвращает текущее значение счётчика
+        """
+        return self.spectrum_counter
+
+    def is_spectrum_ready(self):
+        """
+            Проверяет, достигнут ли лимит в 600 получений
+        """
+        return self.spectrum_counter >= 600
+    
+    def set_last_paed(self, value: float):
+        """
+            Устанавливает последнее полученное значение ПАЕД
+        """
+        self.last_paed = value
+
+    def get_last_paed(self) -> float:
+        """
+            Возвращает последнее полученное значение ПАЕД
+        """
+        return self.last_paed
 
     def __repr__(self):
         """

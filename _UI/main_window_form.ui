@@ -35,21 +35,47 @@
             <number>6</number>
            </property>
            <item>
-            <widget class="QWidget" name="containerCard" native="true">
-             <layout class="QGridLayout" name="gridLayout_2">
-              <item row="0" column="0">
-               <layout class="QGridLayout" name="gridLayout"/>
-              </item>
-             </layout>
+            <widget class="QScrollArea" name="scrollArea">
+             <property name="widgetResizable">
+              <bool>true</bool>
+             </property>
+             <widget class="QWidget" name="containerBarrel">
+              <property name="geometry">
+               <rect>
+                <x>0</x>
+                <y>0</y>
+                <width>567</width>
+                <height>416</height>
+               </rect>
+              </property>
+              <layout class="QGridLayout" name="gridLayout_2">
+               <item row="0" column="0">
+                <layout class="QGridLayout" name="gridLayout"/>
+               </item>
+              </layout>
+             </widget>
             </widget>
            </item>
            <item>
-            <widget class="QWidget" name="containerWall" native="true">
-             <layout class="QVBoxLayout" name="verticalLayout_4">
-              <item>
-               <layout class="QVBoxLayout" name="verticalLayout_3"/>
-              </item>
-             </layout>
+            <widget class="QScrollArea" name="scrollArea_2">
+             <property name="widgetResizable">
+              <bool>true</bool>
+             </property>
+             <widget class="QWidget" name="containerWall">
+              <property name="geometry">
+               <rect>
+                <x>0</x>
+                <y>0</y>
+                <width>188</width>
+                <height>416</height>
+               </rect>
+              </property>
+              <layout class="QVBoxLayout" name="verticalLayout_4">
+               <item>
+                <layout class="QVBoxLayout" name="verticalLayout_3"/>
+               </item>
+              </layout>
+             </widget>
             </widget>
            </item>
           </layout>
@@ -97,6 +123,7 @@
     <addaction name="butt_system_start"/>
     <addaction name="separator"/>
     <addaction name="butt_system_stop_3"/>
+    <addaction name="butt_replace_device"/>
    </widget>
    <widget class="QMenu" name="menu_2">
     <property name="title">
@@ -143,6 +170,14 @@
   <action name="butt_system_stop_3">
    <property name="text">
     <string>Зупинка системи</string>
+   </property>
+  </action>
+  <action name="butt_replace_device">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="text">
+    <string>Заміна приладу</string>
    </property>
   </action>
  </widget>

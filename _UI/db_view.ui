@@ -1,0 +1,630 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>DBViewWindow</class>
+ <widget class="QMainWindow" name="DBViewWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>1100</width>
+    <height>750</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>База даних - перегляд даних</string>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QVBoxLayout" name="verticalLayout_main">
+    <item>
+     <widget class="QTabWidget" name="tabWidget">
+      <property name="currentIndex">
+       <number>0</number>
+      </property>
+      <widget class="QWidget" name="tabPaed">
+       <attribute name="title">
+        <string>ПАЕД</string>
+       </attribute>
+       <layout class="QVBoxLayout" name="verticalLayout_paed">
+        <item>
+         <widget class="QGroupBox" name="groupBox_filters_paed">
+          <property name="title">
+           <string>Фільтри</string>
+          </property>
+          <layout class="QGridLayout" name="gridLayout_filters_paed">
+           <item row="0" column="0">
+            <widget class="QLabel" name="label_date_from_paed">
+             <property name="text">
+              <string>Дата від:</string>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="1">
+            <widget class="QDateTimeEdit" name="dateFrom_paed">
+             <property name="calendarPopup">
+              <bool>true</bool>
+             </property>
+             <property name="displayFormat">
+              <string>dd.MM.yyyy HH:mm</string>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="2">
+            <widget class="QLabel" name="label_date_to_paed">
+             <property name="text">
+              <string>Дата до:</string>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="3">
+            <widget class="QDateTimeEdit" name="dateTo_paed">
+             <property name="calendarPopup">
+              <bool>true</bool>
+             </property>
+             <property name="displayFormat">
+              <string>dd.MM.yyyy HH:mm</string>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="4">
+            <widget class="QPushButton" name="btn_all_period_paed">
+             <property name="text">
+              <string>За весь період</string>
+             </property>
+            </widget>
+           </item>
+           <item row="1" column="0">
+            <widget class="QLabel" name="label_location_type_paed">
+             <property name="text">
+              <string>Тип розташування:</string>
+             </property>
+            </widget>
+           </item>
+           <item row="1" column="1">
+            <widget class="QComboBox" name="combo_location_type_paed">
+             <item>
+              <property name="text">
+               <string>Всі</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>Цистерна</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>Кімната</string>
+              </property>
+             </item>
+            </widget>
+           </item>
+           <item row="1" column="2">
+            <widget class="QLabel" name="label_device_paed">
+             <property name="text">
+              <string>Прилад:</string>
+             </property>
+            </widget>
+           </item>
+           <item row="1" column="3">
+            <widget class="QComboBox" name="combo_device_paed">
+             <property name="enabled">
+              <bool>false</bool>
+             </property>
+            </widget>
+           </item>
+           <item row="1" column="4">
+            <widget class="QPushButton" name="btn_apply_paed">
+             <property name="text">
+              <string>Показати</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+        </item>
+        <item>
+         <widget class="QSplitter" name="splitter_paed">
+          <property name="orientation">
+           <enum>Qt::Vertical</enum>
+          </property>
+          <widget class="QWidget" name="plotContainer_paed">
+           <layout class="QVBoxLayout" name="verticalLayout_plot_paed">
+            <property name="leftMargin">
+             <number>0</number>
+            </property>
+            <property name="topMargin">
+             <number>0</number>
+            </property>
+            <property name="rightMargin">
+             <number>0</number>
+            </property>
+            <property name="bottomMargin">
+             <number>0</number>
+            </property>
+            <item>
+             <widget class="QFrame" name="frame_plot_paed">
+              <property name="frameShape">
+               <enum>QFrame::StyledPanel</enum>
+              </property>
+              <property name="frameShadow">
+               <enum>QFrame::Sunken</enum>
+              </property>
+              <layout class="QVBoxLayout" name="verticalLayout_plot_inner_paed">
+               <property name="leftMargin">
+                <number>2</number>
+               </property>
+               <property name="topMargin">
+                <number>2</number>
+               </property>
+               <property name="rightMargin">
+                <number>2</number>
+               </property>
+               <property name="bottomMargin">
+                <number>2</number>
+               </property>
+               <item>
+                <widget class="QLabel" name="label_plot_placeholder_paed">
+                 <property name="sizePolicy">
+                  <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+                   <horstretch>0</horstretch>
+                   <verstretch>0</verstretch>
+                  </sizepolicy>
+                 </property>
+                 <property name="frameShape">
+                  <enum>QFrame::Box</enum>
+                 </property>
+                 <property name="frameShadow">
+                  <enum>QFrame::Sunken</enum>
+                 </property>
+                 <property name="text">
+                  <string>Тут буде графік ПАЕД</string>
+                 </property>
+                 <property name="alignment">
+                  <set>Qt::AlignCenter</set>
+                 </property>
+                </widget>
+               </item>
+              </layout>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+          <widget class="QWidget" name="tableContainer_paed">
+           <layout class="QVBoxLayout" name="verticalLayout_table_paed">
+            <property name="leftMargin">
+             <number>0</number>
+            </property>
+            <property name="topMargin">
+             <number>0</number>
+            </property>
+            <property name="rightMargin">
+             <number>0</number>
+            </property>
+            <property name="bottomMargin">
+             <number>0</number>
+            </property>
+            <item>
+             <widget class="QTableView" name="tableView_paed"/>
+            </item>
+            <item>
+             <layout class="QHBoxLayout" name="horizontalLayout_export_paed">
+              <item>
+               <widget class="QPushButton" name="btn_export_csv_paed">
+                <property name="text">
+                 <string>Експорт CSV</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QPushButton" name="btn_export_png_paed">
+                <property name="text">
+                 <string>Зберегти графік PNG</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QPushButton" name="btn_reset_filters_paed">
+                <property name="text">
+                 <string>Скинути фільтри</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <spacer name="horizontalSpacer_paed">
+                <property name="orientation">
+                 <enum>Qt::Horizontal</enum>
+                </property>
+                <property name="sizeHint" stdset="0">
+                 <size>
+                  <width>40</width>
+                  <height>20</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+             </layout>
+            </item>
+           </layout>
+          </widget>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+      <widget class="QWidget" name="tabActivity">
+       <attribute name="title">
+        <string>Активність</string>
+       </attribute>
+       <layout class="QVBoxLayout" name="verticalLayout_activity">
+        <item>
+         <widget class="QGroupBox" name="groupBox_filters_activity">
+          <property name="title">
+           <string>Фільтри</string>
+          </property>
+          <layout class="QGridLayout" name="gridLayout_filters_activity">
+           <item row="0" column="0">
+            <widget class="QLabel" name="label_date_from_activity">
+             <property name="text">
+              <string>Дата від:</string>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="1">
+            <widget class="QDateTimeEdit" name="dateFrom_activity">
+             <property name="calendarPopup">
+              <bool>true</bool>
+             </property>
+             <property name="displayFormat">
+              <string>dd.MM.yyyy HH:mm</string>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="2">
+            <widget class="QLabel" name="label_date_to_activity">
+             <property name="text">
+              <string>Дата до:</string>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="3">
+            <widget class="QDateTimeEdit" name="dateTo_activity">
+             <property name="calendarPopup">
+              <bool>true</bool>
+             </property>
+             <property name="displayFormat">
+              <string>dd.MM.yyyy HH:mm</string>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="4">
+            <widget class="QPushButton" name="btn_all_period_activity">
+             <property name="text">
+              <string>За весь період</string>
+             </property>
+            </widget>
+           </item>
+           <item row="1" column="0">
+            <widget class="QLabel" name="label_device_activity">
+             <property name="text">
+              <string>Цистерна (прилад):</string>
+             </property>
+            </widget>
+           </item>
+           <item row="1" column="1" colspan="2">
+            <widget class="QComboBox" name="combo_device_activity"/>
+           </item>
+           <item row="1" column="4">
+            <widget class="QPushButton" name="btn_apply_activity">
+             <property name="text">
+              <string>Показати</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+        </item>
+        <item>
+         <widget class="QSplitter" name="splitter_activity">
+          <property name="orientation">
+           <enum>Qt::Vertical</enum>
+          </property>
+          <widget class="QWidget" name="plotContainer_activity">
+           <layout class="QVBoxLayout" name="verticalLayout_plot_activity">
+            <property name="leftMargin">
+             <number>0</number>
+            </property>
+            <property name="topMargin">
+             <number>0</number>
+            </property>
+            <property name="rightMargin">
+             <number>0</number>
+            </property>
+            <property name="bottomMargin">
+             <number>0</number>
+            </property>
+            <item>
+             <widget class="QFrame" name="frame_plot_activity">
+              <property name="frameShape">
+               <enum>QFrame::StyledPanel</enum>
+              </property>
+              <property name="frameShadow">
+               <enum>QFrame::Sunken</enum>
+              </property>
+              <layout class="QVBoxLayout" name="verticalLayout_plot_inner_activity">
+               <property name="leftMargin">
+                <number>2</number>
+               </property>
+               <property name="topMargin">
+                <number>2</number>
+               </property>
+               <property name="rightMargin">
+                <number>2</number>
+               </property>
+               <property name="bottomMargin">
+                <number>2</number>
+               </property>
+               <item>
+                <widget class="QLabel" name="label_plot_placeholder_activity">
+                 <property name="sizePolicy">
+                  <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+                   <horstretch>0</horstretch>
+                   <verstretch>0</verstretch>
+                  </sizepolicy>
+                 </property>
+                 <property name="frameShape">
+                  <enum>QFrame::Box</enum>
+                 </property>
+                 <property name="frameShadow">
+                  <enum>QFrame::Sunken</enum>
+                 </property>
+                 <property name="text">
+                  <string>Тут буде графік Активності</string>
+                 </property>
+                 <property name="alignment">
+                  <set>Qt::AlignCenter</set>
+                 </property>
+                </widget>
+               </item>
+              </layout>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+          <widget class="QWidget" name="tableContainer_activity">
+           <layout class="QVBoxLayout" name="verticalLayout_table_activity">
+            <property name="leftMargin">
+             <number>0</number>
+            </property>
+            <property name="topMargin">
+             <number>0</number>
+            </property>
+            <property name="rightMargin">
+             <number>0</number>
+            </property>
+            <property name="bottomMargin">
+             <number>0</number>
+            </property>
+            <item>
+             <widget class="QTableView" name="tableView_activity"/>
+            </item>
+            <item>
+             <layout class="QHBoxLayout" name="horizontalLayout_export_activity">
+              <item>
+               <widget class="QPushButton" name="btn_export_csv_activity">
+                <property name="text">
+                 <string>Експорт CSV</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QPushButton" name="btn_export_png_activity">
+                <property name="text">
+                 <string>Зберегти графік PNG</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QPushButton" name="btn_reset_filters_activity">
+                <property name="text">
+                 <string>Скинути фільтри</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <spacer name="horizontalSpacer_activity">
+                <property name="orientation">
+                 <enum>Qt::Horizontal</enum>
+                </property>
+                <property name="sizeHint" stdset="0">
+                 <size>
+                  <width>40</width>
+                  <height>20</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+             </layout>
+            </item>
+           </layout>
+          </widget>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+      <widget class="QWidget" name="tabEvents">
+       <attribute name="title">
+        <string>Системні події</string>
+       </attribute>
+       <layout class="QVBoxLayout" name="verticalLayout_events">
+        <item>
+         <widget class="QGroupBox" name="groupBox_filters_events">
+          <property name="title">
+           <string>Фільтри</string>
+          </property>
+          <layout class="QGridLayout" name="gridLayout_filters_events">
+           <item row="0" column="0">
+            <widget class="QLabel" name="label_date_from_events">
+             <property name="text">
+              <string>Дата від:</string>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="1">
+            <widget class="QDateTimeEdit" name="dateFrom_events">
+             <property name="calendarPopup">
+              <bool>true</bool>
+             </property>
+             <property name="displayFormat">
+              <string>dd.MM.yyyy HH:mm</string>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="2">
+            <widget class="QLabel" name="label_date_to_events">
+             <property name="text">
+              <string>Дата до:</string>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="3">
+            <widget class="QDateTimeEdit" name="dateTo_events">
+             <property name="calendarPopup">
+              <bool>true</bool>
+             </property>
+             <property name="displayFormat">
+              <string>dd.MM.yyyy HH:mm</string>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="4">
+            <widget class="QPushButton" name="btn_all_period_events">
+             <property name="text">
+              <string>За весь період</string>
+             </property>
+            </widget>
+           </item>
+           <item row="1" column="0">
+            <widget class="QLabel" name="label_event_type">
+             <property name="text">
+              <string>Тип події:</string>
+             </property>
+            </widget>
+           </item>
+           <item row="1" column="1">
+            <widget class="QComboBox" name="combo_event_type">
+             <item>
+              <property name="text">
+               <string>Всі</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>app_start</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>app_stop</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>device_replaced</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>cistern_filled</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>cistern_drained</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>connection_error</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>crc_error</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>spectrum_reset</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>start_spectre_failed</string>
+              </property>
+             </item>
+            </widget>
+           </item>
+           <item row="1" column="2">
+            <widget class="QLabel" name="label_device_events">
+             <property name="text">
+              <string>Прилад (SN):</string>
+             </property>
+            </widget>
+           </item>
+           <item row="1" column="3">
+            <widget class="QComboBox" name="combo_device_events"/>
+           </item>
+           <item row="1" column="4">
+            <widget class="QPushButton" name="btn_apply_events">
+             <property name="text">
+              <string>Показати</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+        </item>
+        <item>
+         <widget class="QTableView" name="tableView_events"/>
+        </item>
+        <item>
+         <layout class="QHBoxLayout" name="horizontalLayout_export_events">
+          <item>
+           <widget class="QPushButton" name="btn_export_csv_events">
+            <property name="text">
+             <string>Експорт CSV</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="btn_reset_filters_events">
+            <property name="text">
+             <string>Скинути фільтри</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <spacer name="horizontalSpacer_events">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>40</width>
+              <height>20</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+         </layout>
+        </item>
+       </layout>
+      </widget>
+     </widget>
+    </item>
+   </layout>
+  </widget>
+  <widget class="QStatusBar" name="statusbar"/>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

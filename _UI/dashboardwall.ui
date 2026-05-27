@@ -82,7 +82,7 @@ background-color: rgb(248, 248, 249)
         </property>
         <property name="styleSheet">
          <string notr="true">#measureSection {
-border: 1px solid black;
+border: 1px solid #bbb;
 border-radius: 8px
 }</string>
         </property>
@@ -93,97 +93,279 @@ border-radius: 8px
          <enum>QFrame::Shadow::Raised</enum>
         </property>
         <layout class="QVBoxLayout" name="verticalLayout_5">
+         <property name="leftMargin">
+          <number>5</number>
+         </property>
+         <property name="topMargin">
+          <number>5</number>
+         </property>
+         <property name="rightMargin">
+          <number>5</number>
+         </property>
+         <property name="bottomMargin">
+          <number>5</number>
+         </property>
          <item>
-          <layout class="QGridLayout" name="gridLayout">
-           <property name="spacing">
-            <number>0</number>
-           </property>
-           <item row="1" column="0">
-            <layout class="QHBoxLayout" name="horizontalLayout_2">
-             <item>
-              <widget class="QLabel" name="doseValue">
-               <property name="sizePolicy">
-                <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
-                 <horstretch>0</horstretch>
-                 <verstretch>0</verstretch>
-                </sizepolicy>
-               </property>
-               <property name="styleSheet">
-                <string notr="true">font: 700 11pt &quot;Segoe UI&quot;;</string>
-               </property>
-               <property name="text">
-                <string>— мкЗв/год  ± %</string>
-               </property>
-               <property name="alignment">
-                <set>Qt::AlignmentFlag::AlignHCenter|Qt::AlignmentFlag::AlignTop</set>
-               </property>
-               <property name="margin">
-                <number>0</number>
-               </property>
-              </widget>
-             </item>
-             <item>
-              <widget class="QLabel" name="tempValue">
-               <property name="sizePolicy">
-                <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
-                 <horstretch>0</horstretch>
-                 <verstretch>0</verstretch>
-                </sizepolicy>
-               </property>
-               <property name="styleSheet">
-                <string notr="true">font: 700 11pt &quot;Segoe UI&quot;;</string>
-               </property>
-               <property name="text">
-                <string>—  °C</string>
-               </property>
-               <property name="alignment">
-                <set>Qt::AlignmentFlag::AlignHCenter|Qt::AlignmentFlag::AlignTop</set>
-               </property>
-              </widget>
-             </item>
-            </layout>
+          <layout class="QHBoxLayout" name="horizontalLayout" stretch="1,1">
+           <item>
+            <widget class="QWidget" name="widgetDose" native="true">
+             <property name="styleSheet">
+              <string notr="true">#widgetDose {
+border: 1px solid #bbb;
+border-radius: 8px
+}</string>
+             </property>
+             <layout class="QVBoxLayout" name="verticalLayout_8">
+              <property name="leftMargin">
+               <number>5</number>
+              </property>
+              <property name="topMargin">
+               <number>5</number>
+              </property>
+              <property name="rightMargin">
+               <number>5</number>
+              </property>
+              <property name="bottomMargin">
+               <number>5</number>
+              </property>
+              <item>
+               <layout class="QVBoxLayout" name="verticalLayout_7">
+                <item>
+                 <layout class="QHBoxLayout" name="horizontalLayout_2">
+                  <item>
+                   <spacer name="horizontalSpacer_5">
+                    <property name="orientation">
+                     <enum>Qt::Orientation::Horizontal</enum>
+                    </property>
+                    <property name="sizeHint" stdset="0">
+                     <size>
+                      <width>40</width>
+                      <height>20</height>
+                     </size>
+                    </property>
+                   </spacer>
+                  </item>
+                  <item>
+                   <widget class="QLabel" name="iconDose">
+                    <property name="maximumSize">
+                     <size>
+                      <width>30</width>
+                      <height>30</height>
+                     </size>
+                    </property>
+                    <property name="text">
+                     <string/>
+                    </property>
+                    <property name="scaledContents">
+                     <bool>true</bool>
+                    </property>
+                    <property name="alignment">
+                     <set>Qt::AlignmentFlag::AlignLeading|Qt::AlignmentFlag::AlignLeft|Qt::AlignmentFlag::AlignVCenter</set>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QLabel" name="icondoseLabel">
+                    <property name="styleSheet">
+                     <string notr="true">font: 600 9pt &quot;Segoe UI&quot;;</string>
+                    </property>
+                    <property name="text">
+                     <string>ПАЕД</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <spacer name="horizontalSpacer_4">
+                    <property name="orientation">
+                     <enum>Qt::Orientation::Horizontal</enum>
+                    </property>
+                    <property name="sizeHint" stdset="0">
+                     <size>
+                      <width>40</width>
+                      <height>20</height>
+                     </size>
+                    </property>
+                   </spacer>
+                  </item>
+                 </layout>
+                </item>
+                <item>
+                 <widget class="QLabel" name="doseValue">
+                  <property name="styleSheet">
+                   <string notr="true">font: 700 15pt &quot;Segoe UI&quot;;
+
+</string>
+                  </property>
+                  <property name="text">
+                   <string>—</string>
+                  </property>
+                  <property name="alignment">
+                   <set>Qt::AlignmentFlag::AlignCenter</set>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QLabel" name="doseLabel">
+                  <property name="styleSheet">
+                   <string notr="true">color: rgb(74, 59, 230);
+font: 700 10pt &quot;Segoe UI&quot;;
+</string>
+                  </property>
+                  <property name="text">
+                   <string>мкЗв/год</string>
+                  </property>
+                  <property name="alignment">
+                   <set>Qt::AlignmentFlag::AlignHCenter|Qt::AlignmentFlag::AlignTop</set>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QLabel" name="accValue">
+                  <property name="styleSheet">
+                   <string notr="true">color: rgb(90, 99, 115);
+font: 600 9pt &quot;Segoe UI&quot;;</string>
+                  </property>
+                  <property name="text">
+                   <string>± %</string>
+                  </property>
+                  <property name="alignment">
+                   <set>Qt::AlignmentFlag::AlignBottom|Qt::AlignmentFlag::AlignHCenter</set>
+                  </property>
+                  <property name="margin">
+                   <number>0</number>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </item>
+             </layout>
+            </widget>
            </item>
-           <item row="0" column="0">
-            <layout class="QHBoxLayout" name="horizontalLayout">
-             <item>
-              <widget class="QLabel" name="doseLabel">
-               <property name="sizePolicy">
-                <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
-                 <horstretch>0</horstretch>
-                 <verstretch>0</verstretch>
-                </sizepolicy>
-               </property>
-               <property name="styleSheet">
-                <string notr="true">font: 700 11pt &quot;Segoe UI&quot;;</string>
-               </property>
-               <property name="text">
-                <string>ПАЕД</string>
-               </property>
-               <property name="alignment">
-                <set>Qt::AlignmentFlag::AlignCenter</set>
-               </property>
-              </widget>
-             </item>
-             <item>
-              <widget class="QLabel" name="tempLabel">
-               <property name="sizePolicy">
-                <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
-                 <horstretch>0</horstretch>
-                 <verstretch>0</verstretch>
-                </sizepolicy>
-               </property>
-               <property name="styleSheet">
-                <string notr="true">font: 700 11pt &quot;Segoe UI&quot;;</string>
-               </property>
-               <property name="text">
-                <string>Температура</string>
-               </property>
-               <property name="alignment">
-                <set>Qt::AlignmentFlag::AlignCenter</set>
-               </property>
-              </widget>
-             </item>
-            </layout>
+           <item>
+            <widget class="QWidget" name="widgetTemp" native="true">
+             <property name="styleSheet">
+              <string notr="true">#widgetTemp {
+border: 1px solid #bbb;
+border-radius: 8px
+}</string>
+             </property>
+             <layout class="QHBoxLayout" name="horizontalLayout_8">
+              <property name="leftMargin">
+               <number>5</number>
+              </property>
+              <property name="topMargin">
+               <number>5</number>
+              </property>
+              <property name="rightMargin">
+               <number>5</number>
+              </property>
+              <property name="bottomMargin">
+               <number>5</number>
+              </property>
+              <item>
+               <layout class="QVBoxLayout" name="verticalLayout_9">
+                <item>
+                 <layout class="QHBoxLayout" name="horizontalLayout_7">
+                  <item>
+                   <spacer name="horizontalSpacer_2">
+                    <property name="orientation">
+                     <enum>Qt::Orientation::Horizontal</enum>
+                    </property>
+                    <property name="sizeHint" stdset="0">
+                     <size>
+                      <width>40</width>
+                      <height>20</height>
+                     </size>
+                    </property>
+                   </spacer>
+                  </item>
+                  <item>
+                   <widget class="QLabel" name="iconTemp">
+                    <property name="maximumSize">
+                     <size>
+                      <width>30</width>
+                      <height>30</height>
+                     </size>
+                    </property>
+                    <property name="text">
+                     <string/>
+                    </property>
+                    <property name="scaledContents">
+                     <bool>true</bool>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QLabel" name="icontempLabel">
+                    <property name="styleSheet">
+                     <string notr="true">font: 600 9pt &quot;Segoe UI&quot;;</string>
+                    </property>
+                    <property name="text">
+                     <string>Температура</string>
+                    </property>
+                    <property name="alignment">
+                     <set>Qt::AlignmentFlag::AlignLeading|Qt::AlignmentFlag::AlignLeft|Qt::AlignmentFlag::AlignVCenter</set>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <spacer name="horizontalSpacer_3">
+                    <property name="orientation">
+                     <enum>Qt::Orientation::Horizontal</enum>
+                    </property>
+                    <property name="sizeHint" stdset="0">
+                     <size>
+                      <width>40</width>
+                      <height>20</height>
+                     </size>
+                    </property>
+                   </spacer>
+                  </item>
+                 </layout>
+                </item>
+                <item>
+                 <widget class="QLabel" name="tempValue">
+                  <property name="styleSheet">
+                   <string notr="true">font: 700 15pt &quot;Segoe UI&quot;;
+
+</string>
+                  </property>
+                  <property name="text">
+                   <string>—</string>
+                  </property>
+                  <property name="alignment">
+                   <set>Qt::AlignmentFlag::AlignCenter</set>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QLabel" name="tempLabel">
+                  <property name="styleSheet">
+                   <string notr="true">color: rgb(33, 146, 41);
+font: 700 10pt &quot;Segoe UI&quot;;</string>
+                  </property>
+                  <property name="text">
+                   <string>°C</string>
+                  </property>
+                  <property name="alignment">
+                   <set>Qt::AlignmentFlag::AlignHCenter|Qt::AlignmentFlag::AlignTop</set>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QLabel" name="label">
+                  <property name="text">
+                   <string/>
+                  </property>
+                  <property name="alignment">
+                   <set>Qt::AlignmentFlag::AlignCenter</set>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </item>
+             </layout>
+            </widget>
            </item>
           </layout>
          </item>
@@ -200,7 +382,7 @@ border-radius: 8px
         </property>
         <property name="styleSheet">
          <string notr="true">#infoSection {
-border: 1px solid black;
+border: 1px solid #bbb;
 border-radius: 8px
 }</string>
         </property>
@@ -211,8 +393,39 @@ border-radius: 8px
          <enum>QFrame::Shadow::Raised</enum>
         </property>
         <layout class="QHBoxLayout" name="horizontalLayout_4">
+         <property name="leftMargin">
+          <number>5</number>
+         </property>
+         <property name="topMargin">
+          <number>5</number>
+         </property>
+         <property name="rightMargin">
+          <number>5</number>
+         </property>
+         <property name="bottomMargin">
+          <number>5</number>
+         </property>
          <item>
           <layout class="QHBoxLayout" name="horizontalLayout_3">
+           <item>
+            <widget class="QLabel" name="detectorIcon">
+             <property name="maximumSize">
+              <size>
+               <width>30</width>
+               <height>30</height>
+              </size>
+             </property>
+             <property name="text">
+              <string/>
+             </property>
+             <property name="scaledContents">
+              <bool>true</bool>
+             </property>
+             <property name="alignment">
+              <set>Qt::AlignmentFlag::AlignCenter</set>
+             </property>
+            </widget>
+           </item>
            <item>
             <widget class="QLabel" name="positionLabel">
              <property name="styleSheet">
@@ -250,6 +463,19 @@ border-radius: 8px
             </spacer>
            </item>
            <item>
+            <widget class="QFrame" name="frame_4">
+             <property name="styleSheet">
+              <string notr="true">color: #bbb;</string>
+             </property>
+             <property name="frameShape">
+              <enum>QFrame::Shape::VLine</enum>
+             </property>
+             <property name="frameShadow">
+              <enum>QFrame::Shadow::Plain</enum>
+             </property>
+            </widget>
+           </item>
+           <item>
             <widget class="QLabel" name="serialLabel">
              <property name="styleSheet">
               <string notr="true">font: 11pt &quot;Segoe UI&quot;;</string>
@@ -284,7 +510,7 @@ border-radius: 8px
        <widget class="QFrame" name="statusSection">
         <property name="styleSheet">
          <string notr="true">#statusSection {
-border: 1px solid black;
+border: 1px solid #bbb;
 border-radius: 8px
 }</string>
         </property>
@@ -334,6 +560,19 @@ border-radius: 8px
             </layout>
            </item>
            <item>
+            <widget class="QFrame" name="frame">
+             <property name="styleSheet">
+              <string notr="true">color: #bbb;</string>
+             </property>
+             <property name="frameShape">
+              <enum>QFrame::Shape::VLine</enum>
+             </property>
+             <property name="frameShadow">
+              <enum>QFrame::Shadow::Plain</enum>
+             </property>
+            </widget>
+           </item>
+           <item>
             <layout class="QVBoxLayout" name="verticalLayout_2">
              <item>
               <widget class="QLabel" name="highDetectorLabel">
@@ -358,6 +597,19 @@ border-radius: 8px
             </layout>
            </item>
            <item>
+            <widget class="QFrame" name="frame_2">
+             <property name="styleSheet">
+              <string notr="true">color: #bbb;</string>
+             </property>
+             <property name="frameShape">
+              <enum>QFrame::Shape::VLine</enum>
+             </property>
+             <property name="frameShadow">
+              <enum>QFrame::Shadow::Plain</enum>
+             </property>
+            </widget>
+           </item>
+           <item>
             <layout class="QVBoxLayout" name="verticalLayout_4">
              <item>
               <widget class="QLabel" name="validityLabel">
@@ -380,6 +632,19 @@ border-radius: 8px
               </widget>
              </item>
             </layout>
+           </item>
+           <item>
+            <widget class="QFrame" name="frame_3">
+             <property name="styleSheet">
+              <string notr="true">color: #bbb;</string>
+             </property>
+             <property name="frameShape">
+              <enum>QFrame::Shape::VLine</enum>
+             </property>
+             <property name="frameShadow">
+              <enum>QFrame::Shadow::Plain</enum>
+             </property>
+            </widget>
            </item>
            <item>
             <layout class="QVBoxLayout" name="verticalLayout_6">
