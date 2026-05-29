@@ -457,6 +457,8 @@ class DeviceManager(QObject):
                 device.location_type = cfg["location_type"]
                 device.posit_number = cfg["posit_number"]
                 device.expected_address = cfg["expected_address"]
+                #додав для спектру
+                device.real_sensor = "S" if device.location_type == "cistern" else "G"
 
                 if device.address != device.expected_address:
                     self.device_error.emit(
@@ -687,7 +689,7 @@ class DeviceManager(QObject):
 
 ################################################ БЛОК ОБНОВЛЕНИЯ ДАННЫХ ЦИСТЕРН ######################################################
 
-    @Slot(dict)
+    @Slot(object)
     def set_cistern_states(self, states: dict):
         """Обновляет состояние цистерн в объектах DeviceInfo — выполняется в потоке DeviceManager."""
         for dev in self.devices:

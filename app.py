@@ -35,6 +35,8 @@ class SpectrumWidget(QWidget):
         if self.data and len(self.data) > 0:
             # Отрисовка спектра (гистограмма или линейный график)
             self.ax.plot(self.data, linewidth=0.5)
+            self.ax.set_ylim(bottom=0)
+            self.ax.set_xlim(left=0)
             self.ax.set_xlabel("Канал")
             self.ax.set_ylabel("Кількість імпульсів")
         else:
@@ -91,6 +93,7 @@ class DeviceCardBarrel(QWidget):
         self.setLayout(QVBoxLayout())
         self.layout().setContentsMargins(5, 5, 5, 5)
         self.layout().addWidget(self.ui)
+        self.add_spectrum()
         self.set_barrel_icon()
         self.set_dose_icon()
         self.set_temp_icon()
@@ -778,7 +781,7 @@ class App(QObject):
 
     search_devices = Signal()
     start_polling = Signal()
-    sync_cisterns_to_manager = Signal(dict)
+    sync_cisterns_to_manager = Signal(object)
 
 
     def __init__(self):
@@ -1188,14 +1191,14 @@ class App(QObject):
         #опціонально, щоб картка не розширювалась на весь контейнер
         spacerB = QSpacerItem(1, 1, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
         spacerW = QSpacerItem(1, 1, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Preferred)
-        self.grid_barrel.addItem(spacerB)
-        self.vbox_wall.addItem(spacerW)
+        self.barrel_grid.addItem(spacerB)
+        self.wall_layout.addItem(spacerW)
 
         # Вносим в приборы данные про цистерны
         self.sync_devices_with_cisterns()
 
         # Начинаем процедуру опроса внешней Системы Управления
-        self.start_test_polling("devices/cistern.json")
+        self.start_test_polling("config/cistern.json")
 
     
 
@@ -1232,26 +1235,26 @@ class App(QObject):
                 json.dump(self.cistern_dict, f, ensure_ascii=False, indent=4)   
 
     
-    def sync_devices_with_cisterns(self):
-        """
-            Синхронизируем только GUI-карточки с self.cistern_dict.
-            НИКОГДА не вызываем методы объектов DeviceManager из GUI-потока.
-        """
-        # Проверка: если cistern_dict пуст или не загружен - принудительно загружаем
-        if not self.cistern_dict:
-            self.load_cistern_data("config/cistern.json")
+    # def sync_devices_with_cisterns(self):
+    #     """
+    #         Синхронизируем только GUI-карточки с self.cistern_dict.
+    #         НИКОГДА не вызываем методы объектов DeviceManager из GUI-потока.
+    #     """
+    #     # Проверка: если cistern_dict пуст или не загружен - принудительно загружаем
+    #     if not self.cistern_dict:
+    #         self.load_cistern_data("config/cistern.json")
         
-        for sn, card in self.cards_by_sn.items():
-            try:
-                # пытаемся получить posit из карточки (если карточка его сохранила)
-                posit = getattr(card, "posit_number", None) or getattr(card, "posit", None)
-                if posit is None:
-                    continue
-                # сохраняем состояние на карточке (визуальное обновление реализовать в карточке)
-                setattr(card, "is_full", bool(self.cistern_dict.get(int(posit), False)))
-                # card.set_barrel_image(card.is_full)  # раскомментировать если нужно обновить иконку
-            except Exception:
-                continue
+    #     for sn, card in self.cards_by_sn.items():
+    #         try:
+    #             # пытаемся получить posit из карточки (если карточка его сохранила)
+    #             posit = getattr(card, "posit_number", None) or getattr(card, "posit", None)
+    #             if posit is None:
+    #                 continue
+    #             # сохраняем состояние на карточке (визуальное обновление реализовать в карточке)
+    #             setattr(card, "is_full", bool(self.cistern_dict.get(int(posit), False)))
+    #             # card.set_barrel_image(card.is_full)  # раскомментировать если нужно обновить иконку
+    #         except Exception:
+    #             continue
 
 
     def sync_devices_with_cisterns(self):
@@ -1369,6 +1372,7 @@ class App(QObject):
                                     self.db_manager.save_system_event(device_id, "cistern_drained", f"Цистерна №{num} спорожнена")
                         break
 
+        #self.ui.textEdit.append(f"App: emitting cistern_dict (type={type(self.cistern_dict)}): {self.cistern_dict!r}")
         # Если были изменения — перезаписываем файл cistern.json и синхронизируем с DeviceManager
         if updated:
             with open(json_file, "w", encoding="utf-8") as f:                
@@ -1401,7 +1405,7 @@ class App(QObject):
         self.start_polling.emit()
         
         # Запуск имитации опроса внешней системы (состояние цистерн)
-        self.start_test_polling("devices/cistern.json")
+        self.start_test_polling("config/cistern.json")
     
     def on_device_connection_status(self, serial_number: str, connected: bool, crc_error: bool):
         """
