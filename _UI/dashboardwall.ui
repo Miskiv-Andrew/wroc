@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>400</width>
-    <height>340</height>
+    <width>394</width>
+    <height>327</height>
    </rect>
   </property>
   <property name="sizePolicy">
@@ -80,12 +80,6 @@ background-color: rgb(248, 248, 249)
           <verstretch>0</verstretch>
          </sizepolicy>
         </property>
-        <property name="styleSheet">
-         <string notr="true">#measureSection {
-border: 1px solid #bbb;
-border-radius: 8px
-}</string>
-        </property>
         <property name="frameShape">
          <enum>QFrame::Shape::StyledPanel</enum>
         </property>
@@ -94,16 +88,16 @@ border-radius: 8px
         </property>
         <layout class="QVBoxLayout" name="verticalLayout_5">
          <property name="leftMargin">
-          <number>5</number>
+          <number>1</number>
          </property>
          <property name="topMargin">
-          <number>5</number>
+          <number>1</number>
          </property>
          <property name="rightMargin">
-          <number>5</number>
+          <number>1</number>
          </property>
          <property name="bottomMargin">
-          <number>5</number>
+          <number>1</number>
          </property>
          <item>
           <layout class="QHBoxLayout" name="horizontalLayout" stretch="1,1">
@@ -117,19 +111,31 @@ border-radius: 8px
              </property>
              <layout class="QVBoxLayout" name="verticalLayout_8">
               <property name="leftMargin">
-               <number>5</number>
+               <number>1</number>
               </property>
               <property name="topMargin">
-               <number>5</number>
+               <number>1</number>
               </property>
               <property name="rightMargin">
-               <number>5</number>
+               <number>1</number>
               </property>
               <property name="bottomMargin">
-               <number>5</number>
+               <number>1</number>
               </property>
               <item>
                <layout class="QVBoxLayout" name="verticalLayout_7">
+                <property name="leftMargin">
+                 <number>5</number>
+                </property>
+                <property name="topMargin">
+                 <number>5</number>
+                </property>
+                <property name="rightMargin">
+                 <number>5</number>
+                </property>
+                <property name="bottomMargin">
+                 <number>5</number>
+                </property>
                 <item>
                  <layout class="QHBoxLayout" name="horizontalLayout_2">
                   <item>
@@ -251,19 +257,31 @@ border-radius: 8px
              </property>
              <layout class="QHBoxLayout" name="horizontalLayout_8">
               <property name="leftMargin">
-               <number>5</number>
+               <number>1</number>
               </property>
               <property name="topMargin">
-               <number>5</number>
+               <number>1</number>
               </property>
               <property name="rightMargin">
-               <number>5</number>
+               <number>1</number>
               </property>
               <property name="bottomMargin">
-               <number>5</number>
+               <number>1</number>
               </property>
               <item>
                <layout class="QVBoxLayout" name="verticalLayout_9">
+                <property name="leftMargin">
+                 <number>5</number>
+                </property>
+                <property name="topMargin">
+                 <number>5</number>
+                </property>
+                <property name="rightMargin">
+                 <number>5</number>
+                </property>
+                <property name="bottomMargin">
+                 <number>5</number>
+                </property>
                 <item>
                  <layout class="QHBoxLayout" name="horizontalLayout_7">
                   <item>

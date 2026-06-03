@@ -163,7 +163,7 @@ class DeviceCardBarrel(QWidget):
             label.setPixmap(pixmap)
     
     def set_dose_icon(self):
-        """Set the dose icon"""
+        """Set the radiation dose icon"""
         label = self.ui.findChild(QLabel, "iconDose")
         path = os.path.abspath(os.path.join("_UI", "icons", "dose_rate_icon.png"))
         pixmap = QPixmap(path)
@@ -171,7 +171,7 @@ class DeviceCardBarrel(QWidget):
             label.setPixmap(pixmap)
     
     def set_temp_icon(self):
-        """Set the temp icon"""
+        """Set the temperature icon"""
         label = self.ui.findChild(QLabel, "iconTemp")
         path = os.path.abspath(os.path.join("_UI", "icons", "temperature_icon.png"))
         pixmap = QPixmap(path)
@@ -609,7 +609,7 @@ class DeviceCardWall(QWidget):
             label.setPixmap(pixmap)
     
     def set_dose_icon(self):
-        """Set the wall detector icon"""
+        """Set the radiation dose icon"""
         label = self.ui.findChild(QLabel, "iconDose")
         path = os.path.abspath(os.path.join("_UI", "icons", "dose_rate_icon.png"))
         pixmap = QPixmap(path)
@@ -617,7 +617,7 @@ class DeviceCardWall(QWidget):
             label.setPixmap(pixmap)
     
     def set_temp_icon(self):
-        """Set the wall detector icon"""
+        """Set the temperature icon"""
         label = self.ui.findChild(QLabel, "iconTemp")
         path = os.path.abspath(os.path.join("_UI", "icons", "temperature_icon.png"))
         pixmap = QPixmap(path)

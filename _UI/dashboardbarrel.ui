@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>866</width>
-    <height>430</height>
+    <width>860</width>
+    <height>417</height>
    </rect>
   </property>
   <property name="sizePolicy">
@@ -295,6 +295,18 @@ border-radius: 8px
          <enum>QFrame::Shadow::Raised</enum>
         </property>
         <layout class="QHBoxLayout" name="horizontalLayout_4">
+         <property name="leftMargin">
+          <number>5</number>
+         </property>
+         <property name="topMargin">
+          <number>5</number>
+         </property>
+         <property name="rightMargin">
+          <number>5</number>
+         </property>
+         <property name="bottomMargin">
+          <number>5</number>
+         </property>
          <item>
           <layout class="QHBoxLayout" name="horizontalLayout_3">
            <item>
@@ -302,7 +314,7 @@ border-radius: 8px
              <property name="maximumSize">
               <size>
                <width>30</width>
-               <height>50</height>
+               <height>30</height>
               </size>
              </property>
              <property name="text">
@@ -310,6 +322,9 @@ border-radius: 8px
              </property>
              <property name="scaledContents">
               <bool>true</bool>
+             </property>
+             <property name="alignment">
+              <set>Qt::AlignmentFlag::AlignCenter</set>
              </property>
             </widget>
            </item>
@@ -414,13 +429,38 @@ border-radius: 8px
          <attribute name="title">
           <string>Спектр</string>
          </attribute>
-         <layout class="QVBoxLayout" name="verticalLayout_2"/>
+         <layout class="QVBoxLayout" name="verticalLayout_2">
+          <property name="leftMargin">
+           <number>9</number>
+          </property>
+          <property name="topMargin">
+           <number>9</number>
+          </property>
+          <property name="rightMargin">
+           <number>9</number>
+          </property>
+          <property name="bottomMargin">
+           <number>9</number>
+          </property>
+         </layout>
         </widget>
         <widget class="QWidget" name="histogram">
          <attribute name="title">
           <string>Гістограма</string>
          </attribute>
          <layout class="QVBoxLayout" name="verticalLayout_4">
+          <property name="leftMargin">
+           <number>9</number>
+          </property>
+          <property name="topMargin">
+           <number>9</number>
+          </property>
+          <property name="rightMargin">
+           <number>9</number>
+          </property>
+          <property name="bottomMargin">
+           <number>9</number>
+          </property>
           <item>
            <layout class="QVBoxLayout" name="verticalLayout" stretch="10,1">
             <item>
@@ -499,12 +539,6 @@ border-radius: 8px
           <verstretch>0</verstretch>
          </sizepolicy>
         </property>
-        <property name="styleSheet">
-         <string notr="true">#measureSection {
-border: 1px solid #bbb;
-border-radius: 8px
-}</string>
-        </property>
         <property name="frameShape">
          <enum>QFrame::Shape::StyledPanel</enum>
         </property>
@@ -516,16 +550,16 @@ border-radius: 8px
           <number>5</number>
          </property>
          <property name="leftMargin">
-          <number>5</number>
+          <number>1</number>
          </property>
          <property name="topMargin">
-          <number>5</number>
+          <number>1</number>
          </property>
          <property name="rightMargin">
-          <number>5</number>
+          <number>1</number>
          </property>
          <property name="bottomMargin">
-          <number>5</number>
+          <number>1</number>
          </property>
          <item>
           <layout class="QHBoxLayout" name="horizontalLayout_6" stretch="1,1,1,1,1">
@@ -1101,7 +1135,7 @@ border-radius: 8px
                    <string>&lt;div style='line-height:80%'&gt;Готовність&lt;br&gt;до скиду&lt;/div&gt;</string>
                   </property>
                   <property name="alignment">
-                   <set>Qt::AlignmentFlag::AlignCenter</set>
+                   <set>Qt::AlignmentFlag::AlignBottom|Qt::AlignmentFlag::AlignHCenter</set>
                   </property>
                  </widget>
                 </item>

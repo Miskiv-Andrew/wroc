@@ -596,7 +596,7 @@ class DeviceManager(QObject):
 
         # Берём младшие 12 бит и делим на 16
         temp_r = (temp_w & 0xFFF) / 16.0
-        return f"{sign}{temp_r:.1f} °C"
+        return f"{sign}{temp_r:.1f}"
     
 
     def _rad_intens_data(self, data: bytearray) -> int:
