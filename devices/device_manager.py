@@ -673,6 +673,8 @@ class DeviceManager(QObject):
         # Пересчёт ПАЕД по коэффициенту (аналогично _paed_data)
         paed_value = paed_raw * 0.1 if (data[2061] & 0x80) else paed_raw * 0.01
         
+        accuracy = data[2060]
+
         # 3. Тестовый байт (байт 2061)
         test_byte = data[2061]
         
@@ -683,6 +685,7 @@ class DeviceManager(QObject):
         return {
             "channels": channels,
             "paed_value": paed_value,
+            "accuracy": accuracy,
             "test_byte": test_byte,
             "valid": result_valid
         }

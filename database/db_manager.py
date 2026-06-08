@@ -109,6 +109,7 @@ class DatabaseManager:
                 device_id INTEGER NOT NULL,
                 timestamp DATETIME NOT NULL,
                 paed REAL NOT NULL,
+                temperature REAL NOT NULL,
                 activity REAL NOT NULL,
                 low_status INTEGER NOT NULL,
                 high_status INTEGER NOT NULL,
@@ -200,16 +201,16 @@ class DatabaseManager:
         conn.commit()
         self.wall_buffer.clear()
     
-    def save_cistern_measurement(self, device_id, paed, activity, low_status, high_status, valid, fullness_status, ready_to_drain):
+    def save_cistern_measurement(self, device_id, paed, temperature, activity, low_status, high_status, valid, fullness_status, ready_to_drain):
         """
         Немедленно сохраняет измерение цистерны в БД (без буферизации).
         """
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self._execute_query("""
             INSERT INTO measurements_cistern 
-            (device_id, timestamp, paed, activity, low_status, high_status, valid, fullness_status, ready_to_drain)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (device_id, timestamp, paed, activity, low_status, high_status, valid, fullness_status, ready_to_drain))
+            (device_id, timestamp, paed, temperature, activity, low_status, high_status, valid, fullness_status, ready_to_drain)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (device_id, timestamp, paed, temperature, activity, low_status, high_status, valid, fullness_status, ready_to_drain))
     
     def save_system_event(self, device_id, event_type, description):
         """

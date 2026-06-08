@@ -1015,10 +1015,12 @@ class App(QObject):
                                 valid=1 if result_valid else 0
                             )
                         elif card.location_type == "cistern":
+                            temp_value = getattr(card, 'last_temperature', 0.0)
                             fullness_status = "full" if getattr(card, 'is_full', False) else "empty"
                             self.db_manager.save_cistern_measurement(
                                 device_id=device_id,
                                 paed=dose,
+                                temperature=temp_value,
                                 activity=0.0,
                                 low_status=1 if low_failure else 0,
                                 high_status=1 if high_failure else 0,
@@ -1047,6 +1049,7 @@ class App(QObject):
                 if isinstance(packet.buff, dict):
                     channels = packet.buff.get("channels", [])
                     paed_value = packet.buff.get("paed_value", 0.0)
+                    accuracy = packet.buff.get("accuracy", 0)
                     test_byte = packet.buff.get("test_byte", 0)
                     result_valid = packet.buff.get("valid", False)
                     
@@ -1062,7 +1065,7 @@ class App(QObject):
                     card.add_spectrum_data(channels)
                     
                     # Обновляем ПАЕД
-                    card.set_dose_value(paed_value, 0)
+                    card.set_dose_value(paed_value, accuracy)
                     
                     # Обновляем состояние детекторов из test_byte
                     high_failure = bool(test_byte & 0b00000001)
@@ -1072,10 +1075,12 @@ class App(QObject):
                     # Сохраняем измерение в БД (без активности)
                     device_id = self.db_manager.get_device_id(sn)
                     if device_id is not None and card.location_type == "cistern":
+                        temp_value = getattr(card, 'last_temperature', 0.0)
                         fullness_status = "full" if getattr(card, 'is_full', False) else "empty"
                         self.db_manager.save_cistern_measurement(
                             device_id=device_id,
                             paed=paed_value,
+                            temperature=temp_value,
                             activity=0.0,
                             low_status=1 if low_failure else 0,
                             high_status=1 if high_failure else 0,
