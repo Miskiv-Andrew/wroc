@@ -1,0 +1,202 @@
+Опис класів та модулів
+5.1 app.py — головний модуль
+Клас App (QObject)
+
+Головний клас програми. Відповідає за GUI, управління картками приладів, синхронізацію з БД та потоками.
+
+Основні атрибути:
+
+Атрибут	Тип	Опис
+ui	QMainWindow	Завантажений інтерфейс з main_window_form.ui
+device_manager	DeviceManager	Менеджер опитування приладів (в окремому потоці)
+device_manager_thread	QThread	Потік для DeviceManager
+db_manager	DatabaseManager	Робота з БД
+cards_by_sn	dict	Словник карток приладів {serial_number: widget}
+cistern_dict	dict	Стан заповненості цистерн {номер: True/False}
+Основні методи:
+
+Метод	Опис
+load_ui()	Завантаження головного вікна з _UI/main_window_form.ui
+setup_connections()	Підключення сигналів та слотів
+setup_device_manager()	Створення потоку та DeviceManager
+on_devices_updated(devices)	Отримання списку приладів після пошуку, створення карток
+on_device_packet(packet)	Обробка даних від приладів (ПАЕД, температура, спектр)
+on_device_missing(serial_number)	Активація пункту меню заміни приладу
+open_replace_dialog()	Відкриття діалогу заміни/активації приладів
+stop_system()	Зупинка опитування
+cleanup()	Коректне завершення програми
+Клас DeviceCardBarrel (QWidget)
+
+Віджет для відображення цистерни.
+
+Метод	Опис
+set_serial(serial)	Встановлення SN
+set_position(position)	Встановлення номера цистерни
+set_dose_value(dose, acc)	Оновлення ПАЕД
+set_temp_value(value)	Оновлення температури
+add_spectrum_data(channels)	Додавання даних спектру до буфера
+calculate_activity()	Розрахунок активності після 600 спектрів
+set_barrel_image(full)	Зміна іконки (повна/порожня)
+set_detector_status(...)	Статус детекторів
+set_connection_status(...)	Статус зв'язку
+Клас DeviceCardWall (QWidget)
+
+Віджет для відображення настінного детектора.
+
+Метод	Опис
+set_serial(serial)	Встановлення SN
+set_position(position)	Встановлення номера детектора
+set_dose_value(dose, acc)	Оновлення ПАЕД
+set_temp_value(value)	Оновлення температури
+set_detector_status(...)	Статус детекторів
+set_connection_status(...)	Статус зв'язку
+5.2 device_manager.py — управління опитуванням приладів
+Клас DeviceManager (QObject)
+
+Працює в окремому потоці. Відповідає за опитування приладів через COM-порт, парсинг даних, контроль таймаутів.
+
+Основні атрибути:
+
+Атрибут	Тип	Опис
+devices	list[DeviceInfo]	Список приладів для опитування
+serial_port	QSerialPort	COM-порт для зв'язку
+poll_timer	QTimer	Таймер опитування
+error_timer	QTimer	Таймер очікування відповіді
+current_index	int	Індекс поточного приладу
+last_command	Command	Остання відправлена команда
+debug_mode	int/None	Режим налагодження (1 або None)
+Основні методи:
+
+Метод	Опис
+find_rpii_ports()	Пошук COM-портів з FTDI/RPII
+scan_devices()	Опитування адрес 1-6 для пошуку приладів
+match_devices_with_config()	Зіставлення знайдених приладів з config.txt
+dispatch_poll_step()	Циклічне опитування приладів
+make_request()	Формування запиту до приладу
+handle_ready_read()	Обробка вхідних даних від приладу
+handle_timeout_error()	Обробка таймауту (немає відповіді)
+calc_crc()	Розрахунок CRC
+verify_crc()	Перевірка CRC
+_paed_data()	Парсинг ПАЕД
+_temp_data()	Парсинг температури
+_parse_spectrum_data()	Парсинг спектру (1024 канали)
+Сигнали:
+
+Сигнал	Опис
+device_found	Список знайдених приладів
+device_response	Отримані дані від приладу
+device_error	Помилка (CRC, таймаут, конфіг)
+device_connection_status	Статус зв'язку
+device_missing	Прилад не відповідає 5 циклів
+system_event	Системна подія
+5.3 db_manager.py — робота з базою даних
+Клас DatabaseManager
+
+Відповідає за всі операції з SQLite. Працює в головному потоці, але надає потокобезпечні методи для викликів з DeviceManager.
+
+Основні атрибути:
+
+Атрибут	Тип	Опис
+db_path	str	Шлях до файлу БД (data/clinic.db)
+connection	sqlite3.Connection	З'єднання з БД (головний потік)
+devices_map	dict	Кеш {serial_number: device_id} для активних приладів
+wall_buffer	dict	Буфер вимірювань настінних детекторів
+flush_timer	QTimer	Таймер скидання буфера (30 хв)
+Основні методи:
+
+Метод	Опис
+_create_tables_if_not_exist()	Створення таблиць при першому запуску
+_init_devices_from_config()	Заповнення devices з config.txt
+get_device_id(serial_number)	Повертає ID активного приладу (з кешу)
+get_device_active_status(serial_number)	Перевіряє is_active (потокобезпечний)
+activate_device(serial_number)	Активує прилад (потокобезпечний)
+reload_devices_map()	Оновлює кеш активних приладів
+buffer_wall_measurement(...)	Додає вимірювання в буфер
+_flush_wall_buffer()	Запис буфера в БД
+save_cistern_measurement(...)	Зберігає вимірювання цистерни
+save_system_event(...)	Зберігає системну подію
+replace_device(...)	Заміна приладу (оновлення БД та конфігів)
+cleanup_old_records()	Видалення записів старіших за 3 роки
+Потокобезпечні методи (створюють тимчасове з'єднання):
+
+get_device_active_status()
+
+activate_device()
+
+reload_devices_map()
+
+5.4 device_info.py — стан приладу
+Клас DeviceInfo (dataclass)
+
+Зберігає всю інформацію про прилад: параметри підключення, стан, дані для опитування.
+
+Атрибути:
+
+Атрибут	Тип	Опис
+port	str	COM-порт
+address	int	Адреса в шині (1-6)
+serial_number	str	Серійний номер
+device_type	str	Тип приладу
+location_type	str	cistern / room
+posit_number	int	Номер цистерни або кімнати
+is_active	bool	Активний (з БД)
+is_online	bool	Відповідає на опитування
+no_answer_count	int	Лічильник невідповідей
+full	bool	Стан заповненості цистерни
+spectrum_buffer	list[int]	Буфер спектру (1024 канали)
+spectrum_counter	int	Лічильник отриманих спектрів (0-600)
+spectrum_active	bool	Флаг набору спектру
+last_paed	float	Останнє значення ПАЕД
+Методи:
+
+Метод	Опис
+set_full(value)	Встановлення стану заповненості (потокобезпечний)
+get_full()	Отримання стану заповненості
+reset_spectrum()	Скидання буфера спектру
+add_to_spectrum(channels)	Додавання каналів до буфера
+is_spectrum_ready()	Перевірка, чи накопичено 600 спектрів
+5.5 address_changer.py — заміна адреси приладу
+Клас AddressChanger (QObject)
+
+Відповідає за пошук нового приладу на адресах 200-201 та зміну його адреси на цільову (з config.txt).
+
+Атрибути:
+
+Атрибут	Тип	Опис
+device_manager	DeviceManager	Для використання calc_crc() та verify_crc()
+Методи:
+
+Метод	Опис
+find_new_device(addresses=[200, 201])	Пошук приладу на адресах 200-201, отримання SN
+change_address(port, old_addr, new_addr, expected_sn)	Зміна адреси приладу (3 спроби, таймаут 1 сек)
+_get_available_ports()	Пошук COM-портів FTDI/RPII
+_extract_serial_number(data)	Отримання SN з відповіді
+Сигнали:
+
+Сигнал	Опис
+found	Знайдено новий прилад (port, SN, address)
+status	Текстове повідомлення про статус
+error	Повідомлення про помилку
+Протокол зміни адреси:
+
+Команда: [0x55, 0xAA, 0x70, OLD_ADDR, 0x06, NEW_ADDR, 0x00] + CRC
+
+Відповідь: [0x55, 0xAA, 0x70, OLD_ADDR, 0x06, STATUS, CRC] (6 байт + CRC)
+
+Успіх: перевірка CRC та збіг OLD_ADDR
+
+Таймаут: 1 секунда, повторів: 3
+
+App (головний потік)
+    │
+    ├── створює ──→ DatabaseManager
+    ├── створює ──→ DeviceManager (в окремому потоці)
+    │                   │
+    │                   ├── використовує ──→ DeviceInfo
+    │                   ├── створює ──→ AddressChanger (при заміні)
+    │                   └── викликає ──→ DatabaseManager (потокобезпечні методи)
+    │
+    ├── отримує сигнали ←── DeviceManager
+    │
+    └── створює ──→ DeviceCardBarrel / DeviceCardWall (GUI)
+

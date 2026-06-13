@@ -1,0 +1,109 @@
+13. СХЕМА ПАПОК І ФАЙЛІВ (ДЕРЕВО ПРОЕКТУ)
+==========================================
+
+Project_Root/
+│
+├── app.py                          # Головний модуль (GUI, App, DeviceCardBarrel, DeviceCardWall)
+├── requirements.txt                # Список залежностей Python
+│
+├── _UI/                            # Файли інтерфейсів (Qt Designer)
+│   ├── main_window_form.ui         # Головне вікно
+│   ├── dashboardbarrel.ui          # Картка цистерни
+│   ├── dashboardwall.ui            # Картка настінного детектора
+│   ├── db_view.ui                  # Вікно перегляду БД
+│   └── device_replace.ui           # Діалог заміни/активації приладу
+│
+├── config/                         # Конфігураційні файли
+│   ├── config.txt                  # Конфігурація приладів (SN;тип;позиція;адреса)
+│   ├── hash.txt                    # SHA-256 хеш config.txt
+│   └── cistern.json                # Стан заповненості цистерн
+│
+├── data/                           # База даних
+│   └── clinic.db                   # SQLite база даних
+│
+├── devices/                        # Модулі роботи з приладами
+│   ├── __init__.py
+│   ├── commands.py                 # Константи команд для приладів БДБГ-09S-23
+│   ├── device_info.py              # Клас DeviceInfo (стан приладу)
+│   ├── device_manager.py           # Клас DeviceManager (опитування, потік)
+│   ├── device_package.py           # Клас DevicePacket (пакет даних)
+│   └── address_changer.py          # Клас AddressChanger (пошук та зміна адреси)
+│
+├── database/                       # Модулі роботи з БД
+│   ├── __init__.py
+│   ├── db_manager.py               # Клас DatabaseManager (SQLite)
+│   └── db_view_window.py           # Клас DBViewWindow (вікно перегляду БД)
+│
+├── dialogs/                        # Діалогові вікна
+│   ├── __init__.py
+│   └── device_replace_dialog.py    # Клас DeviceReplaceDialog (заміна/активація)
+│
+└── docs/                           # Документація (опціонально)
+    ├── 01_Загальний_опис.txt
+    ├── 02_Архітектура.txt
+    ├── 03_Структура_БД.txt
+    ├── 04_Формат_конфігів.txt
+    ├── 05_Опис_класів.txt
+    ├── 06_Інтерфейс.txt
+    ├── 07_Алгоритм_заміни.txt
+    ├── 08_Алгоритм_активації.txt
+    ├── 09_Алгоритм_опитування.txt
+    ├── 10_Системні_події.txt
+    ├── 11_Інструкція_розгортання.txt
+    └── 12_Програма_тестування.txt
+
+---------------------------------------------------------------------
+
+ОПИС ОСНОВНИХ ФАЙЛІВ
+--------------------
+
+app.py (головний):
+- Клас App (головний, GUI, управління картками)
+- Клас DeviceCardBarrel (віджет цистерни)
+- Клас DeviceCardWall (віджет настінного детектора)
+- Клас SpectrumWidget (віджет графіку спектру)
+- Клас DatabaseWindow (старе вікно БД, не використовується)
+
+devices/device_manager.py:
+- Клас DeviceManager (опитування, потік, COM-порт)
+- Сигнали: device_found, device_response, device_error, device_connection_status, device_missing
+
+devices/device_info.py:
+- Клас DeviceInfo (порт, адреса, SN, стан, is_active, is_online, спектр)
+
+devices/commands.py:
+- Клас Command
+- Константи: COMMAND_RAD_DOSE, COMMAND_SER_NUM, COMMAND_TEMP, COMMAND_START_SIMPLE_SPECTRE, COMMAND_GET_SIMPLE_SPECTRE, COMMAND_CHANGE_ADDRESS
+
+database/db_manager.py:
+- Клас DatabaseManager (SQLite)
+- Методи: buffer_wall_measurement, save_cistern_measurement, save_system_event, replace_device, get_device_id, get_device_active_status, activate_device, reload_devices_map
+
+dialogs/device_replace_dialog.py:
+- Клас DeviceReplaceDialog (заміна/активація приладів)
+
+---------------------------------------------------------------------
+
+ЗВ'ЯЗКИ МІЖ ФАЙЛАМИ
+-------------------
+
+app.py
+  ├── _UI/main_window_form.ui (завантаження UI)
+  ├── devices/device_manager.py (створення та запуск потоку)
+  ├── database/db_manager.py (створення та використання)
+  ├── devices/address_changer.py (через діалог)
+  ├── dialogs/device_replace_dialog.py (при відкритті діалогу)
+  └── database/db_view_window.py (при відкритті вікна БД)
+
+device_manager.py
+  ├── devices/commands.py (команди)
+  ├── devices/device_info.py (DeviceInfo)
+  ├── devices/device_package.py (DevicePacket)
+  └── database/db_manager.py (потокобезпечні методи)
+
+db_manager.py
+  └── data/clinic.db (SQLite)
+
+address_changer.py
+  ├── devices/commands.py (COMMAND_SER_NUM, COMMAND_CHANGE_ADDRESS)
+  └── devices/device_manager.py (calc_crc, verify_crc)

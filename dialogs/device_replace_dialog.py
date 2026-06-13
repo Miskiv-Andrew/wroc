@@ -10,15 +10,49 @@ from database.db_manager import DatabaseManager
 
 
 class DeviceReplaceDialog(QDialog):
-    def __init__(self, db_manager: DatabaseManager, missing_devices: list, parent=None):
+
+    # def __init__(self, db_manager: DatabaseManager, missing_devices: list, parent=None):
+    #     super().__init__(parent)
+        
+    #     self.db_manager = db_manager
+    #     self.missing_devices = missing_devices  # список словарей [{"serial_number": "...", "location_type": "...", "position_number": ...}]
+    #     self.new_device_info = None  # (port, serial_number, address)
+    #     self.address_changer = AddressChanger()
+        
+    #     # Загружаем UI
+    #     loader = QUiLoader()
+    #     ui_file = QFile("_UI/device_replace.ui")
+    #     ui_file.open(QFile.ReadOnly)
+    #     self.ui = loader.load(ui_file)
+    #     ui_file.close()
+        
+    #     if self.ui is None:
+    #         raise RuntimeError("Не удалось загрузить _UI/device_replace.ui")
+        
+    #     self.setLayout(self.ui.layout())
+    #     self.setWindowTitle(self.ui.windowTitle())
+        
+    #     # Подключаем сигналы
+    #     self.setup_connections()
+        
+    #     # Заполняем список старых приборов
+    #     self.load_missing_devices()
+        
+    #     # Подключаем сигналы AddressChanger
+    #     self.address_changer.status.connect(self.on_status)
+    #     self.address_changer.error.connect(self.on_error)
+    #     self.address_changer.found.connect(self.on_device_found)
+
+    def __init__(self, db_manager, active_devices, inactive_devices, parent=None):
         super().__init__(parent)
         
         self.db_manager = db_manager
-        self.missing_devices = missing_devices  # список словарей [{"serial_number": "...", "location_type": "...", "position_number": ...}]
-        self.new_device_info = None  # (port, serial_number, address)
-        self.address_changer = AddressChanger()
+        self.active_devices = active_devices      # для заміни
+        self.inactive_devices = inactive_devices  # для активації
+        self.new_device_info = None
+        self.address_changer = AddressChanger(db_manager)
         
-        # Загружаем UI
+        # Завантажуємо UI
         loader = QUiLoader()
         ui_file = QFile("_UI/device_replace.ui")
         ui_file.open(QFile.ReadOnly)
@@ -31,13 +65,10 @@ class DeviceReplaceDialog(QDialog):
         self.setLayout(self.ui.layout())
         self.setWindowTitle(self.ui.windowTitle())
         
-        # Подключаем сигналы
         self.setup_connections()
+        self.load_active_devices()      # для заміни
+        self.load_inactive_devices()    # для активації
         
-        # Заполняем список старых приборов
-        self.load_missing_devices()
-        
-        # Подключаем сигналы AddressChanger
         self.address_changer.status.connect(self.on_status)
         self.address_changer.error.connect(self.on_error)
         self.address_changer.found.connect(self.on_device_found)
@@ -47,6 +78,7 @@ class DeviceReplaceDialog(QDialog):
         self.ui.btn_replace.clicked.connect(self.replace_device)
         self.ui.btn_cancel.clicked.connect(self.reject)
         self.ui.combo_old_device.currentIndexChanged.connect(self.on_old_device_changed)
+        self.ui.btn_activate.clicked.connect(self.activate_device)
     
     def load_missing_devices(self):
         """Заполняет combo_old_device приборами, которые пропали"""
@@ -59,16 +91,25 @@ class DeviceReplaceDialog(QDialog):
         if self.missing_devices:
             self.on_old_device_changed(0)
     
+    # def on_old_device_changed(self, index):
+    #     """При выборе старого прибора показываем его расположение"""
+    #     if index < 0:
+    #         return
+    #     sn = self.ui.combo_old_device.currentData()
+    #     for dev in self.missing_devices:
+    #         if dev['serial_number'] == sn:
+    #             self.ui.label_old_location.setText(f"{dev['location_type']} №{dev['position_number']}")
+    #             break
+
     def on_old_device_changed(self, index):
-        """При выборе старого прибора показываем его расположение"""
         if index < 0:
             return
         sn = self.ui.combo_old_device.currentData()
-        for dev in self.missing_devices:
+        for dev in self.active_devices:
             if dev['serial_number'] == sn:
                 self.ui.label_old_location.setText(f"{dev['location_type']} №{dev['position_number']}")
                 break
-    
+        
     def find_new_device(self):
         """Поиск нового прибора на адресах 200-201"""
         self.ui.btn_find_new.setEnabled(False)
@@ -96,7 +137,9 @@ class DeviceReplaceDialog(QDialog):
         self.ui.btn_find_new.setEnabled(True)
     
     def replace_device(self):
-        """Выполняет замену прибора"""
+        """
+            Выполняет замену прибора
+        """
         # Получаем данные старого прибора
         old_sn = self.ui.combo_old_device.currentData()
         if not old_sn:
@@ -120,6 +163,13 @@ class DeviceReplaceDialog(QDialog):
             return
         
         port, new_sn, old_addr = self.new_device_info
+
+        # Перевірка на однакові серійні номери
+        if old_sn == new_sn:
+            QMessageBox.warning(self, "Помилка", "Старий та новий прилади мають однаковий серійний номер. Заміна неможлива.")
+            self.ui.label_status.setText("Помилка: однакові SN")
+            self.ui.btn_replace.setEnabled(True)
+            return
         
         # Получаем целевой адрес из config.txt (по старому SN)
         target_address = self._get_address_from_config(old_sn)
@@ -257,3 +307,67 @@ class DeviceReplaceDialog(QDialog):
     
     def on_device_found(self, port, sn, addr):
         pass  # обработано в find_new_device
+
+    def load_active_devices(self):
+        """Заповнює combo_old_device активними приладами (для заміни)"""
+        self.ui.combo_old_device.clear()
+        for dev in self.active_devices:
+            self.ui.combo_old_device.addItem(
+                f"{dev['serial_number']} ({dev['location_type']} №{dev['position_number']})",
+                dev['serial_number']
+            )
+        if self.active_devices:
+            self.on_old_device_changed(0)
+
+    def load_inactive_devices(self):
+        """Заповнює combo_inactive_devices неактивними приладами (для активації)"""
+        self.ui.combo_inactive_device.clear()
+        for dev in self.inactive_devices:
+            self.ui.combo_inactive_device.addItem(
+                f"{dev['serial_number']} ({dev['location_type']} №{dev['position_number']})",
+                dev['serial_number']
+            )
+
+    # def activate_device(self):
+    #     """Активує вибраний неактивний прилад"""
+    #     sn = self.ui.combo_inactive_device.currentData()
+    #     if not sn:
+    #         QMessageBox.warning(self, "Помилка", "Не вибрано прилад для активації")
+    #         return
+        
+    #     reply = QMessageBox.question(self, "Підтвердження", 
+    #                                 f"Активувати прилад {sn}?",
+    #                                 QMessageBox.Yes | QMessageBox.No)
+    #     if reply != QMessageBox.Yes:
+    #         return
+        
+    #     conn = self.db_manager._get_connection()
+    #     cursor = conn.cursor()
+    #     cursor.execute("UPDATE devices SET is_active = 1 WHERE serial_number = ?", (sn,))
+    #     conn.commit()
+        
+    #     self.db_manager.save_system_event(None, "device_activated", f"Прилад {sn} активовано")
+        
+    #     QMessageBox.information(self, "Успіх", f"Прилад {sn} активовано. Необхідно перезапустити програму.")
+    #     self.ui.label_status.setText("Прилад активовано. Перезапустіть програму.")
+
+    def activate_device(self):
+        """Активує вибраний неактивний прилад"""
+        sn = self.ui.combo_inactive_device.currentData()
+        if not sn:
+            QMessageBox.warning(self, "Помилка", "Не вибрано прилад для активації")
+            return
+        
+        reply = QMessageBox.question(self, "Підтвердження", 
+                                    f"Активувати прилад {sn}?",
+                                    QMessageBox.Yes | QMessageBox.No)
+        if reply != QMessageBox.Yes:
+            return
+        
+        self.db_manager.activate_device(sn)
+        self.db_manager.reload_devices_map()
+        
+        self.db_manager.save_system_event(None, "device_activated", f"Прилад {sn} активовано")
+        
+        QMessageBox.information(self, "Успіх", f"Прилад {sn} активовано. Необхідно перезапустити програму.")
+        self.ui.label_status.setText("Прилад активовано. Перезапустіть програму.")

@@ -367,6 +367,60 @@ class DatabaseManager:
                 INSERT INTO devices (serial_number, device_type, location_type, position_number, is_active)
                 VALUES (?, ?, ?, ?, 1)
             """, (serial_number, device_type, location_type, position_number))
+
+
+    def get_device_active_status(self, serial_number: str) -> bool:
+        """
+            Повертає is_active для приладу за SN (безпечний для використання в різних потоках)
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT is_active FROM devices WHERE serial_number = ?", (serial_number,))
+        row = cursor.fetchone()
+        conn.close()
+        return bool(row[0]) if row else True
+    
+
+    def get_inactive_devices(self):
+        """
+            Повертає список неактивних приладів
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT serial_number, location_type, position_number FROM devices WHERE is_active = 0")
+        rows = cursor.fetchall()
+        conn.close()
+        return [{"serial_number": row[0], "location_type": row[1], "position_number": row[2]} for row in rows]
+    
+
+    def activate_device(self, serial_number: str):
+        """
+            Активує прилад (безпечний для різних потоків)
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("UPDATE devices SET is_active = 1 WHERE serial_number = ?", (serial_number,))
+        conn.commit()
+        conn.close()
+
+    # def reload_devices_map(self):
+    #     """Перезавантажує кеш активних приладів"""
+    #     self._load_devices_map()
+
+    def reload_devices_map(self):
+        """Перезавантажує кеш активних приладів (потокобезпечний)"""
+        # Створюємо тимчасове з'єднання в поточному потоці
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, serial_number FROM devices WHERE is_active = 1")
+        rows = cursor.fetchall()
+        conn.close()
+        
+        # Оновлюємо кеш
+        self.devices_map = {}
+        for row in rows:
+            self.devices_map[row[1]] = row[0]
+
     
     def close(self):
         """

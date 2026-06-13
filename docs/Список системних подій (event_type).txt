@@ -1,0 +1,91 @@
+10. СПИСОК СИСТЕМНИХ ПОДІЙ (event_type)
+========================================
+
+10.1. ПРИЗНАЧЕННЯ
+-----------------
+Таблиця system_events зберігає всі важливі події, що відбуваються в системі.
+Кожна подія має тип (event_type), час (timestamp), прилад (device_id) та опис (description).
+
+10.2. ПОВНИЙ ПЕРЕЛІК ТИПІВ ПОДІЙ
+--------------------------------
+
+| event_type | Опис | Коли виникає | device_id |
+|------------|------|--------------|-----------|
+| app_start | Запуск програми | При створенні App (__init__) | NULL |
+| app_stop | Зупинка програми | При виклику cleanup() | NULL |
+| device_replaced | Заміна приладу | Після успішної заміни через діалог | NULL |
+| device_activated | Активація приладу | Ручна активація або автоматична при пошуку | NULL |
+| cistern_filled | Заповнення цистерни | При зміні стану empty → full | device_id цистерни |
+| cistern_drained | Злив цистерни | При зміні стану full → empty | device_id цистерни |
+| connection_error | Втрата зв'язку | При 5 таймаутах поспіль | device_id приладу |
+| crc_error | Помилка CRC | При невідповідності контрольної суми | device_id приладу |
+| spectrum_reset | Скидання спектру | При reset_spectrum() (спорожнення/завершення) | device_id цистерни |
+| start_spectre_failed | Невдалий запуск спектру | Після 3 невдалих спроб START_SIMPLE_SPECTRE | device_id цистерни |
+
+10.3. ФОРМАТ ЗАПИСУ
+-------------------
+INSERT INTO system_events (device_id, timestamp, event_type, description)
+VALUES (?, datetime('now'), ?, ?);
+
+10.4. ДЕТАЛЬНИЙ ОПИС КОЖНОЇ ПОДІЇ
+--------------------------------
+
+10.4.1. app_start
+- Виникає: при створенні об'єкта App
+- Місце в коді: db_manager.save_system_event(None, "app_start", "Програма запущена")
+- device_id: NULL
+- description: "Програма запущена"
+
+10.4.2. app_stop
+- Виникає: при закритті програми (cleanup)
+- Місце в коді: db_manager.save_system_event(None, "app_stop", "Програма зупинена")
+- device_id: NULL
+- description: "Програма зупинена"
+
+10.4.3. device_replaced
+- Виникає: після успішної заміни приладу
+- Місце в коді: DatabaseManager.replace_device() та DeviceReplaceDialog.replace_device()
+- device_id: NULL
+- description: "Заміна приладу: {old_sn} -> {new_sn}, позиція {position_number}"
+
+10.4.4. device_activated
+- Виникає: ручна активація через діалог або автоматична при пошуку
+- Місце в коді: DeviceReplaceDialog.activate_device() або DeviceManager.match_devices_with_config()
+- device_id: NULL
+- description: "Прилад {serial_number} активовано" або "Прилад {serial_number} автоматично активовано при пошуку"
+
+10.4.5. cistern_filled
+- Виникає: при зміні стану цистерни з порожньої на повну
+- Місце в коді: App.poll_system()
+- device_id: ID приладу (цистерни)
+- description: "Цистерна №{position_number} заповнена"
+
+10.4.6. cistern_drained
+- Виникає: при зміні стану цистерни з повної на порожню
+- Місце в коді: App.poll_system()
+- device_id: ID приладу (цистерни)
+- description: "Цистерна №{position_number} спорожнена"
+
+10.4.7. connection_error
+- Виникає: при 5 таймаутах поспіль (прилад не відповідає)
+- Місце в коді: DeviceManager.handle_timeout_error()
+- device_id: ID приладу
+- description: "Прибор не відповів"
+
+10.4.8. crc_error
+- Виникає: при невідповідності контрольної суми пакета
+- Місце в коді: DeviceManager.handle_ready_read()
+- device_id: ID приладу
+- description: "Помилка CRC: отримано {crc_recv}, обчислено {crc_calc}"
+
+10.4.9. spectrum_reset
+- Виникає: після розрахунку активності (600 спектрів), при спорожненні або заповненні цистерни
+- Місце в коді: DeviceCardBarrel.reset_spectrum() або App.poll_system()
+- device_id: ID приладу (цистерни)
+- description: "Спектр скинуто"
+
+10.4.10. start_spectre_failed
+- Виникає: після 3 невдалих спроб запуску спектру
+- Місце в коді: DeviceManager.handle_ready_read() (режим StartSpectre)
+- device_id: ID приладу (цистерни)
+- description: "Не вдалося запустити набір спектру після 3 спроб"

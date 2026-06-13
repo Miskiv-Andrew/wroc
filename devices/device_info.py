@@ -8,14 +8,15 @@ class DeviceInfo:
     """
         Класс для хранения информации о приборе.
     """
-
-    # def __init__(self, port: str, address: int, serial_number: str, device_type: str = "БДБГ-09S-23", 
-    #              description: str = "", no_answer:int = 0, old_ped:float = 0.0, 
-    #              real_sensor:str = "G", state_spectre:bool = False):
+   
         
+    # def __init__(self, port: str, address: int, serial_number: str, device_type: str = "БДБГ-09S-23", 
+    #          description: str = "", no_answer:int = 0, old_ped:float = 0.0, 
+    #          real_sensor:str = "G", state_spectre:bool = False):
+
     def __init__(self, port: str, address: int, serial_number: str, device_type: str = "БДБГ-09S-23", 
-             description: str = "", no_answer:int = 0, old_ped:float = 0.0, 
-             real_sensor:str = "G", state_spectre:bool = False):
+            description: str = "", no_answer:int = 0, old_ped:float = 0.0, 
+            real_sensor:str = "G", state_spectre:bool = False):
         
         # Атрибуты, получаемые при поиске приборов
         self.port = port                    # COM-порт, к которому подключен прибор
@@ -51,7 +52,14 @@ class DeviceInfo:
         # Атрибут для хранения последнего значения ПАЕД
         self.last_paed = 0.0
 
-        self.no_answer_count = 0  # счётчик неответов прибора
+        # счётчик неответов прибора
+        self.no_answer_count = 0  
+
+        # за замовчуванням прилад активний
+        self.is_active = True  
+
+        # за замовчуванням  вважаємо, що прилад онлайн - опитується
+        self.is_online = True  
 
 
     def set_full(self, value: bool):

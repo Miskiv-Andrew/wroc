@@ -12,9 +12,13 @@ class AddressChanger(QObject):
     status = Signal(str)
     error = Signal(str)
     
-    def __init__(self):
+    # def __init__(self):
+    #     super().__init__()
+    #     self.device_manager = DeviceManager()
+
+    def __init__(self, db_manager):
         super().__init__()
-        self.device_manager = DeviceManager()
+        self.device_manager = DeviceManager(db_manager)
     
     def find_new_device(self, addresses=[200, 201], timeout=0.5):
         available_ports = self._get_available_ports()

@@ -12,6 +12,7 @@ import json, numpy as np
 import threading, os, math
 
 from database.db_manager import DatabaseManager
+from dialogs.device_replace_dialog import DeviceReplaceDialog
 
 class SpectrumWidget(QWidget):
     def __init__(self):
@@ -47,35 +48,7 @@ class DeviceCardBarrel(QWidget):
     """
         Клас детектору у контейнері
     """
-    # def __init__(self):
-    #     super().__init__()
-
-    #     loader = QUiLoader()
-    #     ui_file = QFile("_UI/dashboardbarrel.ui")
-    #     ui_file.open(QFile.ReadOnly)
-
-    #     self.ui = loader.load(ui_file)
-    #     ui_file.close()
-
-    #     if self.ui is None:
-    #         raise RuntimeError("Не удалось загрузить dashboardbarrel.ui")
-
-    #     self.setLayout(QVBoxLayout())
-    #     self.layout().setContentsMargins(5, 5, 5, 5)
-    #     #self.layout().setSpacing(0)
-    #     self.layout().addWidget(self.ui)
-    #     #self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-    #     #self.ui.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-
-    #     # label = self.ui.findChild(QLabel, "barrelLabel")
-    #     # path = os.path.abspath("_UI/barrelresized.png")
-    #     # if label:
-    #     #     label.setPixmap(QPixmap(path))
-
-    #     # Инициализация спектральных данных
-    #     self.spectrum_buffer = [0] * 1024   # массив для накопления спектра (1024 канала)
-    #     self.spectrum_counter = 0           # счётчик полученных спектров (0..600)
-
+  
     def __init__(self, parent_app=None):
         super().__init__()
         self.parent_app = parent_app
@@ -144,13 +117,6 @@ class DeviceCardBarrel(QWidget):
         #label.setPixmap(QPixmap(path))
         pixmap = QPixmap(path)
 
-        # actual_size = label.size()
-        # if actual_size.width() > 0 and actual_size.height() > 0:
-        #     scaled_pixmap = pixmap.scaled(actual_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-        #     label.setPixmap(scaled_pixmap)
-        # else:
-        #     label.setScaledContents(True)
-        #     label.setPixmap(pixmap)
         scaled_pixmap = pixmap.scaledToWidth(80, Qt.SmoothTransformation)
         label.setPixmap(scaled_pixmap)    
     
@@ -202,13 +168,7 @@ class DeviceCardBarrel(QWidget):
             self.last_paed = dose
         if labelAcc:
             labelAcc.setText(f"± {acc} %")
-
-    # def set_dose_value(self, dose, acc):
-    #     label = self.ui.findChild(QLabel, "doseValue")
-    #     if label:
-    #         label.setText(f"{dose:.2f} мкЗв/год ± {acc}%")
-    #         self.last_paed = dose
-
+    
     def set_temp_value(self, value):
         label = self.ui.findChild(QLabel, "tempValue")
         if label:
@@ -218,57 +178,14 @@ class DeviceCardBarrel(QWidget):
                 self.last_temperature = float(value.split()[0])
             except:
                 pass
-
-
     
     
     def add_spectrum(self):
         self.spectrum = SpectrumWidget()
         layout = self.ui.spectrumWidget.layout()
         layout.setContentsMargins(0,0,0,0)
-        layout.addWidget(self.spectrum)
-    
+        layout.addWidget(self.spectrum)    
 
-    # def set_detector_status(self, low_failure: bool, high_failure: bool, result_valid: bool):
-    #     """
-    #     Устанавливает состояние детекторов и валидность результата.
-    #     low_failure: True - отказ низкочувствительного детектора, False - норма
-    #     high_failure: True - отказ высокочувствительного детектора, False - норма
-    #     result_valid: True - результат валидный, False - невалидный
-    #     """
-    #     # Низкочувствительный детектор
-    #     low_label = self.ui.findChild(QLabel, "lowDetectorValue")
-    #     if low_label:
-    #         if not low_failure:
-    #             low_label.setText("Відмова")
-    #             low_label.setStyleSheet("color: red; font: 600 11pt 'Segoe UI';")
-    #         else:
-    #             low_label.setText("Норма")
-    #             low_label.setStyleSheet("color: green; font: 600 11pt 'Segoe UI';")
-        
-    #     # Высокочувствительный детектор
-    #     high_label = self.ui.findChild(QLabel, "highDetectorValue")
-    #     if high_label:
-    #         if not high_failure:
-    #             high_label.setText("Відмова")
-    #             high_label.setStyleSheet("color: red; font: 600 11pt 'Segoe UI';")
-    #         else:
-    #             high_label.setText("Норма")
-    #             high_label.setStyleSheet("color: green; font: 600 11pt 'Segoe UI';")
-        
-    #     # Валидность результата
-    #     valid_label = self.ui.findChild(QLabel, "validityValue")
-    #     if valid_label:
-    #         if result_valid:
-    #             valid_label.setText("Норма")
-    #             valid_label.setStyleSheet("color: green; font: 600 11pt 'Segoe UI';")
-    #         else:
-    #             valid_label.setText("Невалідний")
-    #             valid_label.setStyleSheet("color: red; font: 600 11pt 'Segoe UI';")
-
-    #     # status_label = self.ui.findChild(QLabel, "statusValue")
-    #     # status_label.setText("Норма")
-    #     # status_label.setStyleSheet("color: green; font: 600 11pt 'Segoe UI';")
 
     def set_detector_status(self, low_failure: bool, high_failure: bool, result_valid: bool):
         """
@@ -416,42 +333,8 @@ class DeviceCardBarrel(QWidget):
         # Проверяем, есть ли виджет спектра
         if hasattr(self, 'spectrum') and self.spectrum:
             # Передаём данные в SpectrumWidget для отрисовки
-            self.spectrum.update_data(self.spectrum_buffer)
+            self.spectrum.update_data(self.spectrum_buffer) 
 
-    # app.py - класс DeviceCardBarrel - метод calculate_activity
-
-    # def calculate_activity(self):
-    #     """
-    #     Расчёт активности раствора на основе накопленного спектра (600 спектров = ~30 минут)
-    #     Сохраняет результат в историю и сбрасывает буфер для следующего цикла.
-    #     """
-               
-    #     # Заглушка расчёта активности
-    #     # Позже формула будет заменена на реальную
-    #     total_counts = sum(self.spectrum_buffer)
-        
-    #     # Условная формула (заглушка)
-    #     activity = total_counts / 600 / 1000  # кБк
-        
-    #     # Сохраняем в историю с текущей датой/временем
-    #     timestamp = QDateTime.currentDateTime()
-        
-    #     self.activity_history.append({
-    #         "timestamp": timestamp,
-    #         "activity": activity
-    #     })
-        
-    #     # Выводим в лог
-    #     if hasattr(self, 'parent_app') and self.parent_app:
-    #         self.parent_app.ui.textEdit.append(
-    #             f"Цистерна №{self.posit_number}: розраховано активність = {activity:.2f} кБк "
-    #             f"(сумарно {total_counts} імпульсів за 600 спектрів)"
-    #         )
-        
-    #     # Сбрасываем буфер и счётчик для следующего цикла накопления
-    #     self.reset_spectrum()
-
-   
     def calculate_activity(self):
         """
         Расчёт активности раствора на основе накопленного спектра (600 спектров = ~30 минут)
@@ -630,18 +513,7 @@ class DeviceCardWall(QWidget):
         if labelDose:
             labelDose.setText(f"{dose:.2f}")
         if labelAcc:
-            labelAcc.setText(f"± {acc} %")
-
-    # def set_dose_value(self, dose, acc):
-    #     label = self.ui.findChild(QLabel, "doseValue")
-    #     if label:
-    #         label.setText(f"{dose:.2f} мкЗв/год ± {acc}%")
-
-
-    # def set_temp_value(self, value):
-    #     label = self.ui.findChild(QLabel, "tempValue")
-    #     if label:
-    #         label.setText(f"{value}")
+            labelAcc.setText(f"± {acc} %")    
 
     def set_temp_value(self, value):
         label = self.ui.findChild(QLabel, "tempValue")
@@ -832,6 +704,12 @@ class App(QObject):
 
         self.missing_device_sn = None
 
+        # Начальное состояние кнопок (до поиска приборов)
+        if hasattr(self, 'butt_system_start'):
+            self.butt_system_start.setEnabled(False)
+        if hasattr(self, 'butt_system_stop'):
+            self.butt_system_stop.setEnabled(False)
+
 
     def load_ui(self):
         """
@@ -884,7 +762,8 @@ class App(QObject):
             Создаём поток ,переносим туда DeviceManager и запускаем поток
         """
         self.device_manager_thread = QThread()     
-        self.device_manager = DeviceManager()     
+        # self.device_manager = DeviceManager()  
+        self.device_manager = DeviceManager(self.db_manager)   
         self.device_manager.moveToThread(self.device_manager_thread)
         self.device_manager_thread.finished.connect(self.device_manager.deleteLater)
         self.device_manager_thread.start()        
@@ -896,21 +775,19 @@ class App(QObject):
 
         # Сигнал старта поиска приборов
         self.butt_search_dev = self.ui.findChild(QAction, "butt_search_dev") 
-        self.butt_search_dev.triggered.connect(self.search_devices.emit) 
+
+        self.butt_search_dev.triggered.connect(self.on_search_devices)
         self.search_devices.connect(self.device_manager.find_rpii_ports)
         
         # Сигнал старта опроса приборов
-        self.butt_system_start = self.ui.findChild(QAction, "butt_system_start") 
-
-        # self.butt_system_start.triggered.connect(self.start_polling.emit) 
+        self.butt_system_start = self.ui.findChild(QAction, "butt_system_start")        
         self.butt_system_start.triggered.connect(self.start_polling_and_test_system)
 
         self.start_polling.connect(self.device_manager.dispatch_poll_step) 
 
         # Зупинка системи
-        self.butt_system_stop = self.ui.findChild(QAction, "butt_system_stop_3")
-        if self.butt_system_stop:
-            self.butt_system_stop.triggered.connect(self.stop_system)
+        self.butt_system_stop = self.ui.findChild(QAction, "butt_system_stop_3")        
+        self.butt_system_stop.triggered.connect(self.stop_system)
 
         # Сигнал виводу вікна для бази даних
         self.butt_db_window = self.ui.findChild(QAction, "open_bd")
@@ -945,6 +822,7 @@ class App(QObject):
 
         # Пункт меню замены прибора
         self.butt_replace_device = self.ui.findChild(QAction, "butt_replace_device")
+        self.butt_replace_device.setEnabled(True)
         if self.butt_replace_device:
             self.butt_replace_device.triggered.connect(self.open_replace_dialog)
 
@@ -958,16 +836,31 @@ class App(QObject):
         """
             Слот выведения текстовых данных
         """
-        self.ui.textEdit.append(info)    
+        self.ui.textEdit.append(info)   
+  
 
     def stop_system(self):
-        """Зупиняє опитування приладів"""
+        """
+            Остановка опроса приборов
+        """
         if self.device_manager:
             self.device_manager.stop_all()
             self.ui.textEdit.append("Систему зупинено")
-            # Деактивуємо пункт меню зупинки
-            if hasattr(self, 'butt_system_stop') and self.butt_system_stop:
+            
+            # Разблокируем кнопку замены
+            if self.butt_replace_device:
+                self.butt_replace_device.setEnabled(True)
+            
+            # Возвращаем состояние кнопок
+            if self.butt_system_start:
+                self.butt_system_start.setEnabled(True)
+            if self.butt_system_stop:
                 self.butt_system_stop.setEnabled(False)
+            
+            # Разблокируем кнопку поиска
+            if hasattr(self, 'butt_search_dev'):
+                self.butt_search_dev.setEnabled(True)
+
 
     def on_device_packet(self, packet):
         """
@@ -1205,6 +1098,15 @@ class App(QObject):
         # Начинаем процедуру опроса внешней Системы Управления
         self.start_test_polling("config/cistern.json")
 
+        # Разблокируем кнопку поиска
+        self.butt_search_dev.setEnabled(True)
+
+         # Устанавливаем состояние кнопок после завершения поиска
+        if self.butt_system_start:
+            self.butt_system_start.setEnabled(True)
+        if self.butt_system_stop:
+            self.butt_system_stop.setEnabled(False)
+
     
 
     def on_objects_error(self, source: str, message: str):
@@ -1217,6 +1119,13 @@ class App(QObject):
             Выводит сообщение в textEdit, чтобы администратор видел проблему.
         """
         self.ui.textEdit.append(f"Помилка в  {source} : {message}")
+
+        # Разблокируем кнопку поиска при ошибке        
+        self.butt_search_dev.setEnabled(True)
+
+        # Старт и Стоп неактивны - приборов нет    
+        self.butt_system_start.setEnabled(False)    
+        self.butt_system_stop.setEnabled(False)
 
 
     def load_cistern_data(self, json_file: str):
@@ -1240,28 +1149,6 @@ class App(QObject):
                 json.dump(self.cistern_dict, f, ensure_ascii=False, indent=4)   
 
     
-    # def sync_devices_with_cisterns(self):
-    #     """
-    #         Синхронизируем только GUI-карточки с self.cistern_dict.
-    #         НИКОГДА не вызываем методы объектов DeviceManager из GUI-потока.
-    #     """
-    #     # Проверка: если cistern_dict пуст или не загружен - принудительно загружаем
-    #     if not self.cistern_dict:
-    #         self.load_cistern_data("config/cistern.json")
-        
-    #     for sn, card in self.cards_by_sn.items():
-    #         try:
-    #             # пытаемся получить posit из карточки (если карточка его сохранила)
-    #             posit = getattr(card, "posit_number", None) or getattr(card, "posit", None)
-    #             if posit is None:
-    #                 continue
-    #             # сохраняем состояние на карточке (визуальное обновление реализовать в карточке)
-    #             setattr(card, "is_full", bool(self.cistern_dict.get(int(posit), False)))
-    #             # card.set_barrel_image(card.is_full)  # раскомментировать если нужно обновить иконку
-    #         except Exception:
-    #             continue
-
-
     def sync_devices_with_cisterns(self):
         """
             Синхронизируем только GUI-карточки с self.cistern_dict.
@@ -1401,17 +1288,46 @@ class App(QObject):
         self.db_manager.save_system_event(None, "app_stop", "Програма зупинена")
         self.db_manager.close()
 
+    # def start_polling_and_test_system(self):
+    #     """
+    #         Слот, запускаемый по нажатию кнопки "Старт системы".
+    #         Запускает циклический опрос приборов и имитацию опроса внешней системы.
+    #     """
+    #     # Деактивируем кнопку поиска
+    #     self.butt_search_dev.setEnabled(False)       
+    #     self.butt_system_start.setEnabled(False)    
+    #     self.butt_system_stop.setEnabled(True)
+
+    #     # Запуск основного опроса приборов
+    #     self.start_polling.emit()
+        
+    #     # Запуск имитации опроса внешней системы (состояние цистерн)
+    #     self.start_test_polling("config/cistern.json")
+
+
     def start_polling_and_test_system(self):
         """
-            Слот, запускаемый по нажатию кнопки "Старт системы".
-            Запускает циклический опрос приборов и имитацию опроса внешней системы.
+            Запуск опроса приборов
+            Блокируем кнопку замены    
         """
-        # Запуск основного опроса приборов
-        self.start_polling.emit()
         
-        # Запуск имитации опроса внешней системы (состояние цистерн)
+        if self.butt_replace_device:
+            self.butt_replace_device.setEnabled(False)
+        
+        # Блокируем кнопку поиска
+        if hasattr(self, 'butt_search_dev'):
+            self.butt_search_dev.setEnabled(False)
+        
+        # Старт активен? Нет, стоп активен
+        if self.butt_system_start:
+            self.butt_system_start.setEnabled(False)
+        if self.butt_system_stop:
+            self.butt_system_stop.setEnabled(True)
+        
+        # Запуск опроса
+        self.start_polling.emit()
         self.start_test_polling("config/cistern.json")
-    
+        
     def on_device_connection_status(self, serial_number: str, connected: bool, crc_error: bool):
         """
         Обработка изменения статуса связи прибора
@@ -1426,30 +1342,61 @@ class App(QObject):
             self.butt_replace_device.setEnabled(True)
         self.missing_device_sn = serial_number
 
-    def open_replace_dialog(self):
-        """Открывает диалог замены прибора"""
-        from dialogs.device_replace_dialog import DeviceReplaceDialog
+    # def open_replace_dialog(self):
+    #     """Открывает диалог замены прибора"""
+    #     from dialogs.device_replace_dialog import DeviceReplaceDialog
         
-        # Собираем список пропавших приборов из DeviceManager
-        missing_devices = []
+    #     # Собираем список пропавших приборов из DeviceManager
+    #     missing_devices = []
+    #     for device in self.device_manager.devices:
+    #         if device.no_answer_count >= 5:
+    #             missing_devices.append({
+    #                 "serial_number": device.serial_number,
+    #                 "location_type": device.location_type,
+    #                 "position_number": device.posit_number
+    #             })
+        
+    #     # if not missing_devices:
+    #     #     self.ui.textEdit.append("Немає приладів для заміни")
+    #     #     return
+        
+    #     dialog = DeviceReplaceDialog(self.db_manager, missing_devices, self.ui)
+    #     dialog.exec()
+        
+    #     # После закрытия диалога деактивируем пункт меню
+    #     if self.butt_replace_device:
+    #         self.butt_replace_device.setEnabled(False) 
+
+    def open_replace_dialog(self):        
+        
+        # Активні прилади (для заміни)
+        active_devices = []
         for device in self.device_manager.devices:
-            if device.no_answer_count >= 5:
-                missing_devices.append({
+            if device.is_active:
+                active_devices.append({
                     "serial_number": device.serial_number,
                     "location_type": device.location_type,
                     "position_number": device.posit_number
                 })
         
-        if not missing_devices:
-            self.ui.textEdit.append("Немає приладів для заміни")
-            return
+        # Неактивні прилади (для активації)
+        inactive_devices = self.db_manager.get_inactive_devices()
         
-        dialog = DeviceReplaceDialog(self.db_manager, missing_devices, self.ui)
+        dialog = DeviceReplaceDialog(self.db_manager, active_devices, inactive_devices, self.ui)
         dialog.exec()
-        
-        # После закрытия диалога деактивируем пункт меню
-        if self.butt_replace_device:
-            self.butt_replace_device.setEnabled(False) 
+
+    def on_search_devices(self):
+        """
+            Запуск поиска приборов с блокировкой кнопки
+        """
+        # Блокируем кнопки поиска и опроса
+        self.butt_search_dev.setEnabled(False)
+        self.butt_system_start.setEnabled(False)    
+        self.butt_system_stop.setEnabled(False)
+
+        self.ui.textEdit.append("Пошук приладів...")
+        # Запускаем поиск
+        self.search_devices.emit()
 
 
 def main():

@@ -53,9 +53,11 @@ class DeviceManager(QObject):
     device_missing = Signal(str)  # serial_number
                            
 
-    def __init__(self):
-
+    def __init__(self, db_manager):
         super().__init__()
+
+        # ссылка на db_manager - для работы с БД - проверка активности приборов
+        self.db_manager = db_manager
 
         # список найденных устройств
         self.devices: list[DeviceInfo] = []
@@ -92,14 +94,24 @@ class DeviceManager(QObject):
         self.last_command = None                # хранит последнюю отправленную команду 
         self.temperature_index   = 0            # индекс температуры приборов -  каждый 10 цикл опроса получаем температуру
 
-        # Атрибут выбора режима запуска - None = обычный режим, 1 = отладка
-        self.debug_mode: int | None = None        
+        # # Атрибут выбора режима запуска
+        # # self.debug_mode =  1 = отладка
+        # self.debug_mode: int | None = 1      
+        # # Список приборов в цистернах
+        # self.cistern_dict = {"2400089" : 1}   
+        # # Список приборов в помещении
+        # self.room_dict    = {"2400126" : 1, "2400127" : 2,  "2400128" : 3}   
 
-        # Список приборов в цистернах
-        self.cistern_dict = {"2400089" : 1}   
+        # self.debug_mode =  None =  рабочий режим
+        self.debug_mode: int | None = None   
 
-        # Список приборов в помещении
-        self.room_dict    = {"2400126" : 1, "2400127" : 2,  "2400128" : 3}   
+
+        
+
+
+
+
+
 
 
 ############################################################ БЛОК  ЗАВЕРШЕНИЯ РАБОТЫ ############################################################
@@ -381,8 +393,117 @@ class DeviceManager(QObject):
         return config_data  
 
 
-    def match_devices_with_config(self):
+    # def match_devices_with_config(self):
 
+    #     # Если приборов нет — не трогаем конфигурацию
+    #     if not self.devices:
+    #         self.device_error.emit("config.txt", "Порты RTII знайдено, але жодного приладу не виявлено. Конфігурацію не оновлена.")
+    #         return
+
+    #     # --- Режим настройки системы ---
+    #     if self.debug_mode == 1:
+    #         found_text = "Знайдено прилади:\n"
+    #         for device in self.devices:
+    #             found_text += f"Порт: {device.port}, Адреса: {device.address}, SN: {device.serial_number}\n"
+
+    #         lines = []
+    #         cistern_json_data = {}
+
+    #         for device in self.devices:
+    #             if device.serial_number in self.cistern_dict:
+    #                 location_type = "cistern"
+    #                 posit_number = self.cistern_dict[device.serial_number]
+    #                 line = f"{device.serial_number};{location_type};{posit_number};{device.address}"
+    #                 lines.append(line)
+    #                 # В cistern.json храним состояние цистерн (по умолчанию False)
+    #                 cistern_json_data[posit_number] = False
+
+    #             elif device.serial_number in self.room_dict:
+    #                 location_type = "room"
+    #                 posit_number = self.room_dict[device.serial_number]
+    #                 line = f"{device.serial_number};{location_type};{posit_number};{device.address}"
+    #                 lines.append(line)
+
+    #             else:
+    #                 # Если SN не найден ни в одном словаре — сигнализируем
+    #                 self.device_error.emit(
+    #                     "config.txt",
+    #                     f"SN {device.serial_number} не внесён в словари cistern_dict/room_dict"
+    #                 )
+
+    #         config_text = "# serial_number;location_type;posit_number;address\n" + "\n".join(lines)
+
+    #         try:
+    #             # Записываем config.txt
+    #             with open("config/config.txt", "w", encoding="utf-8") as f:
+    #                 f.write(config_text)
+
+    #             # Читаем обратно и считаем хэш
+    #             with open("config/config.txt", "rb") as f:
+    #                 data = f.read()
+    #             sha256_hash = hashlib.sha256(data).hexdigest()
+
+    #             # Записываем hash.txt
+    #             with open("config/hash.txt", "w", encoding="utf-8") as f:
+    #                 f.write(sha256_hash)
+
+    #             # Перезаписываем cistern.json
+    #             with open("config/cistern.json", "w", encoding="utf-8") as f:
+    #                 json.dump(cistern_json_data, f, ensure_ascii=False, indent=4)
+
+    #             output_text = f"{found_text}\nНові дані занесено у файли конфігурації"
+    #             self.device_info.emit(output_text)
+
+    #         except Exception as e:
+    #             self.device_error.emit("config", f"Помилка запису файлів: {e}")
+
+    #         return
+
+    #     # --- Обычный режим ---
+    #     config_data = self.load_config_file()
+    #     valid_devices = []
+
+    #     for device in self.devices:
+    #         if device.serial_number in config_data:
+    #             cfg = config_data[device.serial_number]
+    #             device.location_type = cfg["location_type"]
+    #             device.posit_number = cfg["posit_number"]
+    #             device.expected_address = cfg["expected_address"]
+    #             #додав для спектру
+    #             device.real_sensor = "S" if device.location_type == "cistern" else "G"
+
+    #             if device.address != device.expected_address:
+    #                 self.device_error.emit(
+    #                     "config.txt",
+    #                     f"Несовпадение адреса для SN {device.serial_number}: "
+    #                     f"ожидался {device.expected_address}, найден {device.address}"
+    #                 )
+    #                 continue
+    #             valid_devices.append(device)
+    #         else:
+    #             self.device_error.emit(
+    #                 "config.txt",
+    #                 f"SN {device.serial_number} найден, но отсутствует в конфигурации"
+    #             )
+
+    #     if valid_devices:
+    #         """
+    #             self.device_found.emit(valid_devices)
+    #             Преобразуем каждый объект DeviceInfo в безопасный словарь.
+    #             Это предотвращает передачу QObject/виджетов между потоками и
+    #             позволяет GUI создавать виджеты исключительно в главном потоке.
+    #         """
+    #         self.devices = valid_devices
+    #         serializable_list = [self._device_to_dict(d) for d in valid_devices]            
+
+    #         # Эмитим список словарей. Слот в App должен ожидать list[dict].
+    #         self.device_found.emit(serializable_list)
+    #     else:
+    #         self.device_found.emit([])
+    #         self.device_info.emit("Прилади не знайдено або не пройшли перевірку конфігурації")
+
+
+    def match_devices_with_config(self):
         # Если приборов нет — не трогаем конфигурацию
         if not self.devices:
             self.device_error.emit("config.txt", "Порты RTII знайдено, але жодного приладу не виявлено. Конфігурацію не оновлена.")
@@ -403,7 +524,6 @@ class DeviceManager(QObject):
                     posit_number = self.cistern_dict[device.serial_number]
                     line = f"{device.serial_number};{location_type};{posit_number};{device.address}"
                     lines.append(line)
-                    # В cistern.json храним состояние цистерн (по умолчанию False)
                     cistern_json_data[posit_number] = False
 
                 elif device.serial_number in self.room_dict:
@@ -413,7 +533,6 @@ class DeviceManager(QObject):
                     lines.append(line)
 
                 else:
-                    # Если SN не найден ни в одном словаре — сигнализируем
                     self.device_error.emit(
                         "config.txt",
                         f"SN {device.serial_number} не внесён в словари cistern_dict/room_dict"
@@ -422,20 +541,16 @@ class DeviceManager(QObject):
             config_text = "# serial_number;location_type;posit_number;address\n" + "\n".join(lines)
 
             try:
-                # Записываем config.txt
                 with open("config/config.txt", "w", encoding="utf-8") as f:
                     f.write(config_text)
 
-                # Читаем обратно и считаем хэш
                 with open("config/config.txt", "rb") as f:
                     data = f.read()
                 sha256_hash = hashlib.sha256(data).hexdigest()
 
-                # Записываем hash.txt
                 with open("config/hash.txt", "w", encoding="utf-8") as f:
                     f.write(sha256_hash)
 
-                # Перезаписываем cistern.json
                 with open("config/cistern.json", "w", encoding="utf-8") as f:
                     json.dump(cistern_json_data, f, ensure_ascii=False, indent=4)
 
@@ -447,6 +562,42 @@ class DeviceManager(QObject):
 
             return
 
+        # # --- Обычный режим ---
+        # config_data = self.load_config_file()
+        # valid_devices = []
+
+        # for device in self.devices:
+        #     if device.serial_number in config_data:
+        #         cfg = config_data[device.serial_number]
+        #         device.location_type = cfg["location_type"]
+        #         device.posit_number = cfg["posit_number"]
+        #         device.expected_address = cfg["expected_address"]
+
+        #         if device.address != device.expected_address:
+        #             self.device_error.emit(
+        #                 "config.txt",
+        #                 f"Несовпадение адреса для SN {device.serial_number}: "
+        #                 f"ожидался {device.expected_address}, найден {device.address}"
+        #             )
+        #             continue
+                
+        #         device.is_active = self.db_manager.get_device_active_status(device.serial_number)
+                
+        #         valid_devices.append(device)
+        #     else:
+        #         self.device_error.emit(
+        #             "config.txt",
+        #             f"SN {device.serial_number} найден, но отсутствует в конфигурации"
+        #         )
+
+        # if valid_devices:
+        #     self.devices = valid_devices
+        #     serializable_list = [self._device_to_dict(d) for d in valid_devices]
+        #     self.device_found.emit(serializable_list)
+        # else:
+        #     self.device_found.emit([])
+        #     self.device_info.emit("Прилади не знайдено або не пройшли перевірку конфігурації")
+
         # --- Обычный режим ---
         config_data = self.load_config_file()
         valid_devices = []
@@ -457,8 +608,6 @@ class DeviceManager(QObject):
                 device.location_type = cfg["location_type"]
                 device.posit_number = cfg["posit_number"]
                 device.expected_address = cfg["expected_address"]
-                #додав для спектру
-                device.real_sensor = "S" if device.location_type == "cistern" else "G"
 
                 if device.address != device.expected_address:
                     self.device_error.emit(
@@ -467,6 +616,21 @@ class DeviceManager(QObject):
                         f"ожидался {device.expected_address}, найден {device.address}"
                     )
                     continue
+                
+                # Перевіряємо активність приладу в БД
+                is_active_in_db = self.db_manager.get_device_active_status(device.serial_number)
+                
+                # Якщо прилад знайдено фізично - він має бути активним
+                if not is_active_in_db:
+                    # Активуємо в БД
+                    self.db_manager.activate_device(device.serial_number)
+                    self.db_manager.reload_devices_map()  # Оновлюємо кеш
+                    self.system_event.emit(device.serial_number, "device_activated", 
+                                        f"Прилад {device.serial_number} автоматично активовано при пошуку")
+                    device.is_active = True
+                else:
+                    device.is_active = True
+                
                 valid_devices.append(device)
             else:
                 self.device_error.emit(
@@ -475,16 +639,8 @@ class DeviceManager(QObject):
                 )
 
         if valid_devices:
-            """
-                self.device_found.emit(valid_devices)
-                Преобразуем каждый объект DeviceInfo в безопасный словарь.
-                Это предотвращает передачу QObject/виджетов между потоками и
-                позволяет GUI создавать виджеты исключительно в главном потоке.
-            """
             self.devices = valid_devices
-            serializable_list = [self._device_to_dict(d) for d in valid_devices]            
-
-            # Эмитим список словарей. Слот в App должен ожидать list[dict].
+            serializable_list = [self._device_to_dict(d) for d in valid_devices]
             self.device_found.emit(serializable_list)
         else:
             self.device_found.emit([])
@@ -760,6 +916,93 @@ class DeviceManager(QObject):
         return command
 
     
+    # @Slot()
+    # def dispatch_poll_step(self):
+    #     """
+    #         Основной метод опроса приборов
+    #     """
+    #     if not self.devices:
+    #         # Нет приборов для опроса - останавливаем таймер и выходим
+    #         self.poll_timer.stop()
+    #         self.device_info.emit("Немає приладів для опитування. Виконайте пошук приладів.")
+    #         return
+        
+    #     # 1. Инкрементируем глобальный индекс текущего прибора
+    #     self.current_index += 1
+
+    #     num_dev = len(self.devices)
+
+    #     # 2. Проверяем конец списка
+    #     if self.current_index >= num_dev:
+    #         # цикл завершён, все приборы опрошены → длинная пауза
+    #         self.current_index = -1
+    #         self.poll_timer.start(self.long_interval_ms)
+    #         return
+
+    #     # 3. Берём объект DeviceInfo - очередной прибор
+    #     device: DeviceInfo = self.devices[self.current_index]
+
+    #     self.temperature_index += 1
+
+     
+    #     # # Каждый 10 запрос - отправляем запрос температуры   
+    #     if ((self.temperature_index // num_dev) % 10 == 0) and self.temperature_index > num_dev:
+    #         request = self.make_request("temperature")
+    #         if self.temperature_index == num_dev * 10 + (num_dev - 1):
+    #             self.temperature_index = 0
+    #     else:
+    #         request = self.make_request() 
+            
+          
+    #     # 5. Отправляем запрос через RTII порт, указанный в DeviceInfo
+    #     try:            
+    #         # 5. Настраиваем глобальный QSerialPort на нужный COM
+    #         self.serial_port.setPortName(device.port)          
+
+    #         if not self.serial_port.isOpen():
+    #             # Проверяем, не занят ли порт другим процессом
+    #             if not self.serial_port.open(QIODevice.ReadWrite):
+    #                 self.device_error.emit(device.port, f"Не вдалося відкрити порт {device.port}. Можливо, порт зайнятий іншим процесом.")
+    #                 # Сбрасываем состояние порта
+    #                 self.serial_port.clearError()
+    #                 self.poll_timer.start(self.short_interval_ms)
+    #                 return
+                
+    #         # 6. Отправляем запрос
+    #         written = self.serial_port.write(request)
+    #         if written != len(request):
+    #             self.device_error.emit(
+    #                 self.devices[self.current_index].port,
+    #                 f"Ошибка записи: записано {written} байт из {len(request)}"
+    #             )
+    #         else:
+    #             hex_str = " ".join(f"0x{b:02X}" for b in request)
+    #             self.device_info.emit(f"Записан пакет: {hex_str}")
+
+            
+
+    #     except serial.SerialException as e:
+    #         # Если порт не открылся или ошибка при записи
+    #         self.device_error.emit(device.port, f"Ошибка работы с портом: {e}")
+    #         self.poll_timer.start(self.short_interval_ms) 
+    #         self.serial_port.clearError()
+    #         self.serial_port.close()      
+    #         return    
+
+    #     # Очищаем приемный буфер перед новым запросом
+    #     self.rx_buffer.clear()
+
+    #     # 6. Запускаем аварийный таймер ожидания ответа ТОЛЬКО если запись прошла успешно
+    #     # Если была ошибка записи - таймер не запускаем, переходим к следующему прибору
+    #     if written == len(request):
+    #         self.error_timer.start(self.timeout_interval_ms)
+    #     else:
+    #         # Ошибка записи - порт закрываем и переходим к следующему прибору без запуска таймера
+    #         if self.serial_port.isOpen():
+    #             self.serial_port.close()
+    #         self.poll_timer.start(self.short_interval_ms)
+    #         return     
+
     @Slot()
     def dispatch_poll_step(self):
         """
@@ -785,11 +1028,15 @@ class DeviceManager(QObject):
 
         # 3. Берём объект DeviceInfo - очередной прибор
         device: DeviceInfo = self.devices[self.current_index]
+        
+        # 4. Пропускаем неактивные приборы
+        if not device.is_active or not device.is_online:
+            self._finish_current_poll()
+            return
 
         self.temperature_index += 1
 
-     
-        # # Каждый 10 запрос - отправляем запрос температуры   
+        # Каждый 10 запрос - отправляем запрос температуры   
         if ((self.temperature_index // num_dev) % 10 == 0) and self.temperature_index > num_dev:
             request = self.make_request("temperature")
             if self.temperature_index == num_dev * 10 + (num_dev - 1):
@@ -797,22 +1044,17 @@ class DeviceManager(QObject):
         else:
             request = self.make_request() 
             
-          
         # 5. Отправляем запрос через RTII порт, указанный в DeviceInfo
         try:            
-            # 5. Настраиваем глобальный QSerialPort на нужный COM
             self.serial_port.setPortName(device.port)          
 
             if not self.serial_port.isOpen():
-                # Проверяем, не занят ли порт другим процессом
                 if not self.serial_port.open(QIODevice.ReadWrite):
                     self.device_error.emit(device.port, f"Не вдалося відкрити порт {device.port}. Можливо, порт зайнятий іншим процесом.")
-                    # Сбрасываем состояние порта
                     self.serial_port.clearError()
                     self.poll_timer.start(self.short_interval_ms)
                     return
                 
-            # 6. Отправляем запрос
             written = self.serial_port.write(request)
             if written != len(request):
                 self.device_error.emit(
@@ -823,29 +1065,22 @@ class DeviceManager(QObject):
                 hex_str = " ".join(f"0x{b:02X}" for b in request)
                 self.device_info.emit(f"Записан пакет: {hex_str}")
 
-            
-
         except serial.SerialException as e:
-            # Если порт не открылся или ошибка при записи
             self.device_error.emit(device.port, f"Ошибка работы с портом: {e}")
             self.poll_timer.start(self.short_interval_ms) 
             self.serial_port.clearError()
             self.serial_port.close()      
             return    
 
-        # Очищаем приемный буфер перед новым запросом
         self.rx_buffer.clear()
 
-        # 6. Запускаем аварийный таймер ожидания ответа ТОЛЬКО если запись прошла успешно
-        # Если была ошибка записи - таймер не запускаем, переходим к следующему прибору
         if written == len(request):
             self.error_timer.start(self.timeout_interval_ms)
         else:
-            # Ошибка записи - порт закрываем и переходим к следующему прибору без запуска таймера
             if self.serial_port.isOpen():
                 self.serial_port.close()
             self.poll_timer.start(self.short_interval_ms)
-            return     
+            return
 
     def select_mode(self) -> str:
         """
@@ -889,6 +1124,7 @@ class DeviceManager(QObject):
         
         # Если прибор не отвечает 5 раз подряд — сигналим о пропаже
         if device.no_answer_count >= 5:
+            device.is_online = False
             self.device_missing.emit(device.serial_number)
         
         # Сбрасываем spectrum_active при таймауте для спектральных режимов
@@ -984,6 +1220,22 @@ class DeviceManager(QObject):
 
             # Сбрасываем счётчик неответов при успешном ответе
             self.devices[self.current_index].no_answer_count = 0
+
+            # Автоматическая активация прибора, если он был неактивен
+            device = self.devices[self.current_index]
+            if not device.is_active:
+                # Проверяем в БД is_active через потокобезопасный метод
+                is_active_in_db = self.db_manager.get_device_active_status(device.serial_number)
+                if not is_active_in_db:
+                    # Активируем в БД через отдельный метод
+                    self.db_manager.activate_device(device.serial_number)
+                    self.system_event.emit(device.serial_number, "device_activated", 
+                                        f"Прилад {device.serial_number} автоматично активовано після відновлення зв'язку")
+                    device.is_active = True
+                    self.device_info.emit(f"Прилад {device.serial_number} автоматично активовано")
+
+            # Прибор участвует в опросе
+            self.devices[self.current_index].is_online = True
 
             # Определяем режим команды
             mode = self.select_mode()
