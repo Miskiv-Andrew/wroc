@@ -94,13 +94,26 @@ class DeviceManager(QObject):
         self.last_command = None                # хранит последнюю отправленную команду 
         self.temperature_index   = 0            # индекс температуры приборов -  каждый 10 цикл опроса получаем температуру
 
-        # # Атрибут выбора режима запуска
+        # # # Атрибут выбора режима запуска
         # # self.debug_mode =  1 = отладка
         # self.debug_mode: int | None = 1      
         # # Список приборов в цистернах
         # self.cistern_dict = {"2400089" : 1}   
         # # Список приборов в помещении
         # self.room_dict    = {"2400126" : 1, "2400127" : 2,  "2400128" : 3}   
+
+        # #   # # Атрибут выбора режима запуска
+        # # self.debug_mode =  1 = отладка
+        # # self.debug_mode: int | None = 1      
+        # # # Список приборов в цистернах
+        # # self.cistern_dict = {"2400089" : 1}   
+        # # # Список приборов в помещении
+        # # self.room_dict    = {"2400126" : 1, "2400127" : 2}   
+
+        # self.debug_mode: int | None = 1  
+        # self.cistern_dict = {"2400089" : 1}  
+        # self.room_dict    = {"2400126" : 1, "2400127" : 2,  "2400128" : 3}
+
 
         # self.debug_mode =  None =  рабочий режим
         self.debug_mode: int | None = None   
@@ -789,7 +802,8 @@ class DeviceManager(QObject):
             low_sens_detector_failure = False  
         
         if byte_to_check & 0b00000100:   # D2 = 1 - результат невалидный
-            result_valid = False 
+            result_valid = False         
+
             
         if byte_to_check & 0b10000000:   # Коэффициент перерасчета ПЕД 
             ped = num * 0.1        

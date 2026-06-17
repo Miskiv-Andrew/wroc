@@ -185,70 +185,6 @@ class DBViewWindow(QMainWindow):
         return date_from, date_to
     
     
-    # def load_paed_data(self):
-    #     """Загружает данные ПАЕД из БД и строит график/таблицу"""
-    #     date_from, date_to = self.get_date_range("paed")
-        
-    #     # Получаем выбранный прибор
-    #     device_sn = self.ui.combo_device_paed.currentData()
-    #     if not device_sn:
-    #         QMessageBox.warning(self, "Попередження", "Виберіть прилад")
-    #         return
-        
-    #     device_id = self.db_manager.get_device_id(device_sn)
-    #     if not device_id:
-    #         return
-        
-    #     # Определяем тип расположения
-    #     location_type = self.ui.combo_location_type_paed.currentText()
-        
-    #     # Загружаем данные в зависимости от типа
-    #     if location_type in ("Цистерна", "Всі"):
-    #         # Измерения цистерн
-    #         conn = self.db_manager._get_connection()
-    #         cursor = conn.cursor()
-    #         cursor.execute("""
-    #             SELECT timestamp, paed, temperature, low_status, high_status, valid
-    #             FROM measurements_cistern
-    #             WHERE device_id = ? AND timestamp BETWEEN ? AND ?
-    #             ORDER BY timestamp
-    #         """, (device_id, date_from, date_to))
-    #         rows = cursor.fetchall()
-    #     else:
-    #         # Измерения настенных
-    #         conn = self.db_manager._get_connection()
-    #         cursor = conn.cursor()
-    #         cursor.execute("""
-    #             SELECT timestamp, paed, temperature, low_status, high_status, valid
-    #             FROM measurements_wall
-    #             WHERE device_id = ? AND timestamp BETWEEN ? AND ?
-    #             ORDER BY timestamp
-    #         """, (device_id, date_from, date_to))
-    #         rows = cursor.fetchall()
-        
-    #     if not rows:
-    #         self.ax_paed.clear()
-    #         self.ax_paed.text(0.5, 0.5, "Немає даних за вибраний період", transform=self.ax_paed.transAxes, ha='center')
-    #         self.canvas_paed.draw()
-    #         self.fill_paed_table([])
-    #         return
-        
-    #     # Строим график
-    #     self.ax_paed.clear()
-    #     timestamps = [row[0] for row in rows]
-    #     paed_values = [row[1] for row in rows]
-        
-    #     self.ax_paed.plot(timestamps, paed_values, 'b-', linewidth=1.5)
-    #     self.ax_paed.set_xlabel("Час")
-    #     self.ax_paed.set_ylabel("ПАЕД, мкЗв/год")
-    #     self.ax_paed.set_title(f"ПАЕД - {device_sn}")
-    #     self.ax_paed.grid(True, alpha=0.3)
-    #     self.figure_paed.autofmt_xdate()
-    #     self.canvas_paed.draw()
-        
-    #     # Заполняем таблицу
-    #     self.fill_paed_table(rows)
-
     def load_paed_data(self):
         """
             Загружает данные ПАЕД из БД и строит график/таблицу
@@ -307,31 +243,8 @@ class DBViewWindow(QMainWindow):
         self.figure_paed.autofmt_xdate()
         self.canvas_paed.draw()
         
-        self.fill_paed_table(rows)
-
-
-
-    
-    # def fill_paed_table(self, rows):
-    #     """Заполняет таблицу ПАЕД"""
-    #     model = QStandardItemModel()
-    #     model.setHorizontalHeaderLabels(["Час", "ПАЕД, мкЗв/год", "Температура, °C", "Стан детекторів"])
-        
-    #     for row_idx, row in enumerate(rows):
-    #         timestamp = row[0].strftime("%d.%m.%Y %H:%M:%S")
-    #         paed = f"{row[1]:.2f}"
-    #         temp = f"{row[2]:.1f}"
-    #         low_ok = "Низькочутл: Норма" if row[3] == 0 else "Низькочутл: Відмова"
-    #         high_ok = "Високочутл: Норма" if row[4] == 0 else "Високочутл: Відмова"
-    #         status = f"{low_ok}, {high_ok}"
-            
-    #         model.setItem(row_idx, 0, QStandardItem(timestamp))
-    #         model.setItem(row_idx, 1, QStandardItem(paed))
-    #         model.setItem(row_idx, 2, QStandardItem(temp))
-    #         model.setItem(row_idx, 3, QStandardItem(status))
-        
-    #     self.ui.tableView_paed.setModel(model)
-    #     self.ui.tableView_paed.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.fill_paed_table(rows)    
+   
 
     def fill_paed_table(self, rows):
         """
@@ -344,8 +257,13 @@ class DBViewWindow(QMainWindow):
             timestamp = datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S").strftime("%d.%m.%Y %H:%M:%S")
             paed = f"{row[1]:.2f}"
             temp = f"{row[2]:.1f}"
-            low_ok = "Низькочутл: Норма" if row[3] == 0 else "Низькочутл: Відмова"
-            high_ok = "Високочутл: Норма" if row[4] == 0 else "Високочутл: Відмова"
+
+            # low_ok = "Низькочутл: Норма" if row[3] == 0 else "Низькочутл: Відмова"
+            # high_ok = "Високочутл: Норма" if row[4] == 0 else "Високочутл: Відмова"
+
+            # инвертировали вывод данных исправности детекторов
+            low_ok = "Низькочутл: Норма" if row[3] == 1 else "Низькочутл: Відмова"
+            high_ok = "Високочутл: Норма" if row[4] == 1 else "Високочутл: Відмова"
             status = f"{low_ok}, {high_ok}"
             
             model.setItem(row_idx, 0, QStandardItem(timestamp))

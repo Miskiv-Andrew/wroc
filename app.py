@@ -197,7 +197,7 @@ class DeviceCardBarrel(QWidget):
         # Низкочувствительный детектор
         low_label = self.ui.findChild(QLabel, "lowDetectorValue")
         if low_label:
-            if low_failure:
+            if not low_failure:
                 low_label.setText("Відмова")
                 low_label.setStyleSheet("color: red; font: 600 11pt 'Segoe UI';")
             else:
@@ -207,7 +207,7 @@ class DeviceCardBarrel(QWidget):
         # Высокочувствительный детектор
         high_label = self.ui.findChild(QLabel, "highDetectorValue")
         if high_label:
-            if high_failure:
+            if not high_failure:
                 high_label.setText("Відмова")
                 high_label.setStyleSheet("color: red; font: 600 11pt 'Segoe UI';")
             else:
@@ -224,10 +224,15 @@ class DeviceCardBarrel(QWidget):
                 valid_label.setText("Невалідний")
                 valid_label.setStyleSheet("color: red; font: 600 11pt 'Segoe UI';")
         
-        # Сохраняем для БД
+        # # Сохраняем для БД
         self.last_low_status = 1 if low_failure else 0
         self.last_high_status = 1 if high_failure else 0
         self.last_valid = 1 if result_valid else 0
+ 
+        #  # # Сохраняем для БД - инвертировали логику
+        # low_status = 0 if low_failure else 1
+        # high_status = 0 if high_failure else 1
+        # valid = 0 if result_valid else 1
    
     def set_connection_status(self, connected: bool, crc_error: bool = False):
         """
@@ -1341,45 +1346,19 @@ class App(QObject):
         if hasattr(self, 'butt_replace_device') and self.butt_replace_device:
             self.butt_replace_device.setEnabled(True)
         self.missing_device_sn = serial_number
-
-    # def open_replace_dialog(self):
-    #     """Открывает диалог замены прибора"""
-    #     from dialogs.device_replace_dialog import DeviceReplaceDialog
+   
+    
+    def open_replace_dialog(self):
+        """
+            Открывает диалог замены/активации приборов.
+            Активные  и неактивные приборы для замены 
+            берутся из БД (is_active = 1, 0),
+            
+        """
+        # Активные приборы (для замены) - берем из БД
+        active_devices = self.db_manager.get_all_active_devices()
         
-    #     # Собираем список пропавших приборов из DeviceManager
-    #     missing_devices = []
-    #     for device in self.device_manager.devices:
-    #         if device.no_answer_count >= 5:
-    #             missing_devices.append({
-    #                 "serial_number": device.serial_number,
-    #                 "location_type": device.location_type,
-    #                 "position_number": device.posit_number
-    #             })
-        
-    #     # if not missing_devices:
-    #     #     self.ui.textEdit.append("Немає приладів для заміни")
-    #     #     return
-        
-    #     dialog = DeviceReplaceDialog(self.db_manager, missing_devices, self.ui)
-    #     dialog.exec()
-        
-    #     # После закрытия диалога деактивируем пункт меню
-    #     if self.butt_replace_device:
-    #         self.butt_replace_device.setEnabled(False) 
-
-    def open_replace_dialog(self):        
-        
-        # Активні прилади (для заміни)
-        active_devices = []
-        for device in self.device_manager.devices:
-            if device.is_active:
-                active_devices.append({
-                    "serial_number": device.serial_number,
-                    "location_type": device.location_type,
-                    "position_number": device.posit_number
-                })
-        
-        # Неактивні прилади (для активації)
+        # Неактивные приборы (для активации) - берем из БД
         inactive_devices = self.db_manager.get_inactive_devices()
         
         dialog = DeviceReplaceDialog(self.db_manager, active_devices, inactive_devices, self.ui)

@@ -378,20 +378,16 @@ class DatabaseManager:
         cursor.execute("SELECT is_active FROM devices WHERE serial_number = ?", (serial_number,))
         row = cursor.fetchone()
         conn.close()
-        return bool(row[0]) if row else True
-    
+        return bool(row[0]) if row else True 
 
     def get_inactive_devices(self):
         """
-            Повертає список неактивних приладів
+        Возвращает список неактивных приборов из БД.
+        Используется для заполнения списка активации в диалоге замены.
         """
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute("SELECT serial_number, location_type, position_number FROM devices WHERE is_active = 0")
-        rows = cursor.fetchall()
-        conn.close()
-        return [{"serial_number": row[0], "location_type": row[1], "position_number": row[2]} for row in rows]
-    
+        rows = self._fetch_all("SELECT serial_number, location_type, position_number FROM devices WHERE is_active = 0")
+        return [dict(row) for row in rows]
+        
 
     def activate_device(self, serial_number: str):
         """
@@ -401,14 +397,12 @@ class DatabaseManager:
         cursor = conn.cursor()
         cursor.execute("UPDATE devices SET is_active = 1 WHERE serial_number = ?", (serial_number,))
         conn.commit()
-        conn.close()
-
-    # def reload_devices_map(self):
-    #     """Перезавантажує кеш активних приладів"""
-    #     self._load_devices_map()
+        conn.close()   
 
     def reload_devices_map(self):
-        """Перезавантажує кеш активних приладів (потокобезпечний)"""
+        """
+            Перезавантажує кеш активних приладів (потокобезпечний)
+        """
         # Створюємо тимчасове з'єднання в поточному потоці
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -420,6 +414,16 @@ class DatabaseManager:
         self.devices_map = {}
         for row in rows:
             self.devices_map[row[1]] = row[0]
+
+    def device_exists(self, serial_number: str) -> bool:
+        """
+        Проверяет, существует ли прибор с данным серийным номером в БД.
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM devices WHERE serial_number = ?", (serial_number,))
+        row = cursor.fetchone()
+        return row is not None
 
     
     def close(self):
