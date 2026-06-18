@@ -72,6 +72,7 @@ class DeviceCardBarrel(QWidget):
         self.set_temp_icon()
         self.set_activity_icon()
         self.set_isotope_icon()
+        self.set_spectrum_ui_enabled(False)
 
         # Инициализация спектральных данных
         self.spectrum_buffer = [0] * 1024   # массив для накопления спектра (1024 канала)
@@ -94,6 +95,7 @@ class DeviceCardBarrel(QWidget):
         self.last_low_status = 1   # по умолчанию отказ
         self.last_high_status = 1  # по умолчанию отказ
         self.last_valid = 0        # по умолчанию невалидный
+        self.is_full = False       
 
 
     
@@ -118,7 +120,10 @@ class DeviceCardBarrel(QWidget):
         pixmap = QPixmap(path)
 
         scaled_pixmap = pixmap.scaledToWidth(80, Qt.SmoothTransformation)
-        label.setPixmap(scaled_pixmap)    
+        label.setPixmap(scaled_pixmap)  
+
+        self.is_full = full
+        self.set_spectrum_ui_enabled(full)
     
     def set_barrel_icon(self):
         """Set the barrel detector icon"""
@@ -179,7 +184,20 @@ class DeviceCardBarrel(QWidget):
             except:
                 pass
     
-    
+    def set_spectrum_ui_enabled(self, enabled: bool):
+        if not hasattr(self, 'selector_graph') or self.selector_graph is None:
+            self.selector_graph = self.ui.findChild(QWidget, "selectorGraph")
+        if not hasattr(self, 'spectrum_widget') or self.spectrum_widget is None:
+            self.spectrum_widget = self.ui.findChild(QWidget, "spectrumWidget")
+        if not hasattr(self, 'histogram_widget') or self.histogram_widget is None:
+            self.histogram_widget = self.ui.findChild(QWidget, "histogramWidget")
+        if self.selector_graph:
+            self.selector_graph.setEnabled(enabled)
+        if self.spectrum_widget:
+            self.spectrum_widget.setVisible(enabled)
+        if self.histogram_widget:
+            self.histogram_widget.setVisible(enabled)
+        
     def add_spectrum(self):
         self.spectrum = SpectrumWidget()
         layout = self.ui.spectrumWidget.layout()
