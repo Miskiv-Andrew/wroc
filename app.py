@@ -9,7 +9,7 @@ from PySide6.QtGui import QAction, QPixmap
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 import json, numpy as np
-import threading, os, math
+import os, math
 
 from database.db_manager import DatabaseManager
 from dialogs.device_replace_dialog import DeviceReplaceDialog
@@ -984,8 +984,8 @@ class App(QObject):
                     card.set_dose_value(paed_value, accuracy)
                     
                     # Обновляем состояние детекторов из test_byte
-                    high_failure = bool(test_byte & 0b00000001)
-                    low_failure = bool(test_byte & 0b00000010)
+                    high_failure = not bool(test_byte & 0b00000001)
+                    low_failure = not bool(test_byte & 0b00000010)
                     card.set_detector_status(low_failure, high_failure, result_valid)
                     
                     # Сохраняем измерение в БД (без активности)
@@ -1117,6 +1117,9 @@ class App(QObject):
 
         # Вносим в приборы данные про цистерны
         self.sync_devices_with_cisterns()
+
+        # Отправляем начальное состояние цистерн в DeviceManager
+        self.sync_cisterns_to_manager.emit(self.cistern_dict)
 
         # Начинаем процедуру опроса внешней Системы Управления
         self.start_test_polling("config/cistern.json")
@@ -1254,7 +1257,7 @@ class App(QObject):
 
             current_value = self.cistern_dict[num]
             if new_value != current_value:
-                print(f"Зміна стану цистерни №{num}: {current_value} → {new_value}")
+                # print(f"Зміна стану цистерни №{num}: {current_value} → {new_value}")
                 self.cistern_dict[num] = new_value
                 updated = True
 
