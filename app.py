@@ -10,6 +10,7 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 import json, numpy as np
 import os, math
+from sklearn.decomposition import NMF
 
 from database.db_manager import DatabaseManager
 from dialogs.device_replace_dialog import DeviceReplaceDialog
@@ -1438,8 +1439,8 @@ class App(QObject):
         cistern_position: номер цистерны
         Возвращает: dict {имя_изотопа: коэффициент}
         """
-        from sklearn.decomposition import NMF
-        import numpy as np
+
+        spectrum = np.array(spectrum)       
         
         if not hasattr(self, 'calibration_spectra') or not self.calibration_spectra:
             self.ui.textEdit.append("Ошибка: эталонные спектры не загружены")
