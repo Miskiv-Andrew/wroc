@@ -299,8 +299,6 @@ class DeviceCardBarrel(QWidget):
                 status_label.setText("Норма")
                 status_label.setStyleSheet("color: green; font: 600 11pt 'Segoe UI';")
 
-    # app.py - класс DeviceCardBarrel - метод add_spectrum_data
-
     def add_spectrum_data(self, channels):
         """
         Добавляет полученный массив спектра к накопленному буферу
@@ -319,7 +317,7 @@ class DeviceCardBarrel(QWidget):
         self.update_spectrum_display()
         
         # Проверка: достигнут ли лимит 600 спектров
-        if self.spectrum_counter >= 600:
+        if self.spectrum_counter >= 10:   #600:  10 - для проверки обработки спектра
             self.calculate_activity()
 
     def is_spectrum_ready(self) -> bool:
@@ -358,34 +356,56 @@ class DeviceCardBarrel(QWidget):
             # Передаём данные в SpectrumWidget для отрисовки
             self.spectrum.update_data(self.spectrum_buffer) 
 
+   
     def calculate_activity(self):
         """
-        Расчёт активности раствора на основе накопленного спектра (600 спектров = ~30 минут)
-        Сохраняет результат в историю и в БД, затем сбрасывает буфер.
+        Расчёт активности и идентификация изотопов
         """
-        from PySide6.QtCore import QDateTime
-        
+              
         total_counts = sum(self.spectrum_buffer)
-        
-        # Заглушка расчёта активности (позже заменится на реальную формулу)
-        activity = total_counts / 600 / 1000  # кБк
+        activity = total_counts / 600 / 1000
         
         timestamp = QDateTime.currentDateTime()
         
-        # Сохраняем в историю (для гистограммы)
         self.activity_history.append({
             "timestamp": timestamp,
             "activity": activity
         })
         
-        # Сохраняем в БД
+        # Идентификация изотопов
         if hasattr(self, 'parent_app') and self.parent_app:
-            device_id = self.parent_app.db_manager.get_device_id(self.serial_number)
-            
-            if device_id is not None:
-                fullness_status = "full" if self.is_full else "empty"
-                ready_to_drain = 0  # заглушка, позже будет рассчитываться
+            result = self.parent_app.identify_isotopes(self.spectrum_buffer, self.posit_number)
+            if result:
+                self.parent_app.ui.textEdit.append(f"Цистерна №{self.posit_number}: результаты идентификации:")
+                for name, coef in result.items():
+                    if name != "background":
+                        status = "обнаружен" if coef > 0.05 else "не обнаружен"
+                        self.parent_app.ui.textEdit.append(f"  {name}: {coef:.4f} ({status})")
+                self.parent_app.ui.textEdit.append("---")
+
+                export_dir = "export"
+                os.makedirs(export_dir, exist_ok=True)
                 
+                # Сохраняем общий спектр
+                with open(os.path.join(export_dir, "spectrum_total.txt"), "w") as f:
+                    f.write("\n".join(str(int(x)) for x in self.spectrum_buffer))
+                
+                # Сохраняем разделённые спектры
+                for name, coef in result.items():
+                    if name == "background":
+                        spectrum = coef * self.calibration_spectra["background"]
+                    else:
+                        spectrum = coef * self.calibration_spectra[name]
+                    
+                    filename = f"spectrum_{name}.txt"
+                    with open(os.path.join(export_dir, filename), "w") as f:
+                        f.write("\n".join(str(int(x)) for x in spectrum))
+
+            
+            # Сохранение в БД
+            device_id = self.parent_app.db_manager.get_device_id(self.serial_number)
+            if device_id is not None:
+                fullness_status = "full" if getattr(self, 'is_full', False) else "empty"
                 self.parent_app.db_manager.save_cistern_measurement(
                     device_id=device_id,
                     paed=self.last_paed_from_spectrum,
@@ -394,18 +414,12 @@ class DeviceCardBarrel(QWidget):
                     high_status=self.last_high_status,
                     valid=self.last_valid,
                     fullness_status=fullness_status,
-                    ready_to_drain=ready_to_drain
+                    ready_to_drain=0
                 )
-                
                 self.parent_app.ui.textEdit.append(
-                    f"Цистерна №{self.posit_number}: збережено вимірювання в БД (активність = {activity:.2f} кБк)"
-                )
-            else:
-                self.parent_app.ui.textEdit.append(
-                    f"Помилка: прилад {self.serial_number} не знайдено в БД"
+                    f"Цистерна №{self.posit_number}: сохранено в БД (активность = {activity:.2f} кБк)"
                 )
         
-        # Сбрасываем буфер и счётчик для следующего цикла накопления
         self.reset_spectrum()
 
 
@@ -734,6 +748,10 @@ class App(QObject):
             self.butt_system_stop.setEnabled(False)
 
 
+        # Загрузка эталонных спектров
+        self.load_calibration_spectra()
+
+
     def load_ui(self):
         """
             Загружаем интерфейс из main_window.ui
@@ -848,6 +866,35 @@ class App(QObject):
         self.butt_replace_device.setEnabled(True)
         if self.butt_replace_device:
             self.butt_replace_device.triggered.connect(self.open_replace_dialog)
+
+    def load_calibration_spectra(self):
+        """
+        Загружает эталонные спектры из папки calibration/.
+        Каждый файл должен содержать 1024 числа (по одному на строку).
+        """
+        self.calibration_spectra = {}
+        calib_dir = "calibration"
+        
+        if not os.path.exists(calib_dir):
+            self.ui.textEdit.append("Папка calibration/ не найдена")
+            return
+        
+        for filename in os.listdir(calib_dir):
+            if filename.endswith(".txt"):
+                filepath = os.path.join(calib_dir, filename)
+                try:
+                    data = np.loadtxt(filepath)
+                    # Приводим к 1024
+                    if len(data) < 1024:
+                        data = np.pad(data, (0, 1024 - len(data)), 'constant')
+                    elif len(data) > 1024:
+                        data = data[:1024]
+                    
+                    name = os.path.splitext(filename)[0]  # имя файла без расширения
+                    self.calibration_spectra[name] = data
+                    self.ui.textEdit.append(f"Загружен эталон: {name}")
+                except Exception as e:
+                    self.ui.textEdit.append(f"Ошибка загрузки {filename}: {e}")
 
 
     def on_system_event(self, serial_number, event_type, description):
@@ -1156,23 +1203,26 @@ class App(QObject):
 
     def load_cistern_data(self, json_file: str):
         """
-            Загружаем данные о заполненности цистерн из файла.
-            Если файл повреждён или отсутствует — создаём дефолтный словарь
-            и сразу перезаписываем файл.
+        Загружает данные о заполненности цистерн и списках изотопов из файла.
         """
         try:
             with open(json_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            # преобразуем ключи в int
-            self.cistern_dict = {int(k): bool(v) for k, v in data.items()}
-
+            
+            self.cistern_dict = {}
+            self.cistern_isotopes = {}
+            
+            for k, v in data.items():
+                pos = int(k)
+                self.cistern_dict[pos] = bool(v.get("full", False))
+                self.cistern_isotopes[pos] = v.get("isotopes", [])
+                    
         except (FileNotFoundError, json.JSONDecodeError):
             print(f"Файл {json_file} відсутній або пошкоджений. Створюємо дефолтні дані (20 порожніх цистерн)")
-            # дефолт: 20 цистерн, пустые
             self.cistern_dict = {i: False for i in range(1, 21)}
-            # перезаписываем файл дефолтным содержимым
+            self.cistern_isotopes = {i: [] for i in range(1, 21)}
             with open(json_file, "w", encoding="utf-8") as f:
-                json.dump(self.cistern_dict, f, ensure_ascii=False, indent=4)   
+                json.dump({str(i): {"full": False, "isotopes": []} for i in range(1, 21)}, f, ensure_ascii=False, indent=4)
 
     
     def sync_devices_with_cisterns(self):
@@ -1314,23 +1364,6 @@ class App(QObject):
         self.db_manager.save_system_event(None, "app_stop", "Програма зупинена")
         self.db_manager.close()
 
-    # def start_polling_and_test_system(self):
-    #     """
-    #         Слот, запускаемый по нажатию кнопки "Старт системы".
-    #         Запускает циклический опрос приборов и имитацию опроса внешней системы.
-    #     """
-    #     # Деактивируем кнопку поиска
-    #     self.butt_search_dev.setEnabled(False)       
-    #     self.butt_system_start.setEnabled(False)    
-    #     self.butt_system_stop.setEnabled(True)
-
-    #     # Запуск основного опроса приборов
-    #     self.start_polling.emit()
-        
-    #     # Запуск имитации опроса внешней системы (состояние цистерн)
-    #     self.start_test_polling("config/cistern.json")
-
-
     def start_polling_and_test_system(self):
         """
             Запуск опроса приборов
@@ -1398,7 +1431,46 @@ class App(QObject):
         # Запускаем поиск
         self.search_devices.emit()
 
+    def identify_isotopes(self, spectrum, cistern_position):
+        """
+        Выполняет идентификацию изотопов в спектре с помощью NMF.
+        spectrum: массив 1024 канала
+        cistern_position: номер цистерны
+        Возвращает: dict {имя_изотопа: коэффициент}
+        """
+        from sklearn.decomposition import NMF
+        import numpy as np
+        
+        if not hasattr(self, 'calibration_spectra') or not self.calibration_spectra:
+            self.ui.textEdit.append("Ошибка: эталонные спектры не загружены")
+            return None
+        
+        isotopes_list = self.cistern_isotopes.get(cistern_position, [])
+        if not isotopes_list:
+            self.ui.textEdit.append(f"Предупреждение: для цистерны {cistern_position} не заданы изотопы")
+        
+        names = ["background"] + isotopes_list
+        etalons = []
+        for name in names:
+            if name in self.calibration_spectra:
+                etalons.append(self.calibration_spectra[name])
+            else:
+                self.ui.textEdit.append(f"Ошибка: эталон '{name}' не найден")
+                return None
+        
+        A = np.column_stack(etalons)
+        
+        nmf = NMF(n_components=len(names), random_state=42, max_iter=1000)
+        W = nmf.fit_transform(spectrum.reshape(1, -1))
+        H = nmf.components_
+        
+        coefs = H.flatten()
+        result = {names[i]: coefs[i] for i in range(len(names))}
+        
+        return result
 
+
+    
 def main():
     """
         Точка входа в приложение

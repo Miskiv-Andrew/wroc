@@ -1,3 +1,9 @@
 {
-    "1": true
+    "1": {
+        "full": false,
+        "isotopes": [
+            "I-131",
+            "Tc-99m"
+        ]
+    }
 }

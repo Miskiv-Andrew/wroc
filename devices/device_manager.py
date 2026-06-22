@@ -111,11 +111,14 @@ class DeviceManager(QObject):
         # # self.room_dict    = {"2400126" : 1, "2400127" : 2}   
 
         # self.debug_mode: int | None = 1  
-        # self.cistern_dict = {"2400089" : 1}  
+        
         # self.room_dict    = {"2400126" : 1, "2400127" : 2,  "2400128" : 3}
+        # self.cistern_dict = {
+        #     "2400089": {"position": 1, "isotopes": ["I-131", "Tc-99m"]}
+        # }
 
 
-        # self.debug_mode =  None =  рабочий режим
+        # # self.debug_mode =  None =  рабочий режим
         self.debug_mode: int | None = None   
 
 
@@ -534,10 +537,16 @@ class DeviceManager(QObject):
             for device in self.devices:
                 if device.serial_number in self.cistern_dict:
                     location_type = "cistern"
-                    posit_number = self.cistern_dict[device.serial_number]
+
+                    # posit_number = self.cistern_dict[device.serial_number]
+                    posit_number = self.cistern_dict[device.serial_number]["position"]
                     line = f"{device.serial_number};{location_type};{posit_number};{device.address}"
                     lines.append(line)
-                    cistern_json_data[posit_number] = False
+                    # cistern_json_data[posit_number] = False
+                    cistern_json_data[posit_number] = {
+                        "full": False,
+                        "isotopes": self.cistern_dict[device.serial_number]["isotopes"]
+                    }
 
                 elif device.serial_number in self.room_dict:
                     location_type = "room"
@@ -574,42 +583,6 @@ class DeviceManager(QObject):
                 self.device_error.emit("config", f"Помилка запису файлів: {e}")
 
             return
-
-        # # --- Обычный режим ---
-        # config_data = self.load_config_file()
-        # valid_devices = []
-
-        # for device in self.devices:
-        #     if device.serial_number in config_data:
-        #         cfg = config_data[device.serial_number]
-        #         device.location_type = cfg["location_type"]
-        #         device.posit_number = cfg["posit_number"]
-        #         device.expected_address = cfg["expected_address"]
-
-        #         if device.address != device.expected_address:
-        #             self.device_error.emit(
-        #                 "config.txt",
-        #                 f"Несовпадение адреса для SN {device.serial_number}: "
-        #                 f"ожидался {device.expected_address}, найден {device.address}"
-        #             )
-        #             continue
-                
-        #         device.is_active = self.db_manager.get_device_active_status(device.serial_number)
-                
-        #         valid_devices.append(device)
-        #     else:
-        #         self.device_error.emit(
-        #             "config.txt",
-        #             f"SN {device.serial_number} найден, но отсутствует в конфигурации"
-        #         )
-
-        # if valid_devices:
-        #     self.devices = valid_devices
-        #     serializable_list = [self._device_to_dict(d) for d in valid_devices]
-        #     self.device_found.emit(serializable_list)
-        # else:
-        #     self.device_found.emit([])
-        #     self.device_info.emit("Прилади не знайдено або не пройшли перевірку конфігурації")
 
         # --- Обычный режим ---
         config_data = self.load_config_file()
