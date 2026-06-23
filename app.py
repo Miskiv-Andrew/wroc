@@ -358,11 +358,78 @@ class DeviceCardBarrel(QWidget):
             self.spectrum.update_data(self.spectrum_buffer) 
 
    
+    # def calculate_activity(self):
+    #     """
+    #     Расчёт активности и идентификация изотопов
+    #     """
+              
+    #     total_counts = sum(self.spectrum_buffer)
+    #     activity = total_counts / 600 / 1000
+        
+    #     timestamp = QDateTime.currentDateTime()
+        
+    #     self.activity_history.append({
+    #         "timestamp": timestamp,
+    #         "activity": activity
+    #     })
+        
+    #     # Идентификация изотопов
+    #     if hasattr(self, 'parent_app') and self.parent_app:
+    #         result = self.parent_app.identify_isotopes(self.spectrum_buffer, self.posit_number)
+    #         if result:
+    #             self.parent_app.ui.textEdit.append(f"Цистерна №{self.posit_number}: результаты идентификации:")
+    #             for name, coef in result.items():
+    #                 if name != "background":
+    #                     status = "обнаружен" if coef > 0.05 else "не обнаружен"
+    #                     self.parent_app.ui.textEdit.append(f"  {name}: {coef:.4f} ({status})")
+    #             self.parent_app.ui.textEdit.append("---")
+
+    #             export_dir = "export"
+    #             os.makedirs(export_dir, exist_ok=True)
+                
+    #             # Сохраняем общий спектр
+    #             with open(os.path.join(export_dir, "spectrum_total.txt"), "w") as f:
+    #                 f.write("\n".join(str(int(x)) for x in self.spectrum_buffer))
+                
+    #             # Сохраняем разделённые спектры
+    #             for name, coef in result.items():
+    #                 if name == "background":
+    #                     spectrum = coef * self.calibration_spectra["background"]
+    #                 else:
+    #                     spectrum = coef * self.calibration_spectra[name]
+                    
+    #                 filename = f"spectrum_{name}.txt"
+    #                 with open(os.path.join(export_dir, filename), "w") as f:
+    #                     f.write("\n".join(str(int(x)) for x in spectrum))
+
+            
+    #         # Сохранение в БД
+    #         device_id = self.parent_app.db_manager.get_device_id(self.serial_number)
+    #         if device_id is not None:
+    #             fullness_status = "full" if getattr(self, 'is_full', False) else "empty"
+    #             self.parent_app.db_manager.save_cistern_measurement(
+    #                 device_id=device_id,
+    #                 paed=self.last_paed_from_spectrum,
+    #                 activity=activity,
+    #                 low_status=self.last_low_status,
+    #                 high_status=self.last_high_status,
+    #                 valid=self.last_valid,
+    #                 fullness_status=fullness_status,
+    #                 ready_to_drain=0
+    #             )
+    #             self.parent_app.ui.textEdit.append(
+    #                 f"Цистерна №{self.posit_number}: сохранено в БД (активность = {activity:.2f} кБк)"
+    #             )
+        
+    #     self.reset_spectrum()
+
     def calculate_activity(self):
         """
         Расчёт активности и идентификация изотопов
         """
-              
+        from PySide6.QtCore import QDateTime
+        import os
+        
         total_counts = sum(self.spectrum_buffer)
         activity = total_counts / 600 / 1000
         
@@ -384,6 +451,7 @@ class DeviceCardBarrel(QWidget):
                         self.parent_app.ui.textEdit.append(f"  {name}: {coef:.4f} ({status})")
                 self.parent_app.ui.textEdit.append("---")
 
+                # Экспорт спектров
                 export_dir = "export"
                 os.makedirs(export_dir, exist_ok=True)
                 
@@ -394,15 +462,14 @@ class DeviceCardBarrel(QWidget):
                 # Сохраняем разделённые спектры
                 for name, coef in result.items():
                     if name == "background":
-                        spectrum = coef * self.calibration_spectra["background"]
+                        spectrum = coef * self.parent_app.calibration_spectra["background"]
                     else:
-                        spectrum = coef * self.calibration_spectra[name]
+                        spectrum = coef * self.parent_app.calibration_spectra[name]
                     
                     filename = f"spectrum_{name}.txt"
                     with open(os.path.join(export_dir, filename), "w") as f:
                         f.write("\n".join(str(int(x)) for x in spectrum))
 
-            
             # Сохранение в БД
             device_id = self.parent_app.db_manager.get_device_id(self.serial_number)
             if device_id is not None:
@@ -410,6 +477,7 @@ class DeviceCardBarrel(QWidget):
                 self.parent_app.db_manager.save_cistern_measurement(
                     device_id=device_id,
                     paed=self.last_paed_from_spectrum,
+                    temperature=self.last_temperature,
                     activity=activity,
                     low_status=self.last_low_status,
                     high_status=self.last_high_status,
@@ -422,8 +490,6 @@ class DeviceCardBarrel(QWidget):
                 )
         
         self.reset_spectrum()
-
-
 
 
     def plot_activity_histogram(self):
@@ -1344,8 +1410,14 @@ class App(QObject):
         #self.ui.textEdit.append(f"App: emitting cistern_dict (type={type(self.cistern_dict)}): {self.cistern_dict!r}")
         # Если были изменения — перезаписываем файл cistern.json и синхронизируем с DeviceManager
         if updated:
-            with open(json_file, "w", encoding="utf-8") as f:                
-                json.dump(self.cistern_dict, f, ensure_ascii=False, indent=4)
+            with open(json_file, "w", encoding="utf-8") as f:
+                export_data = {}
+                for pos, full in self.cistern_dict.items():
+                    export_data[str(pos)] = {
+                        "full": full,
+                        "isotopes": self.cistern_isotopes.get(pos, [])
+                    }
+                json.dump(export_data, f, ensure_ascii=False, indent=4)
                 try:
                     self.sync_cisterns_to_manager.emit(self.cistern_dict)
                 except Exception:
