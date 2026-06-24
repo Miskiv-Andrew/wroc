@@ -88,7 +88,7 @@ class DeviceManager(QObject):
         self.rx_buffer           = bytearray()  # глобальный массив для приема ответов приборов
         self.current_index       = -1           # индекс текущего прибора в цикле                 
         self.short_interval_ms   = 3_000        # интервал между приборами
-        self.long_interval_ms    = 20_000       # пауза между циклами
+        self.long_interval_ms    = 7_000        # 20_000       # пауза между циклами
         self.timeout_interval_ms = 3_000        # таймаут ожидания неответа прибора
         self.max_retries         = 3            # максимально допустимое число неответов прибора  
         self.last_command = None                # хранит последнюю отправленную команду 
@@ -1097,7 +1097,6 @@ class DeviceManager(QObject):
             return "UnknownMode"        
   
     
-
     def handle_timeout_error(self):
         device: DeviceInfo = self.devices[self.current_index]
         
@@ -1114,19 +1113,15 @@ class DeviceManager(QObject):
         # Если прибор не отвечает 5 раз подряд — сигналим о пропаже
         if device.no_answer_count >= 5:
             device.is_online = False
-            self.device_missing.emit(device.serial_number)
-        
-        # Сбрасываем spectrum_active при таймауте для спектральных режимов
-        if device.spectrum_active:
             device.spectrum_active = False
             device.start_spectre_retries = 0
+            self.device_missing.emit(device.serial_number)
+            self.system_event.emit(device.serial_number, "connection_error", "Прибор не відповів")
         
         self.device_error.emit(device.port, "Прибор не ответил\n")
 
         if self.serial_port.isOpen():
             self.serial_port.close()
-
-        self.system_event.emit(device.serial_number, "connection_error", "Прибор не відповів")
 
         self.poll_timer.start(self.short_interval_ms)
     
