@@ -11,6 +11,7 @@ from matplotlib.figure import Figure
 import json, numpy as np
 import os, math
 from sklearn.decomposition import NMF
+from scipy.optimize import nnls
 
 from database.db_manager import DatabaseManager
 from dialogs.device_replace_dialog import DeviceReplaceDialog
@@ -53,6 +54,7 @@ class DeviceCardBarrel(QWidget):
     def __init__(self, parent_app=None):
         super().__init__()
         self.parent_app = parent_app
+        self.repeat_counter = 100
 
         loader = QUiLoader()
         ui_file = QFile("_UI/dashboardbarrel.ui")
@@ -318,7 +320,7 @@ class DeviceCardBarrel(QWidget):
         self.update_spectrum_display()
         
         # Проверка: достигнут ли лимит 600 спектров
-        if self.spectrum_counter >= 10:   #600:  10 - для проверки обработки спектра
+        if self.spectrum_counter >= self.repeat_counter:   #600:  10 - для проверки обработки спектра
             self.calculate_activity()
 
     def is_spectrum_ready(self) -> bool:
@@ -1504,44 +1506,79 @@ class App(QObject):
         # Запускаем поиск
         self.search_devices.emit()
 
-    def identify_isotopes(self, spectrum, cistern_position):
-        """
-        Выполняет идентификацию изотопов в спектре с помощью NMF.
-        spectrum: массив 1024 канала
-        cistern_position: номер цистерны
-        Возвращает: dict {имя_изотопа: коэффициент}
-        """
+    # def identify_isotopes(self, spectrum, cistern_position):
+    #     """
+    #     Выполняет идентификацию изотопов в спектре с помощью NMF.
+    #     spectrum: массив 1024 канала
+    #     cistern_position: номер цистерны
+    #     Возвращает: dict {имя_изотопа: коэффициент}
+    #     """
 
-        spectrum = np.array(spectrum)       
+    #     spectrum = np.array(spectrum)       
         
+    #     if not hasattr(self, 'calibration_spectra') or not self.calibration_spectra:
+    #         self.ui.textEdit.append("Ошибка: эталонные спектры не загружены")
+    #         return None
+        
+    #     isotopes_list = self.cistern_isotopes.get(cistern_position, [])
+    #     if not isotopes_list:
+    #         self.ui.textEdit.append(f"Предупреждение: для цистерны {cistern_position} не заданы изотопы")
+        
+    #     names = ["background"] + isotopes_list
+    #     etalons = []
+    #     for name in names:
+    #         if name in self.calibration_spectra:
+    #             etalons.append(self.calibration_spectra[name])
+    #         else:
+    #             self.ui.textEdit.append(f"Ошибка: эталон '{name}' не найден")
+    #             return None
+        
+    #     A = np.column_stack(etalons)
+        
+    #     nmf = NMF(n_components=len(names), random_state=42, max_iter=1000)
+    #     W = nmf.fit_transform(spectrum.reshape(1, -1))
+    #     H = nmf.components_
+        
+    #     #coefs = H.flatten()
+    #     coefs = W[0]
+
+    #     result = {names[i]: coefs[i] for i in range(len(names))}
+        
+    #     return result
+
+    def identify_isotopes(self, spectrum, cistern_position):
+
+        spectrum = np.array(spectrum)
+
         if not hasattr(self, 'calibration_spectra') or not self.calibration_spectra:
             self.ui.textEdit.append("Ошибка: эталонные спектры не загружены")
             return None
-        
+
         isotopes_list = self.cistern_isotopes.get(cistern_position, [])
         if not isotopes_list:
-            self.ui.textEdit.append(f"Предупреждение: для цистерны {cistern_position} не заданы изотопы")
-        
+            self.ui.textEdit.append(
+                f"Предупреждение: для цистерны {cistern_position} не заданы изотопы"
+            )
+
         names = ["background"] + isotopes_list
         etalons = []
+
         for name in names:
             if name in self.calibration_spectra:
-                etalons.append(self.calibration_spectra[name])
+                etalons.append(np.array(self.calibration_spectra[name]))
             else:
                 self.ui.textEdit.append(f"Ошибка: эталон '{name}' не найден")
                 return None
-        
-        A = np.column_stack(etalons)
-        
-        nmf = NMF(n_components=len(names), random_state=42, max_iter=1000)
-        W = nmf.fit_transform(spectrum.reshape(1, -1))
-        H = nmf.components_
-        
-        coefs = H.flatten()
-        result = {names[i]: coefs[i] for i in range(len(names))}
-        
-        return result
 
+        # Матрица (1024 × n_isotopes)
+        A = np.column_stack(etalons)
+
+        # Решаем spectrum ≈ A * coefs
+        coefs, residual = nnls(A, spectrum)
+
+        result = {names[i]: coefs[i] for i in range(len(names))}
+
+        return result
 
     
 def main():
