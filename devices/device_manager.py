@@ -1050,8 +1050,9 @@ class DeviceManager(QObject):
                     f"Ошибка записи: записано {written} байт из {len(request)}"
                 )
             else:
-                hex_str = " ".join(f"0x{b:02X}" for b in request)
-                self.device_info.emit(f"Записан пакет: {hex_str}")
+                pass
+                # hex_str = " ".join(f"0x{b:02X}" for b in request)
+                # self.device_info.emit(f"Записан пакет: {hex_str}")
 
         except serial.SerialException as e:
             self.device_error.emit(device.port, f"Ошибка работы с портом: {e}")
