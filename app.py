@@ -620,22 +620,48 @@ class DeviceCardBarrel(QWidget):
                         "\n".join(str(int(x)) for x in export_total_spectrum)
                     )
 
+              
+
                 # ------------------------------------------------------------
-                # 9. Сохраняем разделённые спектры из результата identify_isotopes()
+                # 9. Сохраняем все разделённые спектры из результата
+                #    identify_isotopes()
                 # ------------------------------------------------------------
+                # В словаре components находятся все восстановленные
+                # составляющие общего спектра:
+                #
+                #   background
+                #   I-131
+                #   Tc-99m
+                #
+                # Каждый спектр уже рассчитан методом identify_isotopes():
+                #
+                #   spectrum_component =
+                #       coefficient * etalon_spectrum
+                #
+                # Поэтому здесь остаётся только сохранить их в файлы.
                 components = result.get("components", {})
 
                 for name, spectrum in components.items():
 
-                    # Фон пока не экспортируем, как и раньше.
-                    if name != "background":
+                    # Формируем имя файла.
+                    #
+                    # Примеры:
+                    #   background -> spectrum_background.txt
+                    #   I-131      -> spectrum_I-131.txt
+                    #   Tc-99m     -> spectrum_Tc-99m.txt
+                    filename = f"spectrum_{name}.txt"
 
-                        filename = f"spectrum_{name}.txt"
+                    # Полный путь к файлу.
+                    filepath = os.path.join(export_dir, filename)
 
-                        with open(os.path.join(export_dir, filename), "w") as f:
-                            f.write(
-                                "\n".join(str(int(x)) for x in spectrum)
-                            )
+                    # Сохраняем спектр.
+                    #
+                    # Каждый канал записывается в отдельную строку,
+                    # как и в остальных спектральных файлах проекта.
+                    with open(filepath, "w") as f:
+                        f.write(
+                            "\n".join(str(int(x)) for x in spectrum)
+                        )
 
             # ------------------------------------------------------------
             # 10. Сохранение результата измерения в БД
