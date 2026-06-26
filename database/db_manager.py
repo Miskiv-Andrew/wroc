@@ -49,6 +49,10 @@ class DatabaseManager:
         
         # Явно создаём соединение при старте
         self._get_connection()
+
+        # Буфер для цистерн: зберігає останнє вимірювання ПАЕД та температури для кожної цистерни.
+        # Ключ — device_id, значення — кортеж (timestamp, paed, temperature, low_status, high_status, valid, fullness_status)
+        self.cistern_buffer = {}
     
     def _get_connection(self):
         """Возвращает соединение с БД. Создаёт новое, если нет активного."""
@@ -367,6 +371,37 @@ class DatabaseManager:
                 INSERT INTO devices (serial_number, device_type, location_type, position_number, is_active)
                 VALUES (?, ?, ?, ?, 1)
             """, (serial_number, device_type, location_type, position_number))
+
+    def buffer_cistern_measurement(self, device_id, paed, temperature, low_status, high_status, valid, fullness_status):
+        """
+            Додає вимірювання цистерни в буфер.
+            У буфері зберігається ТІЛЬКИ ОСТАННЄ значення для кожного device_id.
+            Викликається з головного потоку (GUI) при кожному опитуванні (RadDose або GetSpectre).
+        """
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.cistern_buffer[device_id] = (timestamp, paed, temperature, low_status, high_status, valid, fullness_status)
+
+    def flush_cistern_buffer(self):
+        """
+            Записує всі буферизовані вимірювання цистерн у БД.
+            Викликається при досягненні ліміту repeat_counter (з calculate_activity).
+            Після запису буфер очищується.
+        """
+        if not self.cistern_buffer:
+            return
+        
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        
+        for device_id, (timestamp, paed, temperature, low_status, high_status, valid, fullness_status) in self.cistern_buffer.items():
+            cursor.execute("""
+                INSERT INTO measurements_cistern 
+                (device_id, timestamp, paed, temperature, activity, low_status, high_status, valid, fullness_status, ready_to_drain)
+                VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, 0)
+            """, (device_id, timestamp, paed, temperature, low_status, high_status, valid, fullness_status))
+        
+        conn.commit()
+        self.cistern_buffer.clear()
 
 
     def get_device_active_status(self, serial_number: str) -> bool:
