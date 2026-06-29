@@ -836,8 +836,7 @@ class DeviceManager(QObject):
             "paed_value": paed_value,
             "accuracy": accuracy,
             "test_byte": test_byte,
-            "valid": result_valid,
-            "acquisition_time": acq_time   
+            "valid": result_valid            
         }
 
 ################################################ БЛОК ОБНОВЛЕНИЯ ДАННЫХ ЦИСТЕРН ######################################################

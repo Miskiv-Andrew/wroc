@@ -175,7 +175,9 @@ class DeviceCardBarrel(QWidget):
         self.last_valid = 0        # по умолчанию невалидный
         self.is_full = False  
 
-        self.last_acquisition_time = 0.0     
+        self.last_acquisition_time = 0.0    
+
+        self.total_acquisition_time = 0.0 
 
 
     
@@ -379,27 +381,7 @@ class DeviceCardBarrel(QWidget):
                 status_label.setText("Норма")
                 status_label.setStyleSheet("color: green; font: 600 11pt 'Segoe UI';")
 
-    # def add_spectrum_data(self, channels):
-    #     """
-    #     Добавляет полученный массив спектра к накопленному буферу
-    #     channels: list[int] - 1024 канала
-    #     """
-    #     if len(channels) != 1024:
-    #         return
-        
-    #     # Почленное сложение
-    #     for i in range(1023):
-    #         self.spectrum_buffer[i] += channels[i]
-        
-    #     self.spectrum_counter += 1
-        
-    #     # Опционально: обновление отображения спектра
-    #     self.update_spectrum_display()
-        
-    #     # Проверка: достигнут ли лимит 600 спектров
-    #     if self.spectrum_counter >= self.repeat_counter:   #600:  10 - для проверки обработки спектра
-    #         self.calculate_activity()
-
+   
     def add_spectrum_data(self, channels):
         """
         Додає отриманий масив спектра до накопиченого буфера.
@@ -408,8 +390,9 @@ class DeviceCardBarrel(QWidget):
         if len(channels) != 1024:
             return
         
-        # Зберігаємо час набора спектра (останній елемент)
+        # Отрумуємо і сумуємо час набора спектра (останній елемент)
         self.last_acquisition_time = channels[-1]
+        self.total_acquisition_time += self.last_acquisition_time
         
         # Сумуємо тільки спектр (перші 1023 елементи)
         for i in range(1023):
@@ -433,6 +416,7 @@ class DeviceCardBarrel(QWidget):
         """
         self.spectrum_buffer = [0] * 1024
         self.spectrum_counter = 0
+        self.total_acquisition_time = 0.0
         self.update_spectrum_display()
         
         # Сохраняем событие
@@ -486,7 +470,7 @@ class DeviceCardBarrel(QWidget):
             #     self.posit_number
             # )
 
-            spectrum_with_time = list(self.spectrum_buffer) + [self.last_acquisition_time]
+            spectrum_with_time = list(self.spectrum_buffer) + [self.total_acquisition_time]
             result = self.parent_app.identify_isotopes(
             spectrum_with_time,
             self.posit_number
@@ -1265,9 +1249,7 @@ class App(QObject):
                     paed_value = packet.buff.get("paed_value", 0.0)
                     accuracy = packet.buff.get("accuracy", 0)
                     test_byte = packet.buff.get("test_byte", 0)
-                    result_valid = packet.buff.get("valid", False)
-
-                    card.last_acquisition_time = packet.buff.get("acquisition_time", 0)
+                    result_valid = packet.buff.get("valid", False)                    
                     
                     # Відправляємо ПАЕД в DeviceManager
                     self.device_manager.update_device_paed.emit(sn, paed_value)
@@ -1976,17 +1958,19 @@ class App(QObject):
 
     def identify_isotopes(self, spectrum, cistern_position):
         """
-        Метод раскладывает общий измеренный спектр на компоненты:
+            Метод раскладывает общий измеренный спектр на компоненты:
 
             общий спектр ≈ фон + I-131 + Tc-99m
 
-        В этой версии используется взвешенный NNLS.
+            В этой версии используется взвешенный NNLS.
 
-        Важно:
-        - эталонные спектры НЕ нормируются;
-        - матрица A строится из реальных эталонов;
-        - веса используются только для решения задачи NNLS;
-        - восстановление компонентов выполняется через реальные эталоны.
+            Важно:
+            - эталонные спектры НОРМИРУЮТСЯ на время набора (делятся на время)
+            - реальный спектр НОРМИРУЕТСЯ на время набора
+            - матрица A строится из НОРМИРОВАННЫХ эталонов
+            - веса используются для взвешенного NNLS
+            - восстановление компонентов выполняется через НОРМИРОВАННЫЕ эталоны
+            - результат содержит нормированные компоненты и реальное время набора
         """
 
         # ------------------------------------------------------------
