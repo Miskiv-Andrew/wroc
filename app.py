@@ -1,7 +1,7 @@
 # app.py
 
 import sys
-from PySide6.QtWidgets import QApplication, QWidget, QGridLayout, QVBoxLayout, QPushButton, QLabel, QSizePolicy, QSpacerItem
+from PySide6.QtWidgets import QApplication, QWidget, QGridLayout, QVBoxLayout, QPushButton, QLabel, QSizePolicy, QSpacerItem, QDialog, QLineEdit, QMessageBox, QHBoxLayout
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtCore import QFile, QThread, QMetaObject, QTimer , Qt, QObject, Signal, QDateTime
 from devices.device_manager import DeviceManager
@@ -15,6 +15,94 @@ from scipy.optimize import nnls
 
 from database.db_manager import DatabaseManager
 from dialogs.device_replace_dialog import DeviceReplaceDialog
+
+
+# ============================================================
+# ДІАЛОГ ВВОДУ ПАРОЛЯ
+# ============================================================
+class PasswordDialog(QDialog):
+    """
+    Діалогове вікно для введення пароля перед запуском програми.
+    Паролі зберігаються безпосередньо в коді.
+    """
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        # Заголовок і розмір вікна
+        self.setWindowTitle("Авторизація")
+        self.setFixedSize(350, 150)
+
+        # ------------------------------------------------------------
+        # Список дозволених паролів (можна розширювати)
+        # ------------------------------------------------------------
+        self.valid_passwords = ["qwerty"]  # тут зберігаються паролі
+
+        # ------------------------------------------------------------
+        # Створюємо елементи інтерфейсу
+        # ------------------------------------------------------------
+        layout = QVBoxLayout(self)
+
+        # Текст-підказка
+        label = QLabel("Введіть пароль для доступу до програми:")
+        layout.addWidget(label)
+
+        # Поле для введення пароля (символи приховані)
+        self.password_input = QLineEdit()
+        self.password_input.setEchoMode(QLineEdit.Password)
+        layout.addWidget(self.password_input)
+
+        # Рядок з кнопками OK / Скасувати
+        button_layout = QHBoxLayout()
+        self.ok_button = QPushButton("OK")
+        self.cancel_button = QPushButton("Скасувати")
+
+        button_layout.addWidget(self.ok_button)
+        button_layout.addWidget(self.cancel_button)
+        layout.addLayout(button_layout)
+
+        # ------------------------------------------------------------
+        # Підключаємо сигнали кнопок
+        # ------------------------------------------------------------
+        self.ok_button.clicked.connect(self.check_password)
+        self.cancel_button.clicked.connect(self.reject)  # закриває діалог з кодом відмови
+
+        # Якщо користувач натискає Enter у полі введення — це те саме, що натиснути OK
+        self.password_input.returnPressed.connect(self.check_password)
+
+    def check_password(self):
+        """
+        Перевіряє введений пароль.
+        Якщо пароль правильний — закриває діалог з кодом успіху (accept).
+        Якщо неправильний — показує помилку та очищує поле.
+        """
+        password = self.password_input.text()
+
+        if password in self.valid_passwords:
+            self.accept()  # пароль правильний — закриваємо діалог із успіхом
+        else:
+            # Показуємо повідомлення про помилку
+            QMessageBox.critical(
+                self,
+                "Помилка",
+                "Неправильний пароль. Спробуйте ще раз."
+            )
+            self.password_input.clear()  # очищаємо поле
+            self.password_input.setFocus()  # ставимо курсор у поле
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 class SpectrumWidget(QWidget):
     def __init__(self):
@@ -364,10 +452,6 @@ class DeviceCardBarrel(QWidget):
         """
         Розрахунок активності та ідентифікація ізотопів.
         """
-        from PySide6.QtCore import QDateTime
-        import os
-        import numpy as np
-
         # ------------------------------------------------------------
         # 1. Розрахунок загальної активності за всім накопиченим спектром
         # ------------------------------------------------------------
@@ -408,15 +492,20 @@ class DeviceCardBarrel(QWidget):
                 # ------------------------------------------------------------
                 # 4. Виводимо ізотопи
                 # ------------------------------------------------------------
+              
+               
                 # isotopes_list = self.parent_app.cistern_isotopes.get(
                 #     self.posit_number,
                 #     []
                 # )
+                # # Отримуємо час набора реального спектра
+                # real_time = result.get("real_time", 1.0)
 
                 # for name in isotopes_list:
                 #     detected = presence.get(name, False)
                 #     percent = isotope_percents.get(name, 0)
-                #     sum_val = component_sums.get(name, 0)
+                #     sum_val_norm = component_sums.get(name, 0)
+                #     sum_val_abs = sum_val_norm * real_time  # переводимо в абсолютні значення
 
                 #     status = "обнаружен" if detected else "не обнаружен"
 
@@ -424,7 +513,7 @@ class DeviceCardBarrel(QWidget):
                 #         f"{name}:"
                 #     )
                 #     self.parent_app.ui.textEdit.append(
-                #         f"    вклад = {int(sum_val):,} имп."
+                #         f"    вклад = {int(sum_val_abs):,} имп."
                 #     )
                 #     self.parent_app.ui.textEdit.append(
                 #         f"    доля = {percent:.1f} %"
@@ -443,6 +532,10 @@ class DeviceCardBarrel(QWidget):
 
                 # Отримуємо час набора реального спектра
                 real_time = result.get("real_time", 1.0)
+
+                # Виводимо час набора реального спектра
+                self.parent_app.ui.textEdit.append(f"Час набора реального спектра: {real_time} сек")
+                self.parent_app.ui.textEdit.append("")  # пустий рядок
 
                 for name in isotopes_list:
                     detected = presence.get(name, False)
@@ -2267,14 +2360,39 @@ class App(QObject):
         return result
 
     
+# def main():
+#     """
+#         Точка входа в приложение
+#     """
+#     app = QApplication(sys.argv) # создаём объект приложения
+#     window = App()                # создаём наш класс App (он загрузит интерфейс и настроит связи)
+#     app.aboutToQuit.connect(window.cleanup)
+#     sys.exit(app.exec())          # запускаем цикл обработки событий и корректно завершаем работу
+
 def main():
     """
-        Точка входа в приложение
+    Точка входу в програму.
+    Спочатку перевіряємо пароль, потім запускаємо основне вікно.
     """
-    app = QApplication(sys.argv) # создаём объект приложения
-    window = App()                # создаём наш класс App (он загрузит интерфейс и настроит связи)
+    # Створюємо об'єкт програми Qt
+    app = QApplication(sys.argv)
+
+    # ------------------------------------------------------------
+    # 1. Показуємо діалог вводу пароля
+    # ------------------------------------------------------------
+    password_dialog = PasswordDialog()
+    result = password_dialog.exec()  # exec() повертає QDialog.Accepted або QDialog.Rejected
+
+    # Якщо користувач натиснув Cancel або ввів неправильний пароль — виходимо
+    if result != QDialog.Accepted:
+        sys.exit(0)  # завершуємо програму без помилок
+
+    # ------------------------------------------------------------
+    # 2. Пароль правильний — створюємо головне вікно
+    # ------------------------------------------------------------
+    window = App()
     app.aboutToQuit.connect(window.cleanup)
-    sys.exit(app.exec())          # запускаем цикл обработки событий и корректно завершаем работу
+    sys.exit(app.exec())
 
 
 if __name__ == "__main__":
