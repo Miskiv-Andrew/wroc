@@ -805,7 +805,7 @@ class DeviceManager(QObject):
         """
         # 1. Массив спектра: 1024 канала * 2 байта = 2048 байт, начиная с байта 6
         channels = []
-        for i in range(1024):
+        for i in range(1023):
             # little-endian: младший байт первый
             low_byte = data[6 + i * 2]
             high_byte = data[6 + i * 2 + 1]
@@ -814,6 +814,8 @@ class DeviceManager(QObject):
 
         # 2. Час набора спектра (байти 2054-2055, little-endian)
         acq_time = struct.unpack('<H', data[2054:2056])[0]
+
+        channels.append(acq_time)
         
         # 3. ПАЕД из байт 2056-2059 (4 байта, little-endian unsigned int)
         paed_raw = struct.unpack('<I', data[2056:2060])[0]

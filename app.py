@@ -91,19 +91,6 @@ class PasswordDialog(QDialog):
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 class SpectrumWidget(QWidget):
     def __init__(self):
         super().__init__()
@@ -186,7 +173,9 @@ class DeviceCardBarrel(QWidget):
         self.last_low_status = 1   # по умолчанию отказ
         self.last_high_status = 1  # по умолчанию отказ
         self.last_valid = 0        # по умолчанию невалидный
-        self.is_full = False       
+        self.is_full = False  
+
+        self.last_acquisition_time = 0.0     
 
 
     
@@ -390,25 +379,47 @@ class DeviceCardBarrel(QWidget):
                 status_label.setText("Норма")
                 status_label.setStyleSheet("color: green; font: 600 11pt 'Segoe UI';")
 
+    # def add_spectrum_data(self, channels):
+    #     """
+    #     Добавляет полученный массив спектра к накопленному буферу
+    #     channels: list[int] - 1024 канала
+    #     """
+    #     if len(channels) != 1024:
+    #         return
+        
+    #     # Почленное сложение
+    #     for i in range(1023):
+    #         self.spectrum_buffer[i] += channels[i]
+        
+    #     self.spectrum_counter += 1
+        
+    #     # Опционально: обновление отображения спектра
+    #     self.update_spectrum_display()
+        
+    #     # Проверка: достигнут ли лимит 600 спектров
+    #     if self.spectrum_counter >= self.repeat_counter:   #600:  10 - для проверки обработки спектра
+    #         self.calculate_activity()
+
     def add_spectrum_data(self, channels):
         """
-        Добавляет полученный массив спектра к накопленному буферу
-        channels: list[int] - 1024 канала
+        Додає отриманий масив спектра до накопиченого буфера.
+        channels: list[int] - 1024 елементи (1023 спектра + час набора)
         """
         if len(channels) != 1024:
             return
         
-        # Почленное сложение
-        for i in range(1024):
+        # Зберігаємо час набора спектра (останній елемент)
+        self.last_acquisition_time = channels[-1]
+        
+        # Сумуємо тільки спектр (перші 1023 елементи)
+        for i in range(1023):
             self.spectrum_buffer[i] += channels[i]
         
         self.spectrum_counter += 1
         
-        # Опционально: обновление отображения спектра
         self.update_spectrum_display()
         
-        # Проверка: достигнут ли лимит 600 спектров
-        if self.spectrum_counter >= self.repeat_counter:   #600:  10 - для проверки обработки спектра
+        if self.spectrum_counter >= self.repeat_counter:
             self.calculate_activity()
 
     def is_spectrum_ready(self) -> bool:
@@ -470,9 +481,15 @@ class DeviceCardBarrel(QWidget):
         # ------------------------------------------------------------
         if hasattr(self, 'parent_app') and self.parent_app:
 
+            # result = self.parent_app.identify_isotopes(
+            #     self.spectrum_buffer,
+            #     self.posit_number
+            # )
+
+            spectrum_with_time = list(self.spectrum_buffer) + [self.last_acquisition_time]
             result = self.parent_app.identify_isotopes(
-                self.spectrum_buffer,
-                self.posit_number
+            spectrum_with_time,
+            self.posit_number
             )
 
             if result:
@@ -491,39 +508,7 @@ class DeviceCardBarrel(QWidget):
 
                 # ------------------------------------------------------------
                 # 4. Виводимо ізотопи
-                # ------------------------------------------------------------
-              
-               
-                # isotopes_list = self.parent_app.cistern_isotopes.get(
-                #     self.posit_number,
-                #     []
-                # )
-                # # Отримуємо час набора реального спектра
-                # real_time = result.get("real_time", 1.0)
-
-                # for name in isotopes_list:
-                #     detected = presence.get(name, False)
-                #     percent = isotope_percents.get(name, 0)
-                #     sum_val_norm = component_sums.get(name, 0)
-                #     sum_val_abs = sum_val_norm * real_time  # переводимо в абсолютні значення
-
-                #     status = "обнаружен" if detected else "не обнаружен"
-
-                #     self.parent_app.ui.textEdit.append(
-                #         f"{name}:"
-                #     )
-                #     self.parent_app.ui.textEdit.append(
-                #         f"    вклад = {int(sum_val_abs):,} имп."
-                #     )
-                #     self.parent_app.ui.textEdit.append(
-                #         f"    доля = {percent:.1f} %"
-                #     )
-                #     self.parent_app.ui.textEdit.append(
-                #         f"    {status}"
-                #     )
-                #     self.parent_app.ui.textEdit.append("")  # пустий рядок
-
-                # ------------------------------------------------------------
+                # ------------------------------------------------------------              
                
                 isotopes_list = self.parent_app.cistern_isotopes.get(
                     self.posit_number,
