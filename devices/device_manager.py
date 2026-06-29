@@ -811,18 +811,21 @@ class DeviceManager(QObject):
             high_byte = data[6 + i * 2 + 1]
             value = (high_byte << 8) | low_byte
             channels.append(value)
+
+        # 2. Час набора спектра (байти 2054-2055, little-endian)
+        acq_time = struct.unpack('<H', data[2054:2056])[0]
         
-        # 2. ПАЕД из байт 2056-2059 (4 байта, little-endian unsigned int)
+        # 3. ПАЕД из байт 2056-2059 (4 байта, little-endian unsigned int)
         paed_raw = struct.unpack('<I', data[2056:2060])[0]
         # Пересчёт ПАЕД по коэффициенту (аналогично _paed_data)
         paed_value = paed_raw * 0.1 if (data[2061] & 0x80) else paed_raw * 0.01
         
         accuracy = data[2060]
 
-        # 3. Тестовый байт (байт 2061)
+        # 4. Тестовый байт (байт 2061)
         test_byte = data[2061]
         
-        # 4. Валидность результата (D2 = 1 - невалидный, D2 = 0 - валидный)
+        # 5. Валидность результата (D2 = 1 - невалидный, D2 = 0 - валидный)
         # В _paed_data: result_valid = True (валидный) если бит НЕ установлен
         result_valid = not (test_byte & 0b00000100)
         
@@ -831,7 +834,8 @@ class DeviceManager(QObject):
             "paed_value": paed_value,
             "accuracy": accuracy,
             "test_byte": test_byte,
-            "valid": result_valid
+            "valid": result_valid,
+            "acquisition_time": acq_time   
         }
 
 ################################################ БЛОК ОБНОВЛЕНИЯ ДАННЫХ ЦИСТЕРН ######################################################

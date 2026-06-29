@@ -358,216 +358,7 @@ class DeviceCardBarrel(QWidget):
         if hasattr(self, 'spectrum') and self.spectrum:
             # Передаём данные в SpectrumWidget для отрисовки
             self.spectrum.update_data(self.spectrum_buffer) 
-
    
-   
-
-    # def calculate_activity(self):
-    #     """
-    #     Расчёт активности и идентификация изотопов.
-    #     """
-
-    #     # from PySide6.QtCore import QDateTime
-    #     # import os
-    #     # import numpy as np
-
-    #     # ------------------------------------------------------------
-    #     # 1. Расчёт общей активности по всему накопленному спектру
-    #     # ------------------------------------------------------------
-    #     total_counts = sum(self.spectrum_buffer)
-    #     activity = total_counts / 600 / 1000
-
-    #     timestamp = QDateTime.currentDateTime()
-
-    #     self.activity_history.append({
-    #         "timestamp": timestamp,
-    #         "activity": activity
-    #     })
-
-    #     # ------------------------------------------------------------
-    #     # 2. Идентификация изотопов
-    #     # ------------------------------------------------------------
-    #     if hasattr(self, 'parent_app') and self.parent_app:
-
-    #         result = self.parent_app.identify_isotopes(
-    #             self.spectrum_buffer,
-    #             self.posit_number
-    #         )
-
-    #         if result:
-    #             # ------------------------------------------------------------
-    #             # 3. Получаем коэффициенты и признаки присутствия изотопов
-    #             # ------------------------------------------------------------
-    #             coeffs = result["coefficients"]
-    #             presence = result["isotope_presence"]
-
-    #             self.parent_app.ui.textEdit.append(
-    #                 f"Цистерна №{self.posit_number}: результаты идентификации:"
-    #             )
-
-    #             # ------------------------------------------------------------
-    #             # 4. Выводим только изотопы, без фона
-    #             # ------------------------------------------------------------
-    #             isotopes_list = self.parent_app.cistern_isotopes.get(
-    #                 self.posit_number,
-    #                 []
-    #             )
-
-    #             for name in isotopes_list:
-    #                 coef = coeffs.get(name, 0)
-    #                 detected = presence.get(name, False)
-
-    #                 status = "обнаружен" if detected else "не обнаружен"
-
-    #                 self.parent_app.ui.textEdit.append(
-    #                     f"  {name}: {coef:.4f} ({status})"
-    #                 )
-
-    #             # ------------------------------------------------------------
-    #             # 5. Выводим качество аппроксимации
-    #             # ------------------------------------------------------------
-    #             error_sum = result.get("error_sum", 0)
-    #             relative_error = result.get("relative_error", None)
-
-    #             if relative_error is not None:
-    #                 self.parent_app.ui.textEdit.append(
-    #                     f"  Ошибка аппроксимации: {relative_error:.6f}"
-    #                 )
-    #             else:
-    #                 self.parent_app.ui.textEdit.append(
-    #                     f"  Ошибка аппроксимации: {error_sum:.6f}"
-    #                 )
-
-    #             self.parent_app.ui.textEdit.append("---")
-
-    #             # ------------------------------------------------------------
-    #             # 6. Подготовка папки для экспорта спектров
-    #             # ------------------------------------------------------------
-    #             export_dir = "export"
-    #             os.makedirs(export_dir, exist_ok=True)
-
-    #             # ------------------------------------------------------------
-    #             # 7. Приводим общий спектр к рабочей длине 1024 канала
-    #             # ------------------------------------------------------------
-    #             # Это нужно, чтобы экспортированный общий спектр имел
-    #             # ту же длину, что и спектры-компоненты:
-    #             # iodine, technetium, background.
-    #             #
-    #             # Важно:
-    #             # identify_isotopes() внутри себя тоже приводит спектр к 1024,
-    #             # но self.spectrum_buffer при этом не изменяется.
-    #             # Поэтому для корректного экспорта делаем такое же приведение здесь.
-    #             target_len = 1024
-
-    #             export_total_spectrum = np.array(
-    #                 self.spectrum_buffer,
-    #                 dtype=float
-    #             )
-
-    #             # Если каналов меньше 1024 — дополняем нулями справа.
-    #             if len(export_total_spectrum) < target_len:
-
-    #                 export_total_spectrum = np.pad(
-    #                     export_total_spectrum,
-    #                     (0, target_len - len(export_total_spectrum)),
-    #                     mode='constant',
-    #                     constant_values=0
-    #                 )
-
-    #             # Если каналов больше 1024 — отрезаем лишние каналы.
-    #             elif len(export_total_spectrum) > target_len:
-
-    #                 export_total_spectrum = export_total_spectrum[:target_len]
-
-    #             # ------------------------------------------------------------
-    #             # 8. Сохраняем общий спектр после приведения к 1024 каналам
-    #             # ------------------------------------------------------------
-    #             with open(os.path.join(export_dir, "spectrum_total.txt"), "w") as f:
-    #                 f.write(
-    #                     "\n".join(str(int(x)) for x in export_total_spectrum)
-    #                 )
-
-              
-
-    #             # ------------------------------------------------------------
-    #             # 9. Сохраняем все разделённые спектры из результата
-    #             #    identify_isotopes()
-    #             # ------------------------------------------------------------
-    #             # В словаре components находятся все восстановленные
-    #             # составляющие общего спектра:
-    #             #
-    #             #   background
-    #             #   I-131
-    #             #   Tc-99m
-    #             #
-    #             # Каждый спектр уже рассчитан методом identify_isotopes():
-    #             #
-    #             #   spectrum_component =
-    #             #       coefficient * etalon_spectrum
-    #             #
-    #             # Поэтому здесь остаётся только сохранить их в файлы.
-    #             components = result.get("components", {})
-
-    #             for name, spectrum in components.items():
-
-    #                 # Формируем имя файла.
-    #                 #
-    #                 # Примеры:
-    #                 #   background -> spectrum_background.txt
-    #                 #   I-131      -> spectrum_I-131.txt
-    #                 #   Tc-99m     -> spectrum_Tc-99m.txt
-    #                 filename = f"spectrum_{name}.txt"
-
-    #                 # Полный путь к файлу.
-    #                 filepath = os.path.join(export_dir, filename)
-
-    #                 # Сохраняем спектр.
-    #                 #
-    #                 # Каждый канал записывается в отдельную строку,
-    #                 # как и в остальных спектральных файлах проекта.
-    #                 with open(filepath, "w") as f:
-    #                     f.write(
-    #                         "\n".join(str(int(x)) for x in spectrum)
-    #                     )
-
-    #         # ------------------------------------------------------------
-    #         # 10. Сохранение результата измерения в БД
-    #         # ------------------------------------------------------------
-    #         device_id = self.parent_app.db_manager.get_device_id(
-    #             self.serial_number
-    #         )
-
-    #         if device_id is not None:
-
-    #             fullness_status = "full" if getattr(self, 'is_full', False) else "empty"
-
-    #             self.parent_app.db_manager.save_cistern_measurement(
-    #                 device_id=device_id,
-    #                 paed=self.last_paed_from_spectrum,
-    #                 temperature=self.last_temperature,
-    #                 activity=activity,
-    #                 low_status=self.last_low_status,
-    #                 high_status=self.last_high_status,
-    #                 valid=self.last_valid,
-    #                 fullness_status=fullness_status,
-    #                 ready_to_drain=0
-    #             )
-
-    #             self.parent_app.ui.textEdit.append(
-    #                 f"Цистерна №{self.posit_number}: сохранено в БД "
-    #                 f"(активность = {activity:.2f} кБк)"
-    #             )
-
-    #     # Скидаємо буфер цистерни в БД.
-    #     # Це відбувається при досягненні repeat_counter (накопичено достатньо спектрів).
-    #     if hasattr(self, 'parent_app') and self.parent_app:
-    #         self.parent_app.db_manager.flush_cistern_buffer()
-
-    #     # ------------------------------------------------------------
-    #     # 11. Очищаем буфер спектра после завершения обработки
-    #     # ------------------------------------------------------------
-    #     self.reset_spectrum()
-
 
     def calculate_activity(self):
         """
@@ -617,15 +408,47 @@ class DeviceCardBarrel(QWidget):
                 # ------------------------------------------------------------
                 # 4. Виводимо ізотопи
                 # ------------------------------------------------------------
+                # isotopes_list = self.parent_app.cistern_isotopes.get(
+                #     self.posit_number,
+                #     []
+                # )
+
+                # for name in isotopes_list:
+                #     detected = presence.get(name, False)
+                #     percent = isotope_percents.get(name, 0)
+                #     sum_val = component_sums.get(name, 0)
+
+                #     status = "обнаружен" if detected else "не обнаружен"
+
+                #     self.parent_app.ui.textEdit.append(
+                #         f"{name}:"
+                #     )
+                #     self.parent_app.ui.textEdit.append(
+                #         f"    вклад = {int(sum_val):,} имп."
+                #     )
+                #     self.parent_app.ui.textEdit.append(
+                #         f"    доля = {percent:.1f} %"
+                #     )
+                #     self.parent_app.ui.textEdit.append(
+                #         f"    {status}"
+                #     )
+                #     self.parent_app.ui.textEdit.append("")  # пустий рядок
+
+                # ------------------------------------------------------------
+               
                 isotopes_list = self.parent_app.cistern_isotopes.get(
                     self.posit_number,
                     []
                 )
 
+                # Отримуємо час набора реального спектра
+                real_time = result.get("real_time", 1.0)
+
                 for name in isotopes_list:
                     detected = presence.get(name, False)
                     percent = isotope_percents.get(name, 0)
-                    sum_val = component_sums.get(name, 0)
+                    sum_val_norm = component_sums.get(name, 0)
+                    sum_val_abs = sum_val_norm * real_time  # переводимо в абсолютні значення
 
                     status = "обнаружен" if detected else "не обнаружен"
 
@@ -633,7 +456,7 @@ class DeviceCardBarrel(QWidget):
                         f"{name}:"
                     )
                     self.parent_app.ui.textEdit.append(
-                        f"    вклад = {int(sum_val):,} имп."
+                        f"    вклад = {int(sum_val_abs):,} имп."
                     )
                     self.parent_app.ui.textEdit.append(
                         f"    доля = {percent:.1f} %"
@@ -646,16 +469,27 @@ class DeviceCardBarrel(QWidget):
                 # ------------------------------------------------------------
                 # 5. Виводимо фон
                 # ------------------------------------------------------------
+                # if background_found:
+                #     bg_sum = component_sums.get("background", 0)
+                #     self.parent_app.ui.textEdit.append(
+                #         f"Фон: вклад = {int(bg_sum):,} имп., обнаружен"
+                #     )
+                # else:
+                #     self.parent_app.ui.textEdit.append(
+                #         "Фон: не обнаружен"
+                #     )
+                # self.parent_app.ui.textEdit.append("")  # пустий рядок
+
                 if background_found:
-                    bg_sum = component_sums.get("background", 0)
+                    bg_sum_norm = component_sums.get("background", 0)
+                    bg_sum_abs = bg_sum_norm * real_time
                     self.parent_app.ui.textEdit.append(
-                        f"Фон: вклад = {int(bg_sum):,} имп., обнаружен"
+                        f"Фон: вклад = {int(bg_sum_abs):,} имп., обнаружен"
                     )
                 else:
                     self.parent_app.ui.textEdit.append(
                         "Фон: не обнаружен"
                     )
-                self.parent_app.ui.textEdit.append("")  # пустий рядок
 
                 # ------------------------------------------------------------
                 # 6. Виводимо якість апроксимації
@@ -1229,7 +1063,8 @@ class App(QObject):
                     
                     name = os.path.splitext(filename)[0]  # имя файла без расширения
                     self.calibration_spectra[name] = data
-                    self.ui.textEdit.append(f"Загружен эталон: {name}")
+                    # self.ui.textEdit.append(f"Загружен эталон: {name}")
+                    self.ui.textEdit.append(f"Загружен эталон: {name}, время набора: {data[1023]} сек")
                 except Exception as e:
                     self.ui.textEdit.append(f"Ошибка загрузки {filename}: {e}")
 
@@ -1353,6 +1188,8 @@ class App(QObject):
                     accuracy = packet.buff.get("accuracy", 0)
                     test_byte = packet.buff.get("test_byte", 0)
                     result_valid = packet.buff.get("valid", False)
+
+                    card.last_acquisition_time = packet.buff.get("acquisition_time", 0)
                     
                     # Відправляємо ПАЕД в DeviceManager
                     self.device_manager.update_device_paed.emit(sn, paed_value)
@@ -1773,8 +1610,7 @@ class App(QObject):
         # Запускаем поиск
         self.search_devices.emit()       
 
-    
-
+   
     # def identify_isotopes(self, spectrum, cistern_position):
     #     """
     #     Метод раскладывает общий измеренный спектр на компоненты:
@@ -1783,11 +1619,13 @@ class App(QObject):
 
     #     В этой версии используется взвешенный NNLS.
 
-    #     Важно:
-    #     - эталонные спектры НЕ нормируются;
-    #     - матрица A строится из реальных эталонов;
-    #     - веса используются только для решения задачи NNLS;
-    #     - восстановление компонентов выполняется через реальные эталоны.
+    #     Этапы работы:
+    #     1. Подготовка спектра и эталонов.
+    #     2. Первичное разложение на фон + изотопы.
+    #     3. Выделение остатка (невязки).
+    #     4. Вторичное разложение остатка только на фон.
+    #     5. Корректировка результатов в зависимости от обнаружения фона.
+    #     6. Расчёт долей изотопов относительно скорректированной суммы.
     #     """
 
     #     # ------------------------------------------------------------
@@ -1825,16 +1663,9 @@ class App(QObject):
     #     # 5. Загружаем эталоны из self.calibration_spectra
     #     # ------------------------------------------------------------
     #     for name in names:
-
     #         if name in self.calibration_spectra:
-
-    #             # ВАЖНО:
-    #             # Эталон берём как есть.
-    #             # Никакой нормировки на сумму каналов здесь НЕ делаем.
     #             etalon = np.array(self.calibration_spectra[name], dtype=float)
-
     #             etalons.append(etalon)
-
     #         else:
     #             self.ui.textEdit.append(f"Ошибка: эталон '{name}' не найден")
     #             return None
@@ -1852,106 +1683,171 @@ class App(QObject):
     #     target_len = 1024
 
     #     if len(spectrum) < target_len:
-
     #         self.ui.textEdit.append(
     #             f"Предупреждение: спектр содержит {len(spectrum)} каналов. "
     #             f"Выполнено дополнение до {target_len} каналов."
     #         )
-
     #         spectrum = np.pad(
     #             spectrum,
     #             (0, target_len - len(spectrum)),
     #             mode='constant',
     #             constant_values=0
     #         )
-
     #     elif len(spectrum) > target_len:
-
     #         self.ui.textEdit.append(
     #             f"Предупреждение: спектр содержит {len(spectrum)} каналов. "
     #             f"Выполнено обрезание до {target_len} каналов."
     #         )
-
     #         spectrum = spectrum[:target_len]
 
     #     # ------------------------------------------------------------
     #     # 8. Проверяем длину эталонов
     #     # ------------------------------------------------------------
     #     for name, etalon in zip(names, etalons):
-
     #         if len(etalon) != target_len:
-
     #             self.ui.textEdit.append(
     #                 f"Ошибка: эталон '{name}' имеет длину {len(etalon)} "
     #                 f"каналов вместо {target_len}"
     #             )
-
     #             return None
 
     #     # ------------------------------------------------------------
     #     # 9. Формируем матрицу эталонов
     #     # ------------------------------------------------------------
-    #     # ВАЖНО:
-    #     # Матрица A строится из реальных эталонов,
-    #     # а не из нормированных.
-    #     #
-    #     # Каждый столбец A:
-    #     #   background
-    #     #   I-131
-    #     #   Tc-99m
     #     A = np.column_stack(etalons)
 
     #     # ------------------------------------------------------------
     #     # 10. Выполняем взвешенный NNLS
     #     # ------------------------------------------------------------
-    #     # Обычный NNLS минимизирует ошибку по абсолютным импульсам.
-    #     # Из-за этого большие пики могут полностью доминировать.
-    #     #
-    #     # Взвешивание уменьшает влияние каналов с большой статистикой
-    #     # и усиливает вклад слабых участков спектра.
-    #     #
-    #     # Веса:
-    #     #   weight = 1 / sqrt(spectrum + 1)
-    #     #
-    #     # +1 нужен, чтобы не было деления на ноль в пустых каналах.
     #     weights = 1.0 / np.sqrt(spectrum + 1.0)
-
-    #     # Применяем веса к каждой строке матрицы A.
-    #     # То есть каждый канал всех эталонов умножается
-    #     # на свой вес.
     #     A_weighted = A * weights[:, np.newaxis]
-
-    #     # Аналогично взвешиваем измеренный спектр.
     #     spectrum_weighted = spectrum * weights
-
-    #     # Решаем взвешенную задачу:
-    #     #
-    #     #   A_weighted * coefs ≈ spectrum_weighted
-    #     #
-    #     # при условии:
-    #     #
-    #     #   coefs >= 0
     #     coefs, residual = nnls(A_weighted, spectrum_weighted)
 
     #     # ------------------------------------------------------------
-    #     # 11. Восстанавливаем общий спектр в реальных абсолютных значениях
+    #     # 11. Формируем компоненты спектра
     #     # ------------------------------------------------------------
-    #     # ВАЖНО:
-    #     # Для восстановления используем НЕ взвешенную матрицу A.
-    #     #
-    #     # Потому что A_weighted нужна только для поиска коэффициентов.
-    #     # А физически восстановленный спектр должен быть:
-    #     #
-    #     #   A @ coefs
+    #     components = {}
+    #     for i, name in enumerate(names):
+    #         components[name] = coefs[i] * etalons[i]
+
+    #     # ------------------------------------------------------------
+    #     # 12. Восстанавливаем спектр и считаем остаток
+    #     # ------------------------------------------------------------
     #     reconstructed = A @ coefs
+    #     residual_spectrum = spectrum - reconstructed
 
     #     # ------------------------------------------------------------
-    #     # 12. Считаем ошибку аппроксимации в обычных абсолютных значениях
+    #     # 13. ВТОРИЧНОЕ РАЗЛОЖЕНИЕ ОСТАТКА ТОЛЬКО НА ФОН
     #     # ------------------------------------------------------------
+    #     # Цель: проверить, есть ли в остатке фон.
+    #     # Для этого берём остаток и пытаемся разложить его только на фон.
+    #     background_found = False
+    #     background_component = np.zeros(target_len)
+    #     background_sum = 0.0
+
+    #     # Проверяем, есть ли эталон фона
+    #     if "background" in self.calibration_spectra:
+    #         bg_etalon = np.array(self.calibration_spectra["background"], dtype=float)
+
+    #         # Приводим фон к той же длине
+    #         if len(bg_etalon) != target_len:
+    #             if len(bg_etalon) < target_len:
+    #                 bg_etalon = np.pad(bg_etalon, (0, target_len - len(bg_etalon)), mode='constant')
+    #             else:
+    #                 bg_etalon = bg_etalon[:target_len]
+
+    #         # Разлагаем остаток только на фон (одна компонента)
+    #         A_bg = bg_etalon.reshape(-1, 1)
+
+    #         # Взвешиваем для остатка
+    #         weights_bg = 1.0 / np.sqrt(np.abs(residual_spectrum) + 1.0)
+    #         A_bg_weighted = A_bg * weights_bg[:, np.newaxis]
+    #         residual_weighted = residual_spectrum * weights_bg
+
+    #         # Решаем однокомпонентную задачу
+    #         coef_bg, _ = nnls(A_bg_weighted, residual_weighted)
+
+    #         # Если коэффициент фона > 0, значит фон обнаружен
+    #         if coef_bg[0] > 0:
+    #             background_found = True
+    #             background_component = coef_bg[0] * bg_etalon
+    #             background_sum = np.sum(background_component)
+
+    #     # ------------------------------------------------------------
+    #     # 14. КОРРЕКТИРОВКА РЕЗУЛЬТАТОВ
+    #     # ------------------------------------------------------------
+    #     # В зависимости от того, найден ли фон, корректируем компоненты
+    #     # и сумму для расчёта долей.
+
+    #     corrected_components = {}
+    #     corrected_component_sums = {}
+
+    #     if background_found:
+    #         # Фон обнаружен:
+    #         # - в качестве фона используем найденный из остатка
+    #         # - изотопы остаются как были (из первого разложения)
+    #         corrected_components["background"] = background_component
+    #         corrected_component_sums["background"] = background_sum
+
+    #         for name in isotopes_list:
+    #             corrected_components[name] = components.get(name, np.zeros(target_len))
+    #             corrected_component_sums[name] = np.sum(corrected_components[name])
+
+    #         # Сумма для расчёта долей: общий спектр минус найденный фон
+    #         total_for_percents = np.sum(spectrum) - background_sum
+
+    #         # Статус фона: обнаружен
+    #         background_status = True
+
+    #     else:
+    #         # Фон не обнаружен:
+    #         # - фон = нулевой спектр
+    #         # - изотопы остаются как были
+    #         corrected_components["background"] = np.zeros(target_len)
+    #         corrected_component_sums["background"] = 0.0
+
+    #         for name in isotopes_list:
+    #             corrected_components[name] = components.get(name, np.zeros(target_len))
+    #             corrected_component_sums[name] = np.sum(corrected_components[name])
+
+    #         # Сумма для расчёта долей: общий спектр (ничего не вычитаем)
+    #         total_for_percents = np.sum(spectrum)
+
+    #         # Статус фона: не обнаружен
+    #         background_status = False
+
+    #     # ------------------------------------------------------------
+    #     # 15. ПЕРЕРАСЧЁТ ДОЛЕЙ ИЗОТОПОВ
+    #     # ------------------------------------------------------------
+    #     # Доля изотопа = вклад изотопа / сумма для расчёта долей
+    #     isotope_percents = {}
+
+    #     for name in isotopes_list:
+    #         if total_for_percents > 0:
+    #             isotope_percents[name] = (corrected_component_sums.get(name, 0) / total_for_percents) * 100.0
+    #         else:
+    #             isotope_percents[name] = 0.0
+
+    #     # ------------------------------------------------------------
+    #     # 16. ОПРЕДЕЛЕНИЕ ПРИСУТСТВИЯ ИЗОТОПОВ
+    #     # ------------------------------------------------------------
+    #     presence_threshold = 0.03
+    #     isotope_presence = {}
+
+    #     for name in isotopes_list:
+    #         if total_for_percents > 0:
+    #             relative_part = corrected_component_sums.get(name, 0) / total_for_percents
+    #         else:
+    #             relative_part = 0
+    #         isotope_presence[name] = relative_part >= presence_threshold
+
+    #     # ------------------------------------------------------------
+    #     # 17. РАСЧЁТ ОШИБКИ АППРОКСИМАЦИИ (ОТНОСИТЕЛЬНО ИСХОДНОГО СПЕКТРА)
+    #     # ------------------------------------------------------------
+    #     # Используем исходный спектр и восстановленный (без корректировки фона)
     #     difference = spectrum - reconstructed
-
     #     error_sum = np.sum(difference ** 2)
-
     #     spectrum_power = np.sum(spectrum ** 2)
 
     #     if spectrum_power > 0:
@@ -1960,62 +1856,38 @@ class App(QObject):
     #         relative_error = None
 
     #     # ------------------------------------------------------------
-    #     # 13. Формируем отдельные компоненты спектра
-    #     # ------------------------------------------------------------
-    #     # ВАЖНО:
-    #     # Здесь используем реальные эталоны.
-    #     #
-    #     # Теперь это корректно, потому что A тоже была построена
-    #     # из реальных эталонов.
-    #     #
-    #     # component = coefficient * real_etalon
-    #     components = {}
-
-    #     for i, name in enumerate(names):
-    #         components[name] = coefs[i] * etalons[i]
-
-    #     # ------------------------------------------------------------
-    #     # 14. Считаем интегральный вклад каждой компоненты
-    #     # ------------------------------------------------------------
-    #     component_sums = {}
-
-    #     for name in names:
-    #         component_sums[name] = np.sum(components[name])
-
-    #     total_component_sum = sum(component_sums.values())
-
-    #     # ------------------------------------------------------------
-    #     # 15. Определяем присутствие изотопов
-    #     # ------------------------------------------------------------
-    #     presence_threshold = 0.03
-
-    #     isotope_presence = {}
-
-    #     for name in isotopes_list:
-
-    #         if total_component_sum > 0:
-    #             relative_component_part = component_sums[name] / total_component_sum
-    #         else:
-    #             relative_component_part = 0
-
-    #         isotope_presence[name] = relative_component_part >= presence_threshold
-
-    #     # ------------------------------------------------------------
-    #     # 16. Формируем словарь коэффициентов
+    #     # 18. ФОРМИРУЕМ СЛОВАРЬ КОЭФФИЦИЕНТОВ (СКОРРЕКТИРОВАННЫЙ)
     #     # ------------------------------------------------------------
     #     coefficients = {}
 
+    #     # Для фона используем скорректированный коэффициент
+    #     if background_found:
+    #         coefficients["background"] = 1.0  # условно, т.к. фон теперь отдельно
+    #     else:
+    #         coefficients["background"] = 0.0
+
+    #     # Для изотопов оставляем исходные коэффициенты
     #     for i, name in enumerate(names):
-    #         coefficients[name] = coefs[i]
+    #         if name != "background":
+    #             coefficients[name] = coefs[i]
 
     #     # ------------------------------------------------------------
-    #     # 17. Возвращаем результат
+    #     # 19. ФОРМИРУЕМ ДОПОЛНИТЕЛЬНУЮ ИНФОРМАЦИЮ ДЛЯ ВЫВОДА
     #     # ------------------------------------------------------------
+    #     # Добавляем в результат:
+    #     # - доли изотопов в процентах
+    #     # - статус фона (обнаружен/не обнаружен)
+    #     # - сумма для расчёта долей (общий спектр минус фон)
+    #     # - скорректированные компоненты
+
     #     result = {
     #         "coefficients": coefficients,
-    #         "components": components,
-    #         "component_sums": component_sums,
+    #         "components": corrected_components,
+    #         "component_sums": corrected_component_sums,
     #         "isotope_presence": isotope_presence,
+    #         "isotope_percents": isotope_percents,
+    #         "background_found": background_found,
+    #         "total_for_percents": total_for_percents,
     #         "reconstructed": reconstructed,
     #         "error_sum": error_sum,
     #         "relative_error": relative_error,
@@ -2032,13 +1904,11 @@ class App(QObject):
 
         В этой версии используется взвешенный NNLS.
 
-        Этапы работы:
-        1. Подготовка спектра и эталонов.
-        2. Первичное разложение на фон + изотопы.
-        3. Выделение остатка (невязки).
-        4. Вторичное разложение остатка только на фон.
-        5. Корректировка результатов в зависимости от обнаружения фона.
-        6. Расчёт долей изотопов относительно скорректированной суммы.
+        Важно:
+        - эталонные спектры НЕ нормируются;
+        - матрица A строится из реальных эталонов;
+        - веса используются только для решения задачи NNLS;
+        - восстановление компонентов выполняется через реальные эталоны.
         """
 
         # ------------------------------------------------------------
@@ -2047,14 +1917,24 @@ class App(QObject):
         spectrum = np.array(spectrum, dtype=float)
 
         # ------------------------------------------------------------
-        # 2. Проверяем, загружены ли эталонные спектры
+        # 2. Извлекаем время набора реального спектра (последний элемент)
+        # ------------------------------------------------------------
+        # В спектре 1024 элемента: первые 1023 — спектр, последний — время набора в секундах.
+        real_time = spectrum[-1] if len(spectrum) > 0 else 1.0
+        if real_time <= 0:
+            real_time = 1.0
+        spectrum_data = spectrum[:1023]  # отделяем спектр от времени
+        spectrum_norm = spectrum_data / real_time  # нормируем на время
+
+        # ------------------------------------------------------------
+        # 3. Проверяем, загружены ли эталонные спектры
         # ------------------------------------------------------------
         if not hasattr(self, 'calibration_spectra') or not self.calibration_spectra:
             self.ui.textEdit.append("Ошибка: эталонные спектры не загружены")
             return None
 
         # ------------------------------------------------------------
-        # 3. Получаем список изотопов для данной цистерны
+        # 4. Получаем список изотопов для данной цистерны
         # ------------------------------------------------------------
         isotopes_list = self.cistern_isotopes.get(cistern_position, [])
 
@@ -2064,7 +1944,7 @@ class App(QObject):
             )
 
         # ------------------------------------------------------------
-        # 4. Формируем список компонентов
+        # 5. Формируем список компонентов
         # ------------------------------------------------------------
         # Фон всегда участвует в разложении.
         names = ["background"] + isotopes_list
@@ -2072,86 +1952,172 @@ class App(QObject):
         # Здесь храним реальные, НЕ нормированные эталонные спектры.
         etalons = []
 
+        # Здесь храним нормированные на время эталонные спектры.
+        etalons_norm = []
+
         # ------------------------------------------------------------
-        # 5. Загружаем эталоны из self.calibration_spectra
+        # 6. Загружаем эталоны из self.calibration_spectra
         # ------------------------------------------------------------
         for name in names:
+
             if name in self.calibration_spectra:
+
+                # ВАЖНО:
+                # Эталон берём как есть.
+                # Никакой нормировки на сумму каналов здесь НЕ делаем.
                 etalon = np.array(self.calibration_spectra[name], dtype=float)
-                etalons.append(etalon)
+
+                # Извлекаем время набора эталона (последний элемент)
+                etalon_time = etalon[-1] if len(etalon) > 0 else 1.0
+                if etalon_time <= 0:
+                    etalon_time = 1.0
+                etalon_data = etalon[:1023]  # отделяем спектр от времени
+                etalon_norm = etalon_data / etalon_time  # нормируем на время
+
+                etalons.append(etalon_data)
+                etalons_norm.append(etalon_norm)
+
             else:
                 self.ui.textEdit.append(f"Ошибка: эталон '{name}' не найден")
                 return None
 
         # ------------------------------------------------------------
-        # 6. Проверяем, что общий спектр не пустой
+        # 7. Проверяем, что общий спектр не пустой
         # ------------------------------------------------------------
-        if spectrum.size == 0:
+        if spectrum_norm.size == 0:
             self.ui.textEdit.append("Ошибка: общий спектр пустой")
             return None
 
         # ------------------------------------------------------------
-        # 7. Приводим общий спектр к 1024 каналам
+        # 8. Приводим общий спектр к 1023 каналам (без времени)
         # ------------------------------------------------------------
-        target_len = 1024
+        # Все эталонные спектры имеют длину 1023 (без учёта времени).
+        # Поэтому входной спектр должен быть приведён к тому же размеру.
+        target_len = 1023
 
-        if len(spectrum) < target_len:
+        if len(spectrum_norm) < target_len:
+
             self.ui.textEdit.append(
-                f"Предупреждение: спектр содержит {len(spectrum)} каналов. "
+                f"Предупреждение: спектр содержит {len(spectrum_norm)} каналов. "
                 f"Выполнено дополнение до {target_len} каналов."
             )
-            spectrum = np.pad(
-                spectrum,
-                (0, target_len - len(spectrum)),
+
+            spectrum_norm = np.pad(
+                spectrum_norm,
+                (0, target_len - len(spectrum_norm)),
                 mode='constant',
                 constant_values=0
             )
-        elif len(spectrum) > target_len:
+
+        elif len(spectrum_norm) > target_len:
+
             self.ui.textEdit.append(
-                f"Предупреждение: спектр содержит {len(spectrum)} каналов. "
+                f"Предупреждение: спектр содержит {len(spectrum_norm)} каналов. "
                 f"Выполнено обрезание до {target_len} каналов."
             )
-            spectrum = spectrum[:target_len]
+
+            spectrum_norm = spectrum_norm[:target_len]
 
         # ------------------------------------------------------------
-        # 8. Проверяем длину эталонов
+        # 9. Проверяем длину эталонов
         # ------------------------------------------------------------
         for name, etalon in zip(names, etalons):
+
             if len(etalon) != target_len:
+
                 self.ui.textEdit.append(
                     f"Ошибка: эталон '{name}' имеет длину {len(etalon)} "
                     f"каналов вместо {target_len}"
                 )
+
                 return None
 
         # ------------------------------------------------------------
-        # 9. Формируем матрицу эталонов
+        # 10. Формируем матрицу эталонов из НОРМИРОВАННЫХ спектров
         # ------------------------------------------------------------
-        A = np.column_stack(etalons)
+        # ВАЖНО:
+        # Матрица A строится из нормированных эталонов.
+        A = np.column_stack(etalons_norm)
 
         # ------------------------------------------------------------
-        # 10. Выполняем взвешенный NNLS
+        # 11. Выполняем взвешенный NNLS на НОРМИРОВАННЫХ данных
         # ------------------------------------------------------------
-        weights = 1.0 / np.sqrt(spectrum + 1.0)
+        # Веса:
+        #   weight = 1 / sqrt(spectrum_norm + 1)
+        weights = 1.0 / np.sqrt(spectrum_norm + 1.0)
+
         A_weighted = A * weights[:, np.newaxis]
-        spectrum_weighted = spectrum * weights
+        spectrum_weighted = spectrum_norm * weights
+
         coefs, residual = nnls(A_weighted, spectrum_weighted)
 
         # ------------------------------------------------------------
-        # 11. Формируем компоненты спектра
+        # 12. Восстанавливаем спектр в НОРМИРОВАННЫХ значениях
         # ------------------------------------------------------------
-        components = {}
+        reconstructed_norm = A @ coefs
+
+        # ------------------------------------------------------------
+        # 13. Считаем ошибку аппроксимации в нормированных значениях
+        # ------------------------------------------------------------
+        difference = spectrum_norm - reconstructed_norm
+
+        error_sum = np.sum(difference ** 2)
+
+        spectrum_power = np.sum(spectrum_norm ** 2)
+
+        if spectrum_power > 0:
+            relative_error = error_sum / spectrum_power
+        else:
+            relative_error = None
+
+        # ------------------------------------------------------------
+        # 14. Формируем отдельные компоненты спектра
+        # ------------------------------------------------------------
+        # ВАЖНО:
+        # Здесь используем нормированные эталоны.
+        #
+        # component = coefficient * etalon_norm
+        components_norm = {}
+
         for i, name in enumerate(names):
-            components[name] = coefs[i] * etalons[i]
+            components_norm[name] = coefs[i] * etalons_norm[i]
 
         # ------------------------------------------------------------
-        # 12. Восстанавливаем спектр и считаем остаток
+        # 15. Считаем интегральный вклад каждой компоненты
         # ------------------------------------------------------------
-        reconstructed = A @ coefs
-        residual_spectrum = spectrum - reconstructed
+        component_sums = {}
+
+        for name in names:
+            component_sums[name] = np.sum(components_norm[name])
+
+        total_component_sum = sum(component_sums.values())
 
         # ------------------------------------------------------------
-        # 13. ВТОРИЧНОЕ РАЗЛОЖЕНИЕ ОСТАТКА ТОЛЬКО НА ФОН
+        # 16. Определяем присутствие изотопов
+        # ------------------------------------------------------------
+        presence_threshold = 0.03
+
+        isotope_presence = {}
+
+        for name in isotopes_list:
+
+            if total_component_sum > 0:
+                relative_component_part = component_sums[name] / total_component_sum
+            else:
+                relative_component_part = 0
+
+            isotope_presence[name] = relative_component_part >= presence_threshold
+
+        # ------------------------------------------------------------
+        # 17. Формируем словарь коэффициентов
+        # ------------------------------------------------------------
+        coefficients = {}
+
+        for i, name in enumerate(names):
+            coefficients[name] = coefs[i]
+
+        # ------------------------------------------------------------
+        # 18. ВТОРИЧНОЕ РАЗЛОЖЕНИЕ ОСТАТКА ТОЛЬКО НА ФОН
         # ------------------------------------------------------------
         # Цель: проверить, есть ли в остатке фон.
         # Для этого берём остаток и пытаемся разложить его только на фон.
@@ -2161,34 +2127,34 @@ class App(QObject):
 
         # Проверяем, есть ли эталон фона
         if "background" in self.calibration_spectra:
-            bg_etalon = np.array(self.calibration_spectra["background"], dtype=float)
+            # Берем нормированный эталон фона (он уже есть в etalons_norm)
+            bg_etalon_norm = None
+            for i, name in enumerate(names):
+                if name == "background":
+                    bg_etalon_norm = etalons_norm[i]
+                    break
 
-            # Приводим фон к той же длине
-            if len(bg_etalon) != target_len:
-                if len(bg_etalon) < target_len:
-                    bg_etalon = np.pad(bg_etalon, (0, target_len - len(bg_etalon)), mode='constant')
-                else:
-                    bg_etalon = bg_etalon[:target_len]
+            if bg_etalon_norm is not None:
+                # Разлагаем остаток только на фон (одна компонента)
+                A_bg = bg_etalon_norm.reshape(-1, 1)
 
-            # Разлагаем остаток только на фон (одна компонента)
-            A_bg = bg_etalon.reshape(-1, 1)
+                # Взвешиваем для остатка
+                residual_spectrum = spectrum_norm - reconstructed_norm
+                weights_bg = 1.0 / np.sqrt(np.abs(residual_spectrum) + 1.0)
+                A_bg_weighted = A_bg * weights_bg[:, np.newaxis]
+                residual_weighted = residual_spectrum * weights_bg
 
-            # Взвешиваем для остатка
-            weights_bg = 1.0 / np.sqrt(np.abs(residual_spectrum) + 1.0)
-            A_bg_weighted = A_bg * weights_bg[:, np.newaxis]
-            residual_weighted = residual_spectrum * weights_bg
+                # Решаем однокомпонентную задачу
+                coef_bg, _ = nnls(A_bg_weighted, residual_weighted)
 
-            # Решаем однокомпонентную задачу
-            coef_bg, _ = nnls(A_bg_weighted, residual_weighted)
-
-            # Если коэффициент фона > 0, значит фон обнаружен
-            if coef_bg[0] > 0:
-                background_found = True
-                background_component = coef_bg[0] * bg_etalon
-                background_sum = np.sum(background_component)
+                # Если коэффициент фона > 0, значит фон обнаружен
+                if coef_bg[0] > 0:
+                    background_found = True
+                    background_component = coef_bg[0] * bg_etalon_norm
+                    background_sum = np.sum(background_component)
 
         # ------------------------------------------------------------
-        # 14. КОРРЕКТИРОВКА РЕЗУЛЬТАТОВ
+        # 19. КОРРЕКТИРОВКА РЕЗУЛЬТАТОВ
         # ------------------------------------------------------------
         # В зависимости от того, найден ли фон, корректируем компоненты
         # и сумму для расчёта долей.
@@ -2204,11 +2170,11 @@ class App(QObject):
             corrected_component_sums["background"] = background_sum
 
             for name in isotopes_list:
-                corrected_components[name] = components.get(name, np.zeros(target_len))
+                corrected_components[name] = components_norm.get(name, np.zeros(target_len))
                 corrected_component_sums[name] = np.sum(corrected_components[name])
 
             # Сумма для расчёта долей: общий спектр минус найденный фон
-            total_for_percents = np.sum(spectrum) - background_sum
+            total_for_percents = np.sum(spectrum_norm) - background_sum
 
             # Статус фона: обнаружен
             background_status = True
@@ -2221,17 +2187,17 @@ class App(QObject):
             corrected_component_sums["background"] = 0.0
 
             for name in isotopes_list:
-                corrected_components[name] = components.get(name, np.zeros(target_len))
+                corrected_components[name] = components_norm.get(name, np.zeros(target_len))
                 corrected_component_sums[name] = np.sum(corrected_components[name])
 
             # Сумма для расчёта долей: общий спектр (ничего не вычитаем)
-            total_for_percents = np.sum(spectrum)
+            total_for_percents = np.sum(spectrum_norm)
 
             # Статус фона: не обнаружен
             background_status = False
 
         # ------------------------------------------------------------
-        # 15. ПЕРЕРАСЧЁТ ДОЛЕЙ ИЗОТОПОВ
+        # 20. ПЕРЕРАСЧЁТ ДОЛЕЙ ИЗОТОПОВ
         # ------------------------------------------------------------
         # Доля изотопа = вклад изотопа / сумма для расчёта долей
         isotope_percents = {}
@@ -2243,7 +2209,7 @@ class App(QObject):
                 isotope_percents[name] = 0.0
 
         # ------------------------------------------------------------
-        # 16. ОПРЕДЕЛЕНИЕ ПРИСУТСТВИЯ ИЗОТОПОВ
+        # 21. ОПРЕДЕЛЕНИЕ ПРИСУТСТВИЯ ИЗОТОПОВ (ПОВТОРНО С УЧЁТОМ КОРРЕКТИРОВКИ)
         # ------------------------------------------------------------
         presence_threshold = 0.03
         isotope_presence = {}
@@ -2256,20 +2222,7 @@ class App(QObject):
             isotope_presence[name] = relative_part >= presence_threshold
 
         # ------------------------------------------------------------
-        # 17. РАСЧЁТ ОШИБКИ АППРОКСИМАЦИИ (ОТНОСИТЕЛЬНО ИСХОДНОГО СПЕКТРА)
-        # ------------------------------------------------------------
-        # Используем исходный спектр и восстановленный (без корректировки фона)
-        difference = spectrum - reconstructed
-        error_sum = np.sum(difference ** 2)
-        spectrum_power = np.sum(spectrum ** 2)
-
-        if spectrum_power > 0:
-            relative_error = error_sum / spectrum_power
-        else:
-            relative_error = None
-
-        # ------------------------------------------------------------
-        # 18. ФОРМИРУЕМ СЛОВАРЬ КОЭФФИЦИЕНТОВ (СКОРРЕКТИРОВАННЫЙ)
+        # 22. ФОРМИРУЕМ СЛОВАРЬ КОЭФФИЦИЕНТОВ (СКОРРЕКТИРОВАННЫЙ)
         # ------------------------------------------------------------
         coefficients = {}
 
@@ -2285,13 +2238,15 @@ class App(QObject):
                 coefficients[name] = coefs[i]
 
         # ------------------------------------------------------------
-        # 19. ФОРМИРУЕМ ДОПОЛНИТЕЛЬНУЮ ИНФОРМАЦИЮ ДЛЯ ВЫВОДА
+        # 23. ФОРМИРУЕМ ДОПОЛНИТЕЛЬНУЮ ИНФОРМАЦИЮ ДЛЯ ВЫВОДА
         # ------------------------------------------------------------
         # Добавляем в результат:
         # - доли изотопов в процентах
         # - статус фона (обнаружен/не обнаружен)
         # - сумма для расчёта долей (общий спектр минус фон)
         # - скорректированные компоненты
+        # - нормированный общий спектр
+        # - время набора реального спектра
 
         result = {
             "coefficients": coefficients,
@@ -2301,10 +2256,12 @@ class App(QObject):
             "isotope_percents": isotope_percents,
             "background_found": background_found,
             "total_for_percents": total_for_percents,
-            "reconstructed": reconstructed,
+            "reconstructed": reconstructed_norm,
             "error_sum": error_sum,
             "relative_error": relative_error,
-            "residual": residual
+            "residual": residual,
+            "spectrum_norm": spectrum_norm,
+            "real_time": real_time
         }
 
         return result
