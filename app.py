@@ -598,12 +598,14 @@ class DeviceCardBarrel(QWidget):
                 for name, spectrum in components.items():
                     # Переводимо нормований спектр в абсолютні значення
                     spectrum_abs = spectrum * real_time
+                    # Додаємо час набора як останній елемент (1023-й індекс)
+                    spectrum_with_time = list(spectrum_abs) + [real_time]
+                    
                     filename = f"spectrum_{name}.txt"
                     filepath = os.path.join(export_dir, filename)
 
                     with open(filepath, "w") as f:
-                        f.write("\n".join(str(int(x)) for x in spectrum_abs))
-
+                        f.write("\n".join(str(int(x)) for x in spectrum_with_time))
             # ------------------------------------------------------------
             # 11. Збереження результату вимірювання в БД
             # ------------------------------------------------------------
@@ -1608,14 +1610,9 @@ class App(QObject):
 
     def start_polling_and_test_system(self):
         """
-            Запуск опроса приборов.
-            Блокирует кнопки, чтобы предотвратить повторный запуск.
+        Запуск опроса приборов.
+        Блокирует кнопки, чтобы предотвратить повторный запуск.
         """
-        # Если таймер уже существует и активен — значит система уже работает
-        if self.poll_timer is not None and self.poll_timer.isActive():
-            self.ui.textEdit.append("Система вже працює")
-            return
-        
         if self.butt_replace_device:
             self.butt_replace_device.setEnabled(False)
         
