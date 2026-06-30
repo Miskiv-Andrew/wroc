@@ -590,18 +590,19 @@ class DeviceCardBarrel(QWidget):
                     )
 
                 # ------------------------------------------------------------
-                # 10. Зберігаємо всі розділені спектри
+                # 10. Зберігаємо всі розділені спектри в абсолютних значеннях
                 # ------------------------------------------------------------
                 components = result.get("components", {})
+                real_time = result.get("real_time", 1.0)
 
                 for name, spectrum in components.items():
+                    # Переводимо нормований спектр в абсолютні значення
+                    spectrum_abs = spectrum * real_time
                     filename = f"spectrum_{name}.txt"
                     filepath = os.path.join(export_dir, filename)
 
                     with open(filepath, "w") as f:
-                        f.write(
-                            "\n".join(str(int(x)) for x in spectrum)
-                        )
+                        f.write("\n".join(str(int(x)) for x in spectrum_abs))
 
             # ------------------------------------------------------------
             # 11. Збереження результату вимірювання в БД
