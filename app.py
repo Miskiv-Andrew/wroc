@@ -129,7 +129,7 @@ class DeviceCardBarrel(QWidget):
     def __init__(self, parent_app=None):
         super().__init__()
         self.parent_app = parent_app
-        self.repeat_counter = 100
+        self.repeat_counter = 300
 
         loader = QUiLoader()
         ui_file = QFile("_UI/dashboardbarrel.ui")
@@ -150,6 +150,8 @@ class DeviceCardBarrel(QWidget):
         self.set_temp_icon()
         self.set_activity_icon()
         self.set_isotope_icon()
+        self.set_isotope_icon2()
+        self.set_isotope_icon3()
         self.set_spectrum_ui_enabled(False)
 
         # Инициализация спектральных данных
@@ -193,17 +195,19 @@ class DeviceCardBarrel(QWidget):
     
     def set_barrel_image(self, full: bool):
         label = self.ui.findChild(QLabel, "barrelLabel")
+        label1 = self.ui.findChild(QLabel, "barrelFullness")
         if not label:
                 return
 
         image_name = "barrelfull.svg" if full else "barrelempty.svg"
+        text = "Заповнена" if full else "Незаповнена"
         path = os.path.abspath(os.path.join("_UI", image_name))
         #label.setPixmap(QPixmap(path))
         pixmap = QPixmap(path)
 
         scaled_pixmap = pixmap.scaledToWidth(80, Qt.SmoothTransformation)
         label.setPixmap(scaled_pixmap)  
-
+        label1.setText(f"{text}")
         self.is_full = full
         self.set_spectrum_ui_enabled(full)
     
@@ -242,10 +246,29 @@ class DeviceCardBarrel(QWidget):
     def set_isotope_icon(self):
         """Set the isotope icon"""
         label = self.ui.findChild(QLabel, "iconIsotope")
+
         path = os.path.abspath(os.path.join("_UI", "icons", "isotope_icon.png"))
         pixmap = QPixmap(path)
         if label:
-            label.setPixmap(pixmap) 
+            label.setPixmap(pixmap)
+    
+    def set_isotope_icon2(self):
+        """Set the isotope icon"""
+        label = self.ui.findChild(QLabel, "iconIsotope2")
+
+        path = os.path.abspath(os.path.join("_UI", "icons", "isotope_icon.png"))
+        pixmap = QPixmap(path)
+        if label:
+            label.setPixmap(pixmap)
+    
+    def set_isotope_icon3(self):
+        """Set the isotope icon"""
+        label = self.ui.findChild(QLabel, "iconIsotope3")
+
+        path = os.path.abspath(os.path.join("_UI", "icons", "isotope_icon.png"))
+        pixmap = QPixmap(path)
+        if label:
+            label.setPixmap(pixmap)
     
     def set_dose_value(self, dose, acc):
         labelDose = self.ui.findChild(QLabel, "doseValue")
