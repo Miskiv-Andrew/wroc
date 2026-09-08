@@ -1,7 +1,7 @@
 # app.py
 
 import sys
-from PySide6.QtWidgets import QApplication, QWidget, QGridLayout, QVBoxLayout, QPushButton, QLabel, QSizePolicy, QSpacerItem, QDialog, QLineEdit, QMessageBox, QHBoxLayout
+from PySide6.QtWidgets import QApplication, QWidget, QGridLayout, QVBoxLayout, QPushButton, QLabel, QSizePolicy, QSpacerItem, QDialog, QLineEdit, QMessageBox, QHBoxLayout, QSpinBox, QMenu
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtCore import QFile, QThread, QMetaObject, QTimer , Qt, QObject, Signal, QDateTime
 from devices.device_manager import DeviceManager
@@ -10,11 +10,13 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 import json, numpy as np
 import os, math
-from sklearn.decomposition import NMF
-from scipy.optimize import nnls
+
+# from sklearn.decomposition import NMF
+# from scipy.optimize import nnls
 
 from database.db_manager import DatabaseManager
 from dialogs.device_replace_dialog import DeviceReplaceDialog
+import json
 
 
 # ============================================================
@@ -88,7 +90,6 @@ class PasswordDialog(QDialog):
             )
             self.password_input.clear()  # очищаємо поле
             self.password_input.setFocus()  # ставимо курсор у поле
-
 
 
 class SpectrumWidget(QWidget):
@@ -179,6 +180,21 @@ class DeviceCardBarrel(QWidget):
 
         self.total_acquisition_time = 0.0 
 
+        self.algorithm_history = {}  # для зберігання динаміки Tc (група A та reserve)
+
+    def clear_history(self):
+        """
+        Очищує історію динаміки розпаду для групи A та резервної цистерни.
+        Викликається при заповненні або спорожненні цистерни.
+        """
+        # Якщо у картки є атрибут для зберігання історії
+        if hasattr(self, 'algorithm_history'):
+            self.algorithm_history = {}
+        # Якщо історія зберігається в окремому словнику (наприклад, як атрибут self.history)
+        # можна додати додаткові очищення за потреби.
+        # Наприклад, якщо використовується self.history для групи A або reserve:
+        if hasattr(self, 'history'):
+            self.history = None
 
     
     def set_serial(self, serial):
@@ -441,208 +457,149 @@ class DeviceCardBarrel(QWidget):
         if hasattr(self, 'spectrum') and self.spectrum:
             # Передаём данные в SpectrumWidget для отрисовки
             self.spectrum.update_data(self.spectrum_buffer) 
-   
+
+
+
+
+
 
     def calculate_activity(self):
         """
         Розрахунок активності та ідентифікація ізотопів.
+        Використовує новий алгоритм ALIM (identify_isotopes_alim).
         """
-        # ------------------------------------------------------------
-        # 1. Розрахунок загальної активності за всім накопиченим спектром
-        # ------------------------------------------------------------
-        total_counts = sum(self.spectrum_buffer)
-        activity = total_counts / 600 / 1000
-
-        timestamp = QDateTime.currentDateTime()
-
-        self.activity_history.append({
-            "timestamp": timestamp,
-            "activity": activity
-        })
+        if not hasattr(self, 'parent_app') or not self.parent_app:
+            return
 
         # ------------------------------------------------------------
-        # 2. Ідентифікація ізотопів
+        # 1. Формуємо масив з часом набора
         # ------------------------------------------------------------
-        if hasattr(self, 'parent_app') and self.parent_app:
-
-            spectrum_with_time = list(self.spectrum_buffer) + [self.total_acquisition_time]
-            result = self.parent_app.identify_isotopes(
+        spectrum_with_time = list(self.spectrum_buffer) + [self.total_acquisition_time]
+        
+        # ------------------------------------------------------------
+        # 2. Викликаємо алгоритм з історією
+        # ------------------------------------------------------------
+        result, updated_history = self.parent_app.identify_isotopes_alim(
             spectrum_with_time,
-            self.posit_number
-            )
-
-            if result:
-                # ------------------------------------------------------------
-                # 3. Отримуємо дані з результату
-                # ------------------------------------------------------------
-                presence = result.get("isotope_presence", {})
-                isotope_percents = result.get("isotope_percents", {})
-                component_sums = result.get("component_sums", {})
-                background_found = result.get("background_found", False)
-
-                self.parent_app.ui.textEdit.append(
-                    f"Цистерна №{self.posit_number}:"
+            self.posit_number,
+            self.algorithm_history
+        )
+        
+        # Оновлюємо історію в картці
+        self.algorithm_history = updated_history
+        
+        # ------------------------------------------------------------
+        # 3. Якщо результат порожній — виходимо
+        # ------------------------------------------------------------
+        if not result:
+            self.reset_spectrum()
+            return
+        
+        # ------------------------------------------------------------
+        # 4. Розпаковуємо результат
+        # ------------------------------------------------------------
+        group = result.get("group", "A")
+        real_time = result.get("real_time", 1.0)
+        isotopes_list = result.get("isotopes", [])
+        
+        # ------------------------------------------------------------
+        # 5. Формуємо словники активностей та концентрацій для БД
+        # ------------------------------------------------------------
+        activity_dict = {}
+        concentration_dict = {}
+        output_lines = [f"Цистерна №{self.posit_number} (група {group}):", f"Час набора: {real_time:.1f} сек"]
+        
+        for name in isotopes_list:
+            data = result.get(name, {})
+            if not data:
+                continue
+            
+            # Отримуємо дані
+            activity = data.get("activity", 0.0)
+            concentration = data.get("concentration", 0.0)
+            detected = data.get("detected", "НЕМАЄ")
+            sum_clean = data.get("sum_clean", 0.0)
+            
+            # Заповнюємо словники для БД
+            if activity > 0 or concentration > 0:
+                activity_dict[name] = activity
+                concentration_dict[name] = concentration
+            
+            # Формуємо рядок для виводу
+            if sum_clean > 0:
+                output_lines.append(
+                    f"  {name}: активність = {activity:.2f} Бк, "
+                    f"концентрація = {concentration:.2f} Бк/л, статус: {detected}"
                 )
-                self.parent_app.ui.textEdit.append("")  # пустий рядок
-
-                # ------------------------------------------------------------
-                # 4. Виводимо ізотопи
-                # ------------------------------------------------------------              
-               
-                isotopes_list = self.parent_app.cistern_isotopes.get(
-                    self.posit_number,
-                    []
-                )
-
-                # Отримуємо час набора реального спектра
-                real_time = result.get("real_time", 1.0)
-
-                # Виводимо час набора реального спектра
-                self.parent_app.ui.textEdit.append(f"Час набора реального спектра: {real_time} сек")
-                self.parent_app.ui.textEdit.append("")  # пустий рядок
-
-                for name in isotopes_list:
-                    detected = presence.get(name, False)
-                    percent = isotope_percents.get(name, 0)
-                    sum_val_norm = component_sums.get(name, 0)
-                    sum_val_abs = sum_val_norm * real_time  # переводимо в абсолютні значення
-
-                    status = "обнаружен" if detected else "не обнаружен"
-
-                    self.parent_app.ui.textEdit.append(
-                        f"{name}:"
-                    )
-                    self.parent_app.ui.textEdit.append(
-                        f"    вклад = {int(sum_val_abs):,} имп."
-                    )
-                    self.parent_app.ui.textEdit.append(
-                        f"    доля = {percent:.1f} %"
-                    )
-                    self.parent_app.ui.textEdit.append(
-                        f"    {status}"
-                    )
-                    self.parent_app.ui.textEdit.append("")  # пустий рядок
-
-                # ------------------------------------------------------------
-                # 5. Виводимо фон
-                # ------------------------------------------------------------              
-
-                if background_found:
-                    bg_sum_norm = component_sums.get("background", 0)
-                    bg_sum_abs = bg_sum_norm * real_time
-                    self.parent_app.ui.textEdit.append(
-                        f"Фон: вклад = {int(bg_sum_abs):,} имп., обнаружен"
-                    )
-                else:
-                    self.parent_app.ui.textEdit.append(
-                        "Фон: не обнаружен"
-                    )
-
-                # ------------------------------------------------------------
-                # 6. Виводимо якість апроксимації
-                # ------------------------------------------------------------
-                relative_error = result.get("relative_error", None)
-
-                if relative_error is not None:
-                    self.parent_app.ui.textEdit.append(
-                        f"Ошибка аппроксимации: {relative_error * 100:.2f} %"
-                    )
-                else:
-                    error_sum = result.get("error_sum", 0)
-                    self.parent_app.ui.textEdit.append(
-                        f"Ошибка аппроксимации: {error_sum:.6f}"
-                    )
-
-                self.parent_app.ui.textEdit.append("---")
-
-                # ------------------------------------------------------------
-                # 7. Підготовка папки для експорту спектрів
-                # ------------------------------------------------------------
-                export_dir = "export"
-                os.makedirs(export_dir, exist_ok=True)
-
-                # ------------------------------------------------------------
-                # 8. Приводимо загальний спектр до 1024 каналів
-                # ------------------------------------------------------------
-                target_len = 1024
-
-                export_total_spectrum = np.array(
-                    self.spectrum_buffer,
-                    dtype=float
-                )
-
-                if len(export_total_spectrum) < target_len:
-                    export_total_spectrum = np.pad(
-                        export_total_spectrum,
-                        (0, target_len - len(export_total_spectrum)),
-                        mode='constant',
-                        constant_values=0
-                    )
-                elif len(export_total_spectrum) > target_len:
-                    export_total_spectrum = export_total_spectrum[:target_len]
-
-                # ------------------------------------------------------------
-                # 9. Зберігаємо загальний спектр
-                # ------------------------------------------------------------
-                with open(os.path.join(export_dir, "spectrum_total.txt"), "w") as f:
-                    f.write(
-                        "\n".join(str(int(x)) for x in export_total_spectrum)
-                    )
-
-                # ------------------------------------------------------------
-                # 10. Зберігаємо всі розділені спектри в абсолютних значеннях
-                # ------------------------------------------------------------
-                components = result.get("components", {})
-                real_time = result.get("real_time", 1.0)
-
-                for name, spectrum in components.items():
-                    # Переводимо нормований спектр в абсолютні значення
-                    spectrum_abs = spectrum * real_time
-                    # Додаємо час набора як останній елемент (1023-й індекс)
-                    spectrum_with_time = list(spectrum_abs) + [real_time]
-                    
-                    filename = f"spectrum_{name}.txt"
-                    filepath = os.path.join(export_dir, filename)
-
-                    with open(filepath, "w") as f:
-                        f.write("\n".join(str(int(x)) for x in spectrum_with_time))
-            # ------------------------------------------------------------
-            # 11. Збереження результату вимірювання в БД
-            # ------------------------------------------------------------
-            device_id = self.parent_app.db_manager.get_device_id(
-                self.serial_number
-            )
-
+            else:
+                output_lines.append(f"  {name}: не виявлено (сума = 0)")
+        
+        # Додаємо інформацію про фон, якщо є
+        if "background" in result:
+            bg_data = result.get("background", {})
+            if bg_data.get("subtracted", False):
+                output_lines.append(f"  Фон: віднято")
+        
+        # Виводимо в textEdit
+        self.parent_app.ui.textEdit.append("\n".join(output_lines))
+        self.parent_app.ui.textEdit.append("---")
+        
+        # ------------------------------------------------------------
+        # 6. Експорт спектрів (залишаємо як було)
+        # ------------------------------------------------------------
+        export_dir = "export"
+        os.makedirs(export_dir, exist_ok=True)
+        
+        export_total_spectrum = np.array(self.spectrum_buffer, dtype=float)
+        if len(export_total_spectrum) < 1024:
+            export_total_spectrum = np.pad(export_total_spectrum, (0, 1024 - len(export_total_spectrum)), mode='constant')
+        elif len(export_total_spectrum) > 1024:
+            export_total_spectrum = export_total_spectrum[:1024]
+        
+        with open(os.path.join(export_dir, "spectrum_total.txt"), "w") as f:
+            f.write("\n".join(str(int(x)) for x in export_total_spectrum))
+        
+        # Зберігаємо компоненти, якщо є
+        components = result.get("components", {})
+        for name, spectrum in components.items():
+            spectrum_with_time_export = list(spectrum) + [real_time]
+            filename = f"spectrum_{name}.txt"
+            with open(os.path.join(export_dir, filename), "w") as f:
+                f.write("\n".join(str(int(x)) for x in spectrum_with_time_export))
+        
+        # ------------------------------------------------------------
+        # 7. Збереження в БД (тільки якщо є дані)
+        # ------------------------------------------------------------
+        if activity_dict or concentration_dict:
+            # Перетворюємо на JSON-рядки
+            activity_json = json.dumps(activity_dict) if activity_dict else "{}"
+            concentration_json = json.dumps(concentration_dict) if concentration_dict else "{}"
+            
+            device_id = self.parent_app.db_manager.get_device_id(self.serial_number)
             if device_id is not None:
-
                 fullness_status = "full" if getattr(self, 'is_full', False) else "empty"
-
+                
                 self.parent_app.db_manager.save_cistern_measurement(
                     device_id=device_id,
                     paed=self.last_paed_from_spectrum,
                     temperature=self.last_temperature,
-                    activity=activity,
+                    activity_json=activity_json,
+                    concentration_json=concentration_json,
                     low_status=self.last_low_status,
                     high_status=self.last_high_status,
                     valid=self.last_valid,
                     fullness_status=fullness_status,
-                    ready_to_drain=0
+                    group=group
                 )
-
+                
                 self.parent_app.ui.textEdit.append(
-                    f"Цистерна №{self.posit_number}: сохранено в БД "
-                    f"(активность = {activity:.2f} кБк)"
+                    f"Цистерна №{self.posit_number}: збережено в БД (активності: {activity_json}, концентрації: {concentration_json})"
                 )
-
+        
         # ------------------------------------------------------------
-        # 12. Скидаємо буфер цистерни в БД
+        # 8. Скидання буферів
         # ------------------------------------------------------------
-        if hasattr(self, 'parent_app') and self.parent_app:
-            self.parent_app.db_manager.flush_cistern_buffer()
-
-        # ------------------------------------------------------------
-        # 13. Очищаємо буфер спектра після завершення обробки
-        # ------------------------------------------------------------
+        self.parent_app.db_manager.flush_cistern_buffer()
         self.reset_spectrum()
 
 
@@ -945,14 +902,16 @@ class App(QObject):
         self.wall_container = None
         self.wall_layout = None
 
+
+
         # загрузка формы из .ui файла
         self.load_ui() 
 
         # создание потока и объекта DeviceManager
         self.setup_device_manager()
 
-        # связывание кнопок и сигналов
-        self.setup_connections()   
+        # # связывание кнопок и сигналов
+        # self.setup_connections()   
 
         # Загружаем файл состояния цистерн
         self.load_cistern_data("config/cistern.json")
@@ -974,6 +933,92 @@ class App(QObject):
 
         # Атрибут для хранения таймера опроса внешней системы
         self.poll_timer = None
+
+
+        self.spectrum_accumulation_time = 3600
+        self.db_write_interval = 5
+        self.zb_send_interval = 60
+        self.cz_send_interval = 60
+
+        # ============================================================
+        # БЛОК КОНСТАНТ АЛГОРИТМІВ ІДЕНТИФІКАЦІЇ (ALIM)
+        # ============================================================
+
+        # --- Група A (цистерни 1, 2) ---
+        self.GROUP_A_ISOTOPES = ["18F", "99mTc"]
+        self.GROUP_A_WINDOWS = {
+            "18F": (161, 204),
+            "99mTc": (12, 64)
+        }
+        self.GROUP_A_COEFFICIENTS = {
+            "18F": 47.0,
+            "99mTc": 9.346
+        }
+        self.GROUP_A_HALF_LIFE = {
+            "18F": 110.0,
+            "99mTc": 360.1
+        }
+        self.GROUP_A_SIGMA = {
+            "18F": 2,
+            "99mTc": 2
+        }
+        self.GROUP_A_TC_THRESHOLD = 0.95
+
+        # --- Група B (цистерни 4-9) ---
+        self.GROUP_B_ISOTOPES = ["133I", "177Lu", "90Y"]
+        self.GROUP_B_WINDOWS = {
+            "133I": (90, 150),
+            "177Lu": (63, 89),
+            "90Y": (371, 820)
+        }
+        self.GROUP_B_COEFFICIENTS = {
+            "133I": 40.99,
+            "177Lu": 315.0,
+            "90Y": 1.0
+        }
+        self.GROUP_B_SIGMA = {
+            "133I": 2,
+            "177Lu": 2,
+            "90Y": 2
+        }
+        self.GROUP_B_ORDER = ["90Y", "133I", "177Lu"]
+
+        # --- Група RESERVE (цистерна 3) ---
+        self.GROUP_RESERVE_ISOTOPES = ["18F", "99mTc", "133I", "177Lu", "90Y"]
+        self.GROUP_RESERVE_WINDOWS = {
+            "18F": (161, 204),
+            "99mTc": (12, 64),
+            "133I": (90, 150),
+            "177Lu": (63, 89),
+            "90Y": (371, 820)
+        }
+        self.GROUP_RESERVE_COEFFICIENTS = {
+            "18F": 47.0,
+            "99mTc": 9.346,
+            "133I": 40.99,
+            "177Lu": 315.0,
+            "90Y": 1.0
+        }
+        self.GROUP_RESERVE_SIGMA = {
+            "18F": 2,
+            "99mTc": 1,
+            "133I": 2,
+            "177Lu": 2,
+            "90Y": 2
+        }
+        self.GROUP_RESERVE_ORDER = ["90Y", "133I", "177Lu", "18F", "99mTc"]
+        self.GROUP_RESERVE_BASE_I_WINDOW = (115, 150)
+        self.GROUP_RESERVE_TC_DELAY_HOURS = 6
+        self.GROUP_RESERVE_TC_EXTRAPOLATION_COEFF = 0.890899
+
+        # --- Загальні константи ---
+        self.PAED_THRESHOLD = 50.0
+        self.DEAD_TIME_COEFF = 0.00002
+        self.SPECTRUM_CHANNELS = 1023
+
+
+        # связывание кнопок и сигналов
+        self.setup_connections()   
 
 
     def load_ui(self):
@@ -1001,6 +1046,12 @@ class App(QObject):
         self.barrel_container = self.ui.findChild(QWidget, "containerBarrel")
         self.wall_container = self.ui.findChild(QWidget, "containerWall")
 
+        self.plc_ip_edit = self.ui.findChild(QLineEdit, "lineEdit")          # поле IP
+        self.plc_port_spin = self.ui.findChild(QSpinBox, "spinBox")          # поле порта
+        self.btn_connect_plc = self.ui.findChild(QPushButton, "btn_connect_plc")  # кнопка
+        self.indicator_plc = self.ui.findChild(QLabel, "indicator_plc")      # индикатор PLC
+        self.indicator_bridge = self.ui.findChild(QLabel, "indicator_bridge") # индикатор Bridge
+
         self.barrel_grid = self.barrel_container.layout()
         if self.barrel_grid is None:
             self.barrel_grid = QGridLayout(self.barrel_container)
@@ -1011,6 +1062,56 @@ class App(QObject):
         if self.wall_layout is None:
             self.wall_layout = QVBoxLayout(self.wall_container)
             self.wall_container.setLayout(self.wall_layout)
+
+        # ============================================================
+        # Додаємо пункт меню "Налаштування інтервалів"
+        # ============================================================
+        # Знаходимо меню "Прилади"
+        menu_devices = self.ui.findChild(QMenu, "menu")
+        if menu_devices:
+            # Створюємо дію
+            self.action_intervals = QAction("Налаштування інтервалів", self.ui)
+            self.action_intervals.setObjectName("action_intervals")
+            
+            # Додаємо дію в меню перед "Заміна приладу" або в кінець
+            # Шукаємо дію "butt_replace_device" щоб вставити перед нею
+            replace_action = self.ui.findChild(QAction, "butt_replace_device")
+            if replace_action:
+                # Вставляємо перед "Заміна приладу"
+                menu_devices.insertAction(replace_action, self.action_intervals)
+                # Додаємо роздільник перед "Заміна приладу" (опціонально)
+                # menu_devices.insertSeparator(replace_action)
+            else:
+                # Якщо "Заміна приладу" не знайдено, додаємо в кінець
+                menu_devices.addAction(self.action_intervals)
+            
+            # Підключаємо сигнал
+            self.action_intervals.triggered.connect(self.on_open_intervals)
+        else:
+            # Якщо меню не знайдено — створюємо його (запасний варіант)
+            self.ui.textEdit.append("Увага: меню 'Прилади' не знайдено")
+
+
+    def on_open_intervals(self):
+        """
+        Відкриває діалог налаштування інтервалів.
+        """
+        from dialogs.intervals_dialog import IntervalsDialog
+        dialog = IntervalsDialog(self)
+        if dialog.exec() == QDialog.Accepted:
+            # Отримуємо значення з діалогу
+            self.spectrum_accumulation_time = dialog.get_spectrum_time()
+            self.db_write_interval = dialog.get_db_interval()
+            self.zb_send_interval = dialog.get_zb_interval()
+            self.cz_send_interval = dialog.get_cz_interval()
+            
+            self.ui.textEdit.append(
+                f"Налаштування інтервалів збережено: "
+                f"спектр={self.spectrum_accumulation_time}с, "
+                f"ZB={self.zb_send_interval}с, "
+                f"CZ={self.cz_send_interval}с, "
+                f"БД={self.db_write_interval}хв"
+            )
 
     def db_window(self):
         """
@@ -1091,6 +1192,17 @@ class App(QObject):
         if self.butt_replace_device:
             self.butt_replace_device.triggered.connect(self.open_replace_dialog)
 
+        # Кнопка подключения к PLC
+        self.btn_connect_plc.clicked.connect(self.on_connect_plc_clicked)
+
+
+
+    def on_connect_plc_clicked(self):
+        ip = self.plc_ip_edit.text().strip()
+        port = self.plc_port_spin.value()
+        self.ui.textEdit.append(f"Подключение к ПЛК {ip}:{port} (заглушка)")
+        # Позже здесь будет запуск C++ процесса и подключение к Bridge
+
     def load_calibration_spectra(self):
         """
         Загружает эталонные спектры из папки calibration/.
@@ -1161,7 +1273,6 @@ class App(QObject):
                 self.butt_search_dev.setEnabled(True)
 
 
-
     def on_device_packet(self, packet):
         """
         Обробка пакетів від приладів.
@@ -1212,7 +1323,8 @@ class App(QObject):
                         elif card.location_type == "cistern":
                             temp_value = getattr(card, 'last_temperature', 0.0)
                             fullness_status = "full" if getattr(card, 'is_full', False) else "empty"
-                            # Додаємо в буфер цистерни, запис в БД відбудеться при досягненні repeat_counter
+                            group = self.cistern_groups.get(card.posit_number, "A")
+                            # Додаємо в буфер цистерни з порожніми JSON (активність і концентрація будуть пізніше)
                             self.db_manager.buffer_cistern_measurement(
                                 device_id=device_id,
                                 paed=dose,
@@ -1220,7 +1332,10 @@ class App(QObject):
                                 low_status=1 if low_failure else 0,
                                 high_status=1 if high_failure else 0,
                                 valid=1 if result_valid else 0,
-                                fullness_status=fullness_status
+                                fullness_status=fullness_status,
+                                group=group,
+                                activity_json="{}",
+                                concentration_json="{}"
                             )
                     else:
                         self.ui.textEdit.append(f"Помилка: прилад {sn} не знайдено в БД")
@@ -1244,8 +1359,8 @@ class App(QObject):
                     paed_value = packet.buff.get("paed_value", 0.0)
                     accuracy = packet.buff.get("accuracy", 0)
                     test_byte = packet.buff.get("test_byte", 0)
-                    result_valid = packet.buff.get("valid", False)                    
-                    
+                    result_valid = packet.buff.get("valid", False)
+
                     # Відправляємо ПАЕД в DeviceManager
                     self.device_manager.update_device_paed.emit(sn, paed_value)
                     
@@ -1264,12 +1379,12 @@ class App(QObject):
                     low_failure = not bool(test_byte & 0b00000010)
                     card.set_detector_status(low_failure, high_failure, result_valid)
                     
-                    # Збереження ПАЕД в буфер цистерни
+                    # Збереження ПАЕД в буфер цистерни (з порожніми JSON)
                     device_id = self.db_manager.get_device_id(sn)
                     if device_id is not None and card.location_type == "cistern":
                         temp_value = getattr(card, 'last_temperature', 0.0)
                         fullness_status = "full" if getattr(card, 'is_full', False) else "empty"
-                        # Додаємо в буфер цистерни
+                        group = self.cistern_groups.get(card.posit_number, "A")
                         self.db_manager.buffer_cistern_measurement(
                             device_id=device_id,
                             paed=paed_value,
@@ -1277,7 +1392,10 @@ class App(QObject):
                             low_status=1 if low_failure else 0,
                             high_status=1 if high_failure else 0,
                             valid=1 if result_valid else 0,
-                            fullness_status=fullness_status
+                            fullness_status=fullness_status,
+                            group=group,
+                            activity_json="{}",
+                            concentration_json="{}"
                         )
                     elif device_id is None:
                         self.ui.textEdit.append(f"Помилка: прилад {sn} не знайдено в БД")
@@ -1290,8 +1408,9 @@ class App(QObject):
 
         except Exception as e:
             self.ui.textEdit.append(f"Error parsing packet for {sn}: {e}\n-------------------")
-        
-   
+
+
+
 
     def create_device_card(self, device):
         """
@@ -1431,26 +1550,59 @@ class App(QObject):
 
     def load_cistern_data(self, json_file: str):
         """
-        Загружает данные о заполненности цистерн и списках изотопов из файла.
+        Загружает данные о заполненности цистерн, списках изотопов и группах из файла.
+        Если файл отсутствует или повреждён, создаёт дефолтные данные для 20 цистерн
+        с предустановленными группами:
+            - цистерны 1, 2 → группа "A"
+            - цистерна 3 → группа "reserve"
+            - цистерны 4–9 → группа "B"
+            - цистерны 10–20 → группа "A" (по умолчанию)
         """
         try:
             with open(json_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
             
-            self.cistern_dict = {}
-            self.cistern_isotopes = {}
+            self.cistern_dict = {}       # {номер: full}
+            self.cistern_isotopes = {}   # {номер: [изотопы]}
+            self.cistern_groups = {}     # {номер: группа}
             
             for k, v in data.items():
                 pos = int(k)
                 self.cistern_dict[pos] = bool(v.get("full", False))
                 self.cistern_isotopes[pos] = v.get("isotopes", [])
+                self.cistern_groups[pos] = v.get("group", "A")  # если поля нет — группа A
                     
         except (FileNotFoundError, json.JSONDecodeError):
+            # Файл отсутствует или битый — создаём дефолт
             print(f"Файл {json_file} відсутній або пошкоджений. Створюємо дефолтні дані (20 порожніх цистерн)")
+            
             self.cistern_dict = {i: False for i in range(1, 21)}
             self.cistern_isotopes = {i: [] for i in range(1, 21)}
+            self.cistern_groups = {}
+            
+            # Задаём группы для цистерн 1–9, остальные по умолчанию A
+            for i in range(1, 10):
+                if i == 1 or i == 2:
+                    self.cistern_groups[i] = "A"
+                elif i == 3:
+                    self.cistern_groups[i] = "reserve"
+                elif 4 <= i <= 9:
+                    self.cistern_groups[i] = "B"
+                else:
+                    self.cistern_groups[i] = "A"
+            for i in range(10, 21):
+                self.cistern_groups[i] = "A"
+            
+            # Записываем новый файл с полной структурой
             with open(json_file, "w", encoding="utf-8") as f:
-                json.dump({str(i): {"full": False, "isotopes": []} for i in range(1, 21)}, f, ensure_ascii=False, indent=4)
+                export_data = {}
+                for i in range(1, 21):
+                    export_data[str(i)] = {
+                        "full": False,
+                        "isotopes": [],
+                        "group": self.cistern_groups.get(i, "A")
+                    }
+                json.dump(export_data, f, ensure_ascii=False, indent=4)
 
     
     def sync_devices_with_cisterns(self):
@@ -1474,19 +1626,23 @@ class App(QObject):
                 card.is_full = new_full
                 card.set_barrel_image(new_full)
                 
-                # Если цистерна стала пустой - сбрасываем спектральные данные
+                # Если цистерна стала пустой - сбрасываем спектральные данные и историю
                 if old_full != new_full and not new_full:
-                    # Цистерна опустошена - сброс спектра
+                    # Цистерна опустошена - сброс спектра и истории
                     if hasattr(card, 'reset_spectrum'):
                         card.reset_spectrum()
-                        # Выводим информацию в лог
-                        self.ui.textEdit.append(f"Цистерна №{posit} спорожнена. Спектр скинуто.")
+                    if hasattr(card, 'clear_history'):
+                        card.clear_history()
+                    # Выводим информацию в лог
+                    self.ui.textEdit.append(f"Цистерна №{posit} спорожнена. Спектр та історію скинуто.")
                 
-                # Если цистерна стала полной - сброс спектра (начало нового накопления)
+                # Если цистерна стала полной - сбрасываем спектральные данные и историю (начало нового цикла)
                 if old_full != new_full and new_full:
                     if hasattr(card, 'reset_spectrum'):
                         card.reset_spectrum()
-                        self.ui.textEdit.append(f"Цистерна №{posit} заповнена. Початок накопичення спектру.")
+                    if hasattr(card, 'clear_history'):
+                        card.clear_history()
+                    self.ui.textEdit.append(f"Цистерна №{posit} заповнена. Спектр та історію скинуто.")
                         
             except Exception as e:
                 continue
@@ -1506,23 +1662,25 @@ class App(QObject):
         self.poll_timer.timeout.connect(lambda: self.poll_system(json_file))
         self.poll_timer.start()
 
+
+
     def poll_system(self, json_file: str, new_data: dict = None):
         """
-            Опрос Системы Управления.
-            Сравниваем новые данные new_data со словарём self.cistern_dict.
-            При изменении обновляем словарь, приборы и файл.
-            Если в новых данных есть номер цистерны, которого нет в словаре —
-            фиксируем ошибку и предупреждаем администратора.
+        Опрос Системы Управления.
+        Сравниваем новые данные new_data со словарём self.cistern_dict.
+        При изменении обновляем словарь, приборы и файл.
+        Если в новых данных есть номер цистерны, которого нет в словаре —
+        фиксируем ошибку и предупреждаем администратора.
         """
         # Если new_data не передан — используем данные из lineEdit (имитация)
-        if new_data is None:
-            text = self.ui.lineEdit.text().strip()
-            if text == "Full":
-                new_data = {1: True}                
-            elif text == "Empty":
-                new_data = {1: False}                
-            else:                
-                return
+        # if new_data is None:
+        #     text = self.ui.lineEdit.text().strip()
+        #     if text == "Full":
+        #         new_data = {1: True}                
+        #     elif text == "Empty":
+        #         new_data = {1: False}                
+        #     else:                
+        #         return
 
         updated = False
         for num, new_value in new_data.items():
@@ -1537,7 +1695,6 @@ class App(QObject):
 
             current_value = self.cistern_dict[num]
             if new_value != current_value:
-                # print(f"Зміна стану цистерни №{num}: {current_value} → {new_value}")
                 self.cistern_dict[num] = new_value
                 updated = True
 
@@ -1570,7 +1727,6 @@ class App(QObject):
                                     self.db_manager.save_system_event(device_id, "cistern_drained", f"Цистерна №{num} спорожнена")
                         break
 
-        #self.ui.textEdit.append(f"App: emitting cistern_dict (type={type(self.cistern_dict)}): {self.cistern_dict!r}")
         # Если были изменения — перезаписываем файл cistern.json и синхронизируем с DeviceManager
         if updated:
             with open(json_file, "w", encoding="utf-8") as f:
@@ -1578,7 +1734,8 @@ class App(QObject):
                 for pos, full in self.cistern_dict.items():
                     export_data[str(pos)] = {
                         "full": full,
-                        "isotopes": self.cistern_isotopes.get(pos, [])
+                        "isotopes": self.cistern_isotopes.get(pos, []),
+                        "group": self.cistern_groups.get(pos, "A")
                     }
                 json.dump(export_data, f, ensure_ascii=False, indent=4)
                 try:
@@ -1670,382 +1827,992 @@ class App(QObject):
 
         self.ui.textEdit.append("Пошук приладів...")
         # Запускаем поиск
-        self.search_devices.emit()       
+        self.search_devices.emit()     
 
-    def identify_isotopes_alim(self, spectrum, cistern_position):
-        pass
-   
-    def identify_isotopes(self, spectrum, cistern_position):
+
+
+    def _normalize_spectrum(self, spectrum, T):
         """
-            Метод раскладывает общий измеренный спектр на компоненты:
-
-            общий спектр ≈ фон + I-131 + Tc-99m
-
-            В этой версии используется взвешенный NNLS.
-
-            Важно:
-            - эталонные спектры НОРМИРУЮТСЯ на время набора (делятся на время)
-            - реальный спектр НОРМИРУЕТСЯ на время набора
-            - матрица A строится из НОРМИРОВАННЫХ эталонов
-            - веса используются для взвешенного NNLS
-            - восстановление компонентов выполняется через НОРМИРОВАННЫЕ эталоны
-            - результат содержит нормированные компоненты и реальное время набора
+            Корекція вхідного спектру на мертвий час та нормування по часу.
+            
+            Вхід:
+                spectrum - list[float] або list[int] масив 1023 каналів (k_i)
+                T - час вимірювання в секундах (напр. 3600)
+            
+            Вихід:
+                arr1 - list[float] нормований спектр (n_i = k_i / T1)
+            
+            Алгоритм:
+                1. sum_k = sum(spectrum) - сума імпульсів по всіх каналах
+                2. T1 = T - 0.00002 * sum_k - скоригований час
+                3. n_i = k_i / T1 - інтенсивність в кожному каналі
         """
-
-        # ------------------------------------------------------------
-        # 1. Преобразуем входной спектр в numpy-массив
-        # ------------------------------------------------------------
-        spectrum = np.array(spectrum, dtype=float)
-
-        # ------------------------------------------------------------
-        # 2. Извлекаем время набора реального спектра (последний элемент)
-        # ------------------------------------------------------------
-        # В спектре 1024 элемента: первые 1023 — спектр, последний — время набора в секундах.
-        real_time = spectrum[-1] if len(spectrum) > 0 else 1.0
-        if real_time <= 0:
-            real_time = 1.0
-        spectrum_data = spectrum[:1023]  # отделяем спектр от времени
-        spectrum_norm = spectrum_data / real_time  # нормируем на время
-
-        # ------------------------------------------------------------
-        # 3. Проверяем, загружены ли эталонные спектры
-        # ------------------------------------------------------------
-        if not hasattr(self, 'calibration_spectra') or not self.calibration_spectra:
-            self.ui.textEdit.append("Ошибка: эталонные спектры не загружены")
-            return None
-
-        # ------------------------------------------------------------
-        # 4. Получаем список изотопов для данной цистерны
-        # ------------------------------------------------------------
-        isotopes_list = self.cistern_isotopes.get(cistern_position, [])
-
-        if not isotopes_list:
-            self.ui.textEdit.append(
-                f"Предупреждение: для цистерны {cistern_position} не заданы изотопы"
-            )
-
-        # ------------------------------------------------------------
-        # 5. Формируем список компонентов
-        # ------------------------------------------------------------
-        # Фон всегда участвует в разложении.
-        names = ["background"] + isotopes_list
-
-        # Здесь храним реальные, НЕ нормированные эталонные спектры.
-        etalons = []
-
-        # Здесь храним нормированные на время эталонные спектры.
-        etalons_norm = []
-
-        # ------------------------------------------------------------
-        # 6. Загружаем эталоны из self.calibration_spectra
-        # ------------------------------------------------------------
-        for name in names:
-
-            if name in self.calibration_spectra:
-
-                # ВАЖНО:
-                # Эталон берём как есть.
-                # Никакой нормировки на сумму каналов здесь НЕ делаем.
-                etalon = np.array(self.calibration_spectra[name], dtype=float)
-
-                # Извлекаем время набора эталона (последний элемент)
-                etalon_time = etalon[-1] if len(etalon) > 0 else 1.0
-                if etalon_time <= 0:
-                    etalon_time = 1.0
-                etalon_data = etalon[:1023]  # отделяем спектр от времени
-                etalon_norm = etalon_data / etalon_time  # нормируем на время
-
-                etalons.append(etalon_data)
-                etalons_norm.append(etalon_norm)
-
-            else:
-                self.ui.textEdit.append(f"Ошибка: эталон '{name}' не найден")
-                return None
-
-        # ------------------------------------------------------------
-        # 7. Проверяем, что общий спектр не пустой
-        # ------------------------------------------------------------
-        if spectrum_norm.size == 0:
-            self.ui.textEdit.append("Ошибка: общий спектр пустой")
-            return None
-
-        # ------------------------------------------------------------
-        # 8. Приводим общий спектр к 1023 каналам (без времени)
-        # ------------------------------------------------------------
-        # Все эталонные спектры имеют длину 1023 (без учёта времени).
-        # Поэтому входной спектр должен быть приведён к тому же размеру.
-        target_len = 1023
-
-        if len(spectrum_norm) < target_len:
-
-            self.ui.textEdit.append(
-                f"Предупреждение: спектр содержит {len(spectrum_norm)} каналов. "
-                f"Выполнено дополнение до {target_len} каналов."
-            )
-
-            spectrum_norm = np.pad(
-                spectrum_norm,
-                (0, target_len - len(spectrum_norm)),
-                mode='constant',
-                constant_values=0
-            )
-
-        elif len(spectrum_norm) > target_len:
-
-            self.ui.textEdit.append(
-                f"Предупреждение: спектр содержит {len(spectrum_norm)} каналов. "
-                f"Выполнено обрезание до {target_len} каналов."
-            )
-
-            spectrum_norm = spectrum_norm[:target_len]
-
-        # ------------------------------------------------------------
-        # 9. Проверяем длину эталонов
-        # ------------------------------------------------------------
-        for name, etalon in zip(names, etalons):
-
-            if len(etalon) != target_len:
-
-                self.ui.textEdit.append(
-                    f"Ошибка: эталон '{name}' имеет длину {len(etalon)} "
-                    f"каналов вместо {target_len}"
-                )
-
-                return None
-
-        # ------------------------------------------------------------
-        # 10. Формируем матрицу эталонов из НОРМИРОВАННЫХ спектров
-        # ------------------------------------------------------------
-        # ВАЖНО:
-        # Матрица A строится из нормированных эталонов.
-        A = np.column_stack(etalons_norm)
-
-        # ------------------------------------------------------------
-        # 11. Выполняем взвешенный NNLS на НОРМИРОВАННЫХ данных
-        # ------------------------------------------------------------
-        # Веса:
-        #   weight = 1 / sqrt(spectrum_norm + 1)
-        weights = 1.0 / np.sqrt(spectrum_norm + 1.0)
-
-        A_weighted = A * weights[:, np.newaxis]
-        spectrum_weighted = spectrum_norm * weights
-
-        coefs, residual = nnls(A_weighted, spectrum_weighted)
-
-        # ------------------------------------------------------------
-        # 12. Восстанавливаем спектр в НОРМИРОВАННЫХ значениях
-        # ------------------------------------------------------------
-        reconstructed_norm = A @ coefs
-
-        # ------------------------------------------------------------
-        # 13. Считаем ошибку аппроксимации в нормированных значениях
-        # ------------------------------------------------------------
-        difference = spectrum_norm - reconstructed_norm
-
-        error_sum = np.sum(difference ** 2)
-
-        spectrum_power = np.sum(spectrum_norm ** 2)
-
-        if spectrum_power > 0:
-            relative_error = error_sum / spectrum_power
-        else:
-            relative_error = None
-
-        # ------------------------------------------------------------
-        # 14. Формируем отдельные компоненты спектра
-        # ------------------------------------------------------------
-        # ВАЖНО:
-        # Здесь используем нормированные эталоны.
-        #
-        # component = coefficient * etalon_norm
-        components_norm = {}
-
-        for i, name in enumerate(names):
-            components_norm[name] = coefs[i] * etalons_norm[i]
-
-        # ------------------------------------------------------------
-        # 15. Считаем интегральный вклад каждой компоненты
-        # ------------------------------------------------------------
-        component_sums = {}
-
-        for name in names:
-            component_sums[name] = np.sum(components_norm[name])
-
-        total_component_sum = sum(component_sums.values())
-
-        # ------------------------------------------------------------
-        # 16. Определяем присутствие изотопов
-        # ------------------------------------------------------------
-        presence_threshold = 0.03
-
-        isotope_presence = {}
-
-        for name in isotopes_list:
-
-            if total_component_sum > 0:
-                relative_component_part = component_sums[name] / total_component_sum
-            else:
-                relative_component_part = 0
-
-            isotope_presence[name] = relative_component_part >= presence_threshold
-
-        # ------------------------------------------------------------
-        # 17. Формируем словарь коэффициентов
-        # ------------------------------------------------------------
-        coefficients = {}
-
-        for i, name in enumerate(names):
-            coefficients[name] = coefs[i]
-
-        # ------------------------------------------------------------
-        # 18. ВТОРИЧНОЕ РАЗЛОЖЕНИЕ ОСТАТКА ТОЛЬКО НА ФОН
-        # ------------------------------------------------------------
-        # Цель: проверить, есть ли в остатке фон.
-        # Для этого берём остаток и пытаемся разложить его только на фон.
-        background_found = False
-        background_component = np.zeros(target_len)
-        background_sum = 0.0
-
-        # Проверяем, есть ли эталон фона
-        if "background" in self.calibration_spectra:
-            # Берем нормированный эталон фона (он уже есть в etalons_norm)
-            bg_etalon_norm = None
-            for i, name in enumerate(names):
-                if name == "background":
-                    bg_etalon_norm = etalons_norm[i]
-                    break
-
-            if bg_etalon_norm is not None:
-                # Разлагаем остаток только на фон (одна компонента)
-                A_bg = bg_etalon_norm.reshape(-1, 1)
-
-                # Взвешиваем для остатка
-                residual_spectrum = spectrum_norm - reconstructed_norm
-                weights_bg = 1.0 / np.sqrt(np.abs(residual_spectrum) + 1.0)
-                A_bg_weighted = A_bg * weights_bg[:, np.newaxis]
-                residual_weighted = residual_spectrum * weights_bg
-
-                # Решаем однокомпонентную задачу
-                coef_bg, _ = nnls(A_bg_weighted, residual_weighted)
-
-                # Если коэффициент фона > 0, значит фон обнаружен
-                if coef_bg[0] > 0:
-                    background_found = True
-                    background_component = coef_bg[0] * bg_etalon_norm
-                    background_sum = np.sum(background_component)
-
-        # ------------------------------------------------------------
-        # 19. КОРРЕКТИРОВКА РЕЗУЛЬТАТОВ
-        # ------------------------------------------------------------
-        # В зависимости от того, найден ли фон, корректируем компоненты
-        # и сумму для расчёта долей.
-
-        corrected_components = {}
-        corrected_component_sums = {}
-
-        if background_found:
-            # Фон обнаружен:
-            # - в качестве фона используем найденный из остатка
-            # - изотопы остаются как были (из первого разложения)
-            corrected_components["background"] = background_component
-            corrected_component_sums["background"] = background_sum
-
-            for name in isotopes_list:
-                corrected_components[name] = components_norm.get(name, np.zeros(target_len))
-                corrected_component_sums[name] = np.sum(corrected_components[name])
-
-            # Сумма для расчёта долей: общий спектр минус найденный фон
-            total_for_percents = np.sum(spectrum_norm) - background_sum
-
-            # Статус фона: обнаружен
-            background_status = True
-
-        else:
-            # Фон не обнаружен:
-            # - фон = нулевой спектр
-            # - изотопы остаются как были
-            corrected_components["background"] = np.zeros(target_len)
-            corrected_component_sums["background"] = 0.0
-
-            for name in isotopes_list:
-                corrected_components[name] = components_norm.get(name, np.zeros(target_len))
-                corrected_component_sums[name] = np.sum(corrected_components[name])
-
-            # Сумма для расчёта долей: общий спектр (ничего не вычитаем)
-            total_for_percents = np.sum(spectrum_norm)
-
-            # Статус фона: не обнаружен
-            background_status = False
-
-        # ------------------------------------------------------------
-        # 20. ПЕРЕРАСЧЁТ ДОЛЕЙ ИЗОТОПОВ
-        # ------------------------------------------------------------
-        # Доля изотопа = вклад изотопа / сумма для расчёта долей
-        isotope_percents = {}
-
-        for name in isotopes_list:
-            if total_for_percents > 0:
-                isotope_percents[name] = (corrected_component_sums.get(name, 0) / total_for_percents) * 100.0
-            else:
-                isotope_percents[name] = 0.0
-
-        # ------------------------------------------------------------
-        # 21. ОПРЕДЕЛЕНИЕ ПРИСУТСТВИЯ ИЗОТОПОВ (ПОВТОРНО С УЧЁТОМ КОРРЕКТИРОВКИ)
-        # ------------------------------------------------------------
-        presence_threshold = 0.03
-        isotope_presence = {}
-
-        for name in isotopes_list:
-            if total_for_percents > 0:
-                relative_part = corrected_component_sums.get(name, 0) / total_for_percents
-            else:
-                relative_part = 0
-            isotope_presence[name] = relative_part >= presence_threshold
-
-        # ------------------------------------------------------------
-        # 22. ФОРМИРУЕМ СЛОВАРЬ КОЭФФИЦИЕНТОВ (СКОРРЕКТИРОВАННЫЙ)
-        # ------------------------------------------------------------
-        coefficients = {}
-
-        # Для фона используем скорректированный коэффициент
-        if background_found:
-            coefficients["background"] = 1.0  # условно, т.к. фон теперь отдельно
-        else:
-            coefficients["background"] = 0.0
-
-        # Для изотопов оставляем исходные коэффициенты
-        for i, name in enumerate(names):
-            if name != "background":
-                coefficients[name] = coefs[i]
-
-        # ------------------------------------------------------------
-        # 23. ФОРМИРУЕМ ДОПОЛНИТЕЛЬНУЮ ИНФОРМАЦИЮ ДЛЯ ВЫВОДА
-        # ------------------------------------------------------------
-        # Добавляем в результат:
-        # - доли изотопов в процентах
-        # - статус фона (обнаружен/не обнаружен)
-        # - сумма для расчёта долей (общий спектр минус фон)
-        # - скорректированные компоненты
-        # - нормированный общий спектр
-        # - время набора реального спектра
-
-        result = {
-            "coefficients": coefficients,
-            "components": corrected_components,
-            "component_sums": corrected_component_sums,
-            "isotope_presence": isotope_presence,
-            "isotope_percents": isotope_percents,
-            "background_found": background_found,
-            "total_for_percents": total_for_percents,
-            "reconstructed": reconstructed_norm,
-            "error_sum": error_sum,
-            "relative_error": relative_error,
-            "residual": residual,
-            "spectrum_norm": spectrum_norm,
-            "real_time": real_time
+        sum_k = sum(spectrum)
+        T1 = T - self.DEAD_TIME_COEFF * sum_k
+        if T1 <= 0:
+            T1 = T  # захист від негативного часу
+        arr1 = [k / T1 for k in spectrum]
+        return arr1 
+
+    def _subtract_background(self, arr1):
+        """
+        Віднімання базового фону з нормованого спектру.
+        
+        Вхід:
+            arr1 - list[float] нормований спектр (після _normalize_spectrum)
+        
+        Вихід:
+            arr2 - list[float] спектр з віднятим фоном
+        
+        Алгоритм:
+            Для кожного каналу i: arr2[i] = arr1[i] - background[i]
+        
+        Примітка:
+            Файл фону завантажується з self.calibration_spectra["background"]
+            Якщо фон не завантажено - повертаємо arr1 без змін
+        """
+        bg = self.calibration_spectra.get("background")
+        if bg is None or len(bg) < 1023:
+            # Якщо фону немає - повертаємо без змін
+            return arr1.copy()
+        
+        # Обрізаємо до 1023 каналів (якщо більше)
+        bg = bg[:1023]
+        
+        # Віднімаємо
+        arr2 = [arr1[i] - bg[i] for i in range(1023)]
+        return arr2
+
+
+    def _calculate_window_sum(self, spectrum, start, end):
+        """
+            Обчислення суми значень каналів у заданому вікні.
+            
+            Вхід:
+                spectrum - list[float] спектр
+                start - початковий канал (включно)
+                end - кінцевий канал (включно)
+            
+            Вихід:
+                float - сума значень у вікні
+            
+            Примітка:
+                Канали в спектрі індексуються з 0, але в описі алгоритму - з 1.
+                Тому start і end передаються як в описі (з 1),
+                а в коді використовується зсув на -1.
+        """
+        # Перевірка меж
+        if start < 1:
+            start = 1
+        if end > 1023:
+            end = 1023
+        
+        # Зсув індексу (канал 1 -> індекс 0)
+        idx_start = start - 1
+        idx_end = end - 1  # включно
+        
+        return sum(spectrum[idx_start:idx_end + 1])
+
+
+    def _calculate_limits(self, sum_clean, sum_raw, T, sigma=2):
+        """
+        Розрахунок верхньої та нижньої меж статистичного відхилення.
+            
+            Вхід:
+                sum_clean - сума по вікну з ARR_2 (після віднімання фону)
+                sum_raw - сума по вікну з ARR_1 (до віднімання фону)
+                T - час вимірювання в секундах
+                sigma - коефіцієнт (2 - стандарт, 1 - для Tc в резерві)
+            
+            Вихід:
+                dict { "upper": float, "lower": float }
+            
+            Формула:
+                upper = sum_clean + sigma * sqrt(sum_raw / T)
+                lower = sum_clean - sigma * sqrt(sum_raw / T)
+        """       
+        
+        std = math.sqrt(sum_raw / T) if T > 0 else 0.0
+        delta = sigma * std
+        
+        return {
+            "upper": sum_clean + delta,
+            "lower": sum_clean - delta
         }
 
+
+    def _load_base_spectrum(self, name):
+        """
+        Завантаження базового спектру з self.calibration_spectra.
+        
+        Вхід:
+            name - ім'я файлу без розширення (напр. "base_I")
+        
+        Вихід:
+            list[float] - спектр довжиною 1023 (обрізаний або доповнений)
+            None - якщо спектр не знайдено
+        """
+        spectrum = self.calibration_spectra.get(name)
+        if spectrum is None:
+            return None
+        
+        # Приводимо до 1023 каналів
+        if len(spectrum) >= 1023:
+            return list(spectrum[:1023])
+        else:
+            # Доповнюємо нулями
+            result = list(spectrum)
+            result.extend([0.0] * (1023 - len(result)))
+            return result
+
+    def _calculate_decay_coefficient(self, T, half_life_minutes):
+        """
+        Розрахунок коефіцієнта розпаду за час вимірювання.
+        
+        Вхід:
+            T - час вимірювання в секундах
+            half_life_minutes - період напіврозпаду в хвилинах
+        
+        Вихід:
+            float - коефіцієнт розпаду
+        
+        Формула:
+            K = (1/2) ^ ((T/60) / half_life_minutes)
+        """
+        time_hours = T / 60.0  # хвилини
+        return (0.5) ** (time_hours / half_life_minutes)
+
+    
+    def _get_cistern_volume(self, posit_number):
+        """
+        Повертає об'єм цистерни в літрах за її номером.
+        
+        Вхід:
+            posit_number - int номер цистерни (1..9)
+        
+        Вихід:
+            float - об'єм у літрах
+        
+        Дані:
+            ZB1, ZB2 -> 12020 л
+            ZB3..ZB9 -> 13394 л
+        """
+        if posit_number in (1, 2):
+            return 12020.0
+        elif posit_number in (3, 4, 5, 6, 7, 8, 9):
+            return 13394.0
+        else:
+            # Якщо номер невідомий, повертаємо значення за замовчуванням (13 394 л)
+            # і логуємо попередження
+            self.ui.textEdit.append(f"Увага: невідомий номер цистерни {posit_number}, використано об'єм 13394 л")
+            return 13394.0
+
+
+
+    def _identify_group_A(self, arr1, arr2, real_time, volume, history):
+        """
+        Ідентифікація ізотопів для групи A (цистерни 1, 2).
+        
+        Вхід:
+            arr1 - list[float] нормований спектр (ARR_1) - до віднімання фону
+            arr2 - list[float] спектр після віднімання фону (ARR_2)
+            real_time - float час вимірювання в секундах (T)
+            volume - float об'єм цистерни в літрах
+            history - dict або None, історія попередніх вимірювань для Tc
+                    (очікується словник з ключами: "sum_F_arr1", "sum_F_arr2", "sum_Tc_arr2")
+        
+        Вихід:
+            dict з результатами:
+            {
+                "group": "A",
+                "isotopes": ["18F", "99mTc"],
+                "18F": {
+                    "activity": float,          # загальна активність, Бк
+                    "concentration": float,     # питома активність, Бк/л
+                    "activity_upper": float,    # верхня межа активності, Бк
+                    "activity_lower": float,    # нижня межа активності, Бк
+                    "conc_upper": float,        # верхня межа концентрації, Бк/л
+                    "conc_lower": float,        # нижня межа концентрації, Бк/л
+                    "detected": str,            # "Є" / "МОЖЕ БУТИ" / "НЕМАЄ"
+                    "sum_clean": float,         # сума по ARR_2
+                    "sum_raw": float,           # сума по ARR_1
+                    "limits": {"upper": float, "lower": float}
+                },
+                "99mTc": {
+                    ... аналогічно ...
+                },
+                "real_time": float,
+                "history_updated": dict        # оновлена історія для наступного виклику
+            }
+        """
+        
+        # --- 1. Розрахунок для фтору (18F) ---
+        isotope_F = "18F"
+        window_F = self.GROUP_A_WINDOWS[isotope_F]
+        coeff_F = self.GROUP_A_COEFFICIENTS[isotope_F]
+        sigma_F = self.GROUP_A_SIGMA[isotope_F]
+        
+        sum_F_clean = self._calculate_window_sum(arr2, window_F[0], window_F[1])
+        sum_F_raw = self._calculate_window_sum(arr1, window_F[0], window_F[1])
+        
+        limits_F = self._calculate_limits(sum_F_clean, sum_F_raw, real_time, sigma_F)
+        
+        conc_F = sum_F_clean * coeff_F
+        activity_F = conc_F * volume
+        
+        conc_F_upper = limits_F["upper"] * coeff_F
+        conc_F_lower = limits_F["lower"] * coeff_F
+        activity_F_upper = conc_F_upper * volume
+        activity_F_lower = conc_F_lower * volume
+        
+        if limits_F["upper"] > 0 and limits_F["lower"] > 0:
+            detected_F = "Є"
+        elif limits_F["upper"] > 0 and limits_F["lower"] <= 0:
+            detected_F = "МОЖЕ БУТИ"
+        else:
+            detected_F = "НЕМАЄ"
+        
+        # --- 2. Розрахунок для технецію (99mTc) ---
+        isotope_Tc = "99mTc"
+        window_Tc = self.GROUP_A_WINDOWS[isotope_Tc]
+        coeff_Tc = self.GROUP_A_COEFFICIENTS[isotope_Tc]
+        sigma_Tc = self.GROUP_A_SIGMA[isotope_Tc]
+        
+        sum_Tc_clean_current = self._calculate_window_sum(arr2, window_Tc[0], window_Tc[1])
+        sum_Tc_raw_current = self._calculate_window_sum(arr1, window_Tc[0], window_Tc[1])
+        
+        if history is None or not history:
+            # Перша година
+            sum_Tc_clean = sum_Tc_clean_current
+            sum_Tc_raw = sum_Tc_raw_current
+            
+            history_updated = {
+                "sum_F_arr1": sum_F_raw,
+                "sum_F_arr2": sum_F_clean,
+                "sum_Tc_arr2": sum_Tc_clean_current,
+                "sum_Tc_arr1": sum_Tc_raw_current,
+                "hour": 1
+            }
+        else:
+            # Наступні години
+            K_F = self._calculate_decay_coefficient(real_time, self.GROUP_A_HALF_LIFE[isotope_F])
+            K_Tc = self._calculate_decay_coefficient(real_time, self.GROUP_A_HALF_LIFE[isotope_Tc])
+            
+            prev_sum_Tc_arr2 = history["sum_Tc_arr2"]
+            
+            denom = K_Tc - K_F
+            if abs(denom) < 1e-12:
+                sum_Tc_clean = sum_Tc_clean_current
+                sum_Tc_raw = sum_Tc_raw_current
+            else:
+                sum_Tc_clean = (sum_Tc_clean_current - K_F * prev_sum_Tc_arr2) / denom
+                sum_Tc_raw = sum_Tc_raw_current
+            
+            # Перевірка умови переходу до прямих площ
+            if sum_Tc_clean_current > 0 and (sum_Tc_clean / sum_Tc_clean_current) < self.GROUP_A_TC_THRESHOLD:
+                sum_Tc_clean = sum_Tc_clean_current
+                sum_Tc_raw = sum_Tc_raw_current
+            
+            history_updated = {
+                "sum_F_arr1": sum_F_raw,
+                "sum_F_arr2": sum_F_clean,
+                "sum_Tc_arr2": sum_Tc_clean_current,
+                "sum_Tc_arr1": sum_Tc_raw_current,
+                "hour": history.get("hour", 0) + 1
+            }
+        
+        limits_Tc = self._calculate_limits(sum_Tc_clean, sum_Tc_raw, real_time, sigma_Tc)
+        
+        conc_Tc = sum_Tc_clean * coeff_Tc
+        activity_Tc = conc_Tc * volume
+        
+        conc_Tc_upper = limits_Tc["upper"] * coeff_Tc
+        conc_Tc_lower = limits_Tc["lower"] * coeff_Tc
+        activity_Tc_upper = conc_Tc_upper * volume
+        activity_Tc_lower = conc_Tc_lower * volume
+        
+        if limits_Tc["upper"] > 0 and limits_Tc["lower"] > 0:
+            detected_Tc = "Є"
+        elif limits_Tc["upper"] > 0 and limits_Tc["lower"] <= 0:
+            detected_Tc = "МОЖЕ БУТИ"
+        else:
+            detected_Tc = "НЕМАЄ"
+        
+        # --- Результат ---
+        result = {
+            "group": "A",
+            "isotopes": ["18F", "99mTc"],
+            "18F": {
+                "activity": activity_F,
+                "concentration": conc_F,
+                "activity_upper": activity_F_upper,
+                "activity_lower": activity_F_lower,
+                "conc_upper": conc_F_upper,
+                "conc_lower": conc_F_lower,
+                "detected": detected_F,
+                "sum_clean": sum_F_clean,
+                "sum_raw": sum_F_raw,
+                "limits": limits_F
+            },
+            "99mTc": {
+                "activity": activity_Tc,
+                "concentration": conc_Tc,
+                "activity_upper": activity_Tc_upper,
+                "activity_lower": activity_Tc_lower,
+                "conc_upper": conc_Tc_upper,
+                "conc_lower": conc_Tc_lower,
+                "detected": detected_Tc,
+                "sum_clean": sum_Tc_clean,
+                "sum_raw": sum_Tc_raw,
+                "limits": limits_Tc,
+                "delay_hours": 1
+            },
+            "real_time": real_time,
+            "history_updated": history_updated
+        }
+        
         return result
+
+
+    def _identify_group_B(self, arr1, arr2, real_time, volume):
+        """
+        Ідентифікація ізотопів для групи B (цистерни 4–9).
+        Ізотопи: 133I, 177Lu, 90Y.
+        Порядок розрахунку: 90Y → 133I (з базовим спектром) → 177Lu.
+        
+        Вхід:
+            arr1 - list[float] нормований спектр (ARR_1) - до віднімання фону
+            arr2 - list[float] спектр після віднімання фону (ARR_2)
+            real_time - float час вимірювання в секундах (T)
+            volume - float об'єм цистерни в літрах
+        
+        Вихід:
+            dict з результатами:
+            {
+                "group": "B",
+                "isotopes": ["133I", "177Lu", "90Y"],
+                "133I": {
+                    "activity": float,
+                    "concentration": float,
+                    "activity_upper": float,
+                    "activity_lower": float,
+                    "conc_upper": float,
+                    "conc_lower": float,
+                    "detected": str,           # "Є" / "МОЖЕ БУТИ" / "НЕМАЄ"
+                    "sum_clean": float,
+                    "sum_raw": float,
+                    "limits": {"upper": float, "lower": float}
+                },
+                "177Lu": { ... аналогічно ... },
+                "90Y": { ... аналогічно ... },
+                "real_time": float
+            }
+        """
+        
+        # --- 1. Розрахунок для ітрію (90Y) ---
+        isotope_Y = "90Y"
+        window_Y = self.GROUP_B_WINDOWS[isotope_Y]
+        coeff_Y = self.GROUP_B_COEFFICIENTS[isotope_Y]
+        sigma_Y = self.GROUP_B_SIGMA[isotope_Y]
+        
+        sum_Y_clean = self._calculate_window_sum(arr2, window_Y[0], window_Y[1])
+        sum_Y_raw = self._calculate_window_sum(arr1, window_Y[0], window_Y[1])
+        
+        limits_Y = self._calculate_limits(sum_Y_clean, sum_Y_raw, real_time, sigma_Y)
+        
+        conc_Y = sum_Y_clean * coeff_Y
+        activity_Y = conc_Y * volume
+        
+        conc_Y_upper = limits_Y["upper"] * coeff_Y
+        conc_Y_lower = limits_Y["lower"] * coeff_Y
+        activity_Y_upper = conc_Y_upper * volume
+        activity_Y_lower = conc_Y_lower * volume
+        
+        if limits_Y["upper"] > 0 and limits_Y["lower"] > 0:
+            detected_Y = "Є"
+        elif limits_Y["upper"] > 0 and limits_Y["lower"] <= 0:
+            detected_Y = "МОЖЕ БУТИ"
+        else:
+            detected_Y = "НЕМАЄ"
+        
+        # --- 2. Розрахунок для йоду (133I) з використанням базового спектру ---
+        isotope_I = "133I"
+        window_I = self.GROUP_B_WINDOWS[isotope_I]
+        coeff_I = self.GROUP_B_COEFFICIENTS[isotope_I]
+        sigma_I = self.GROUP_B_SIGMA[isotope_I]
+        
+        # Завантажуємо базовий спектр йоду (очікується файл "base_I" в self.calibration_spectra)
+        base_spectrum = self._load_base_spectrum("base_I")
+        if base_spectrum is None:
+            # Якщо базовий спектр відсутній, використовуємо пряму площу без масштабування
+            sum_I_clean = self._calculate_window_sum(arr2, window_I[0], window_I[1])
+            sum_I_raw = self._calculate_window_sum(arr1, window_I[0], window_I[1])
+            limits_I = self._calculate_limits(sum_I_clean, sum_I_raw, real_time, sigma_I)
+            arr3 = None
+        else:
+            # Обчислюємо площу базового спектру у вікні I
+            sum_base_I = self._calculate_window_sum(base_spectrum, window_I[0], window_I[1])
+            if sum_base_I <= 0:
+                # Якщо базова площа нульова — масштабування неможливе
+                sum_I_clean = self._calculate_window_sum(arr2, window_I[0], window_I[1])
+                sum_I_raw = self._calculate_window_sum(arr1, window_I[0], window_I[1])
+                limits_I = self._calculate_limits(sum_I_clean, sum_I_raw, real_time, sigma_I)
+                arr3 = None
+            else:
+                # Коефіцієнт масштабування: (площа I з ARR_2) / (площа базового I)
+                sum_I_clean = self._calculate_window_sum(arr2, window_I[0], window_I[1])
+                scale = sum_I_clean / sum_base_I
+                
+                # Масштабуємо базовий спектр (ARR_3 = base * scale)
+                arr3 = [val * scale for val in base_spectrum]
+                
+                # Площа I з масштабованого базового спектру (ARR_3)
+                sum_I_clean = self._calculate_window_sum(arr3, window_I[0], window_I[1])
+                sum_I_raw = self._calculate_window_sum(arr1, window_I[0], window_I[1])
+                
+                limits_I = self._calculate_limits(sum_I_clean, sum_I_raw, real_time, sigma_I)
+        
+        conc_I = sum_I_clean * coeff_I
+        activity_I = conc_I * volume
+        
+        conc_I_upper = limits_I["upper"] * coeff_I
+        conc_I_lower = limits_I["lower"] * coeff_I
+        activity_I_upper = conc_I_upper * volume
+        activity_I_lower = conc_I_lower * volume
+        
+        if limits_I["upper"] > 0 and limits_I["lower"] > 0:
+            detected_I = "Є"
+        elif limits_I["upper"] > 0 and limits_I["lower"] <= 0:
+            detected_I = "МОЖЕ БУТИ"
+        else:
+            detected_I = "НЕМАЄ"
+        
+        # --- 3. Розрахунок для лютецію (177Lu) після віднімання масштабованого йоду ---
+        isotope_Lu = "177Lu"
+        window_Lu = self.GROUP_B_WINDOWS[isotope_Lu]
+        coeff_Lu = self.GROUP_B_COEFFICIENTS[isotope_Lu]
+        sigma_Lu = self.GROUP_B_SIGMA[isotope_Lu]
+        
+        # Формуємо спектр ARR_4 = ARR_2 - ARR_3 (якщо arr3 існує)
+        if arr3 is not None:
+            arr4 = [arr2[i] - arr3[i] for i in range(len(arr2))]
+        else:
+            arr4 = arr2  # якщо масштабованого йоду немає, використовуємо ARR_2 без змін
+        
+        sum_Lu_clean = self._calculate_window_sum(arr4, window_Lu[0], window_Lu[1])
+        sum_Lu_raw = self._calculate_window_sum(arr1, window_Lu[0], window_Lu[1])
+        
+        limits_Lu = self._calculate_limits(sum_Lu_clean, sum_Lu_raw, real_time, sigma_Lu)
+        
+        conc_Lu = sum_Lu_clean * coeff_Lu
+        activity_Lu = conc_Lu * volume
+        
+        conc_Lu_upper = limits_Lu["upper"] * coeff_Lu
+        conc_Lu_lower = limits_Lu["lower"] * coeff_Lu
+        activity_Lu_upper = conc_Lu_upper * volume
+        activity_Lu_lower = conc_Lu_lower * volume
+        
+        if limits_Lu["upper"] > 0 and limits_Lu["lower"] > 0:
+            detected_Lu = "Є"
+        elif limits_Lu["upper"] > 0 and limits_Lu["lower"] <= 0:
+            detected_Lu = "МОЖЕ БУТИ"
+        else:
+            detected_Lu = "НЕМАЄ"
+        
+        # --- Результат ---
+        result = {
+            "group": "B",
+            "isotopes": ["133I", "177Lu", "90Y"],
+            "133I": {
+                "activity": activity_I,
+                "concentration": conc_I,
+                "activity_upper": activity_I_upper,
+                "activity_lower": activity_I_lower,
+                "conc_upper": conc_I_upper,
+                "conc_lower": conc_I_lower,
+                "detected": detected_I,
+                "sum_clean": sum_I_clean,
+                "sum_raw": sum_I_raw,
+                "limits": limits_I
+            },
+            "177Lu": {
+                "activity": activity_Lu,
+                "concentration": conc_Lu,
+                "activity_upper": activity_Lu_upper,
+                "activity_lower": activity_Lu_lower,
+                "conc_upper": conc_Lu_upper,
+                "conc_lower": conc_Lu_lower,
+                "detected": detected_Lu,
+                "sum_clean": sum_Lu_clean,
+                "sum_raw": sum_Lu_raw,
+                "limits": limits_Lu
+            },
+            "90Y": {
+                "activity": activity_Y,
+                "concentration": conc_Y,
+                "activity_upper": activity_Y_upper,
+                "activity_lower": activity_Y_lower,
+                "conc_upper": conc_Y_upper,
+                "conc_lower": conc_Y_lower,
+                "detected": detected_Y,
+                "sum_clean": sum_Y_clean,
+                "sum_raw": sum_Y_raw,
+                "limits": limits_Y
+            },
+            "real_time": real_time
+        }
+        
+        return result
+
+    def _identify_group_reserve(self, arr1, arr2, real_time, volume, history):
+        """
+        Ідентифікація ізотопів для резервної цистерни (цистерна 3).
+        Усі 5 ізотопів: 18F, 99mTc, 133I, 177Lu, 90Y.
+        
+        Порядок розрахунку:
+            1. 90Y (371–820)
+            2. 133I (базове окно 115–150 для масштабування, фінальне 90–150)
+            3. Віднімання масштабованого I
+            4. 177Lu (63–89)
+            5. 18F (161–204)
+            6. 99mTc (12–64, 1 сигма, динаміка з затримкою 6 годин)
+        
+        Вхід:
+            arr1 - list[float] нормований спектр (ARR_1) - до віднімання фону
+            arr2 - list[float] спектр після віднімання фону (ARR_2)
+            real_time - float час вимірювання в секундах (T)
+            volume - float об'єм цистерни в літрах
+            history - dict або None, історія для Tc:
+                {
+                    "hours": [sum_Tc_clean, ...],  # список площ Tc по годинах
+                    "hour_index": int,              # поточна година (1..n)
+                    "extrapolation_started": bool,  # чи вже перейшли до екстраполяції
+                    "last_upper": float,            # останнє значення верхньої межі для екстраполяції
+                    "last_lower": float             # останнє значення нижньої межі для екстраполяції
+                }
+        
+        Вихід:
+            dict з результатами для всіх 5 ізотопів +
+            "history_updated" для Tc
+        """
+        
+        # --- 1. Розрахунок для ітрію (90Y) ---
+        isotope_Y = "90Y"
+        window_Y = self.GROUP_RESERVE_WINDOWS[isotope_Y]
+        coeff_Y = self.GROUP_RESERVE_COEFFICIENTS[isotope_Y]
+        sigma_Y = self.GROUP_RESERVE_SIGMA[isotope_Y]
+        
+        sum_Y_clean = self._calculate_window_sum(arr2, window_Y[0], window_Y[1])
+        sum_Y_raw = self._calculate_window_sum(arr1, window_Y[0], window_Y[1])
+        limits_Y = self._calculate_limits(sum_Y_clean, sum_Y_raw, real_time, sigma_Y)
+        
+        conc_Y = sum_Y_clean * coeff_Y
+        activity_Y = conc_Y * volume
+        conc_Y_upper = limits_Y["upper"] * coeff_Y
+        conc_Y_lower = limits_Y["lower"] * coeff_Y
+        activity_Y_upper = conc_Y_upper * volume
+        activity_Y_lower = conc_Y_lower * volume
+        
+        if limits_Y["upper"] > 0 and limits_Y["lower"] > 0:
+            detected_Y = "Є"
+        elif limits_Y["upper"] > 0 and limits_Y["lower"] <= 0:
+            detected_Y = "МОЖЕ БУТИ"
+        else:
+            detected_Y = "НЕМАЄ"
+        
+        # --- 2. Розрахунок для йоду (133I) з базовим спектром ---
+        isotope_I = "133I"
+        window_I = self.GROUP_RESERVE_WINDOWS[isotope_I]           # фінальне окно (90–150)
+        base_window_I = self.GROUP_RESERVE_BASE_I_WINDOW           # окно для масштабування (115–150)
+        coeff_I = self.GROUP_RESERVE_COEFFICIENTS[isotope_I]
+        sigma_I = self.GROUP_RESERVE_SIGMA[isotope_I]
+        
+        # Завантажуємо базовий спектр йоду
+        base_spectrum = self._load_base_spectrum("base_I")
+        if base_spectrum is None:
+            # Якщо базового спектра немає — використовуємо пряму площу
+            sum_I_clean = self._calculate_window_sum(arr2, window_I[0], window_I[1])
+            sum_I_raw = self._calculate_window_sum(arr1, window_I[0], window_I[1])
+            limits_I = self._calculate_limits(sum_I_clean, sum_I_raw, real_time, sigma_I)
+            arr3 = None
+        else:
+            # Площа I з ARR_2 у базовому вікні (115–150)
+            sum_I_arr2_base = self._calculate_window_sum(arr2, base_window_I[0], base_window_I[1])
+            # Площа базового спектра у базовому вікні (115–150)
+            sum_base_I = self._calculate_window_sum(base_spectrum, base_window_I[0], base_window_I[1])
+            
+            if sum_base_I <= 0:
+                sum_I_clean = self._calculate_window_sum(arr2, window_I[0], window_I[1])
+                sum_I_raw = self._calculate_window_sum(arr1, window_I[0], window_I[1])
+                limits_I = self._calculate_limits(sum_I_clean, sum_I_raw, real_time, sigma_I)
+                arr3 = None
+            else:
+                scale = sum_I_arr2_base / sum_base_I
+                arr3 = [val * scale for val in base_spectrum]
+                sum_I_clean = self._calculate_window_sum(arr3, window_I[0], window_I[1])
+                sum_I_raw = self._calculate_window_sum(arr1, window_I[0], window_I[1])
+                limits_I = self._calculate_limits(sum_I_clean, sum_I_raw, real_time, sigma_I)
+        
+        conc_I = sum_I_clean * coeff_I
+        activity_I = conc_I * volume
+        conc_I_upper = limits_I["upper"] * coeff_I
+        conc_I_lower = limits_I["lower"] * coeff_I
+        activity_I_upper = conc_I_upper * volume
+        activity_I_lower = conc_I_lower * volume
+        
+        if limits_I["upper"] > 0 and limits_I["lower"] > 0:
+            detected_I = "Є"
+        elif limits_I["upper"] > 0 and limits_I["lower"] <= 0:
+            detected_I = "МОЖЕ БУТИ"
+        else:
+            detected_I = "НЕМАЄ"
+        
+        # --- 3. Віднімання масштабованого йоду (ARR_4 = ARR_2 - ARR_3) ---
+        if arr3 is not None:
+            arr4 = [arr2[i] - arr3[i] for i in range(len(arr2))]
+        else:
+            arr4 = arr2
+        
+        # --- 4. Розрахунок для лютецію (177Lu) ---
+        isotope_Lu = "177Lu"
+        window_Lu = self.GROUP_RESERVE_WINDOWS[isotope_Lu]
+        coeff_Lu = self.GROUP_RESERVE_COEFFICIENTS[isotope_Lu]
+        sigma_Lu = self.GROUP_RESERVE_SIGMA[isotope_Lu]
+        
+        sum_Lu_clean = self._calculate_window_sum(arr4, window_Lu[0], window_Lu[1])
+        sum_Lu_raw = self._calculate_window_sum(arr1, window_Lu[0], window_Lu[1])
+        limits_Lu = self._calculate_limits(sum_Lu_clean, sum_Lu_raw, real_time, sigma_Lu)
+        
+        conc_Lu = sum_Lu_clean * coeff_Lu
+        activity_Lu = conc_Lu * volume
+        conc_Lu_upper = limits_Lu["upper"] * coeff_Lu
+        conc_Lu_lower = limits_Lu["lower"] * coeff_Lu
+        activity_Lu_upper = conc_Lu_upper * volume
+        activity_Lu_lower = conc_Lu_lower * volume
+        
+        if limits_Lu["upper"] > 0 and limits_Lu["lower"] > 0:
+            detected_Lu = "Є"
+        elif limits_Lu["upper"] > 0 and limits_Lu["lower"] <= 0:
+            detected_Lu = "МОЖЕ БУТИ"
+        else:
+            detected_Lu = "НЕМАЄ"
+        
+        # --- 5. Розрахунок для фтору (18F) ---
+        isotope_F = "18F"
+        window_F = self.GROUP_RESERVE_WINDOWS[isotope_F]
+        coeff_F = self.GROUP_RESERVE_COEFFICIENTS[isotope_F]
+        sigma_F = self.GROUP_RESERVE_SIGMA[isotope_F]
+        
+        sum_F_clean = self._calculate_window_sum(arr4, window_F[0], window_F[1])
+        sum_F_raw = self._calculate_window_sum(arr1, window_F[0], window_F[1])
+        limits_F = self._calculate_limits(sum_F_clean, sum_F_raw, real_time, sigma_F)
+        
+        conc_F = sum_F_clean * coeff_F
+        activity_F = conc_F * volume
+        conc_F_upper = limits_F["upper"] * coeff_F
+        conc_F_lower = limits_F["lower"] * coeff_F
+        activity_F_upper = conc_F_upper * volume
+        activity_F_lower = conc_F_lower * volume
+        
+        if limits_F["upper"] > 0 and limits_F["lower"] > 0:
+            detected_F = "Є"
+        elif limits_F["upper"] > 0 and limits_F["lower"] <= 0:
+            detected_F = "МОЖЕ БУТИ"
+        else:
+            detected_F = "НЕМАЄ"
+        
+        # --- 6. Розрахунок для технецію (99mTc) з динамікою ---
+        isotope_Tc = "99mTc"
+        window_Tc = self.GROUP_RESERVE_WINDOWS[isotope_Tc]
+        coeff_Tc = self.GROUP_RESERVE_COEFFICIENTS[isotope_Tc]
+        sigma_Tc = self.GROUP_RESERVE_SIGMA[isotope_Tc]  # 1 сигма
+        
+        sum_Tc_clean_current = self._calculate_window_sum(arr4, window_Tc[0], window_Tc[1])
+        sum_Tc_raw_current = self._calculate_window_sum(arr1, window_Tc[0], window_Tc[1])
+        
+        # Ініціалізація історії
+        if history is None:
+            history = {
+                "hours": [],
+                "hour_index": 0,
+                "extrapolation_started": False,
+                "last_upper": 0.0,
+                "last_lower": 0.0
+            }
+        
+        # Поточна година (1-based)
+        current_hour = history.get("hour_index", 0) + 1
+        history["hour_index"] = current_hour
+        
+        # --- Обробка Tc ---
+        if current_hour <= 6:
+            # Години 1–6: просто накопичуємо площі
+            history["hours"].append(sum_Tc_clean_current)
+            
+            # Поки що використовуємо пряму площу
+            sum_Tc_clean = sum_Tc_clean_current
+            sum_Tc_raw = sum_Tc_raw_current
+            limits_Tc = self._calculate_limits(sum_Tc_clean, sum_Tc_raw, real_time, sigma_Tc)
+            
+            detected_Tc = "НЕМАЄ"  # ідентифікація поки не виконується
+            delay_hours = 0
+            history_updated = history
+            
+        elif current_hour == 7:
+            # 7-ма година: перехід до динаміки
+            # Беремо площу з 1-ї години
+            if len(history["hours"]) >= 1:
+                sum_Tc_1st = history["hours"][0]
+            else:
+                sum_Tc_1st = sum_Tc_clean_current
+            
+            # Обчислюємо відношення
+            ratio = sum_Tc_1st / sum_Tc_clean_current if sum_Tc_clean_current > 0 else float('inf')
+            
+            # Коефіцієнти розпаду за 6 годин
+            K_Tc = self._calculate_decay_coefficient(real_time * 6, self.GROUP_A_HALF_LIFE[isotope_Tc])
+            K_Lu = self._calculate_decay_coefficient(real_time * 6, 9570.0)  # період Lu
+            K_F = self._calculate_decay_coefficient(real_time * 6, self.GROUP_A_HALF_LIFE[isotope_F])
+            
+            if ratio < 1.5:
+                # Варіант C: одразу екстраполяція
+                # Беремо межі з поточної площі (1 сигма)
+                limits_Tc = self._calculate_limits(sum_Tc_clean_current, sum_Tc_raw_current, real_time, sigma_Tc)
+                last_upper = limits_Tc["upper"]
+                last_lower = limits_Tc["lower"]
+                
+                history["extrapolation_started"] = True
+                history["last_upper"] = last_upper
+                history["last_lower"] = last_lower
+                
+                sum_Tc_clean = sum_Tc_clean_current
+                sum_Tc_raw = sum_Tc_raw_current
+                delay_hours = 0
+                
+            elif ratio <= 2:
+                # Варіант A: Tc + Lu
+                upper = (limits_Tc["lower"] - K_Lu * limits_Y["upper"]) / (K_Tc - K_Lu)
+                lower = (limits_Tc["upper"] - K_Lu * limits_Y["lower"]) / (K_Tc - K_Lu)
+                
+                limits_Tc = {"upper": upper, "lower": lower}
+                sum_Tc_clean = (sum_Tc_clean_current - K_Lu * sum_Y_clean) / (K_Tc - K_Lu)
+                sum_Tc_raw = sum_Tc_raw_current
+                
+                # Встановлюємо межі для екстраполяції
+                history["last_upper"] = upper
+                history["last_lower"] = lower
+                delay_hours = 6
+                
+            else:
+                # Варіант B: Tc + F
+                upper = (limits_Tc["lower"] - K_F * limits_F["upper"]) / (K_Tc - K_F)
+                lower = (limits_Tc["upper"] - K_F * limits_F["lower"]) / (K_Tc - K_F)
+                
+                limits_Tc = {"upper": upper, "lower": lower}
+                sum_Tc_clean = (sum_Tc_clean_current - K_F * sum_F_clean) / (K_Tc - K_F)
+                sum_Tc_raw = sum_Tc_raw_current
+                
+                history["last_upper"] = upper
+                history["last_lower"] = lower
+                delay_hours = 6
+            
+            # Ідентифікація Tc
+            if limits_Tc["upper"] > 0 and limits_Tc["lower"] > 0:
+                detected_Tc = "Є"
+            elif limits_Tc["upper"] > 0 and limits_Tc["lower"] <= 0:
+                detected_Tc = "МОЖЕ БУТИ"
+            else:
+                detected_Tc = "НЕМАЄ"
+            
+            history_updated = history
+            
+        else:
+            # Години 8+: екстраполяція
+            if history.get("extrapolation_started", False) or current_hour > 7:
+                history["extrapolation_started"] = True
+                # Множимо попередні значення на коефіцієнт 0.890899
+                last_upper = history.get("last_upper", 0.0)
+                last_lower = history.get("last_lower", 0.0)
+                
+                new_upper = last_upper * self.GROUP_RESERVE_TC_EXTRAPOLATION_COEFF
+                new_lower = last_lower * self.GROUP_RESERVE_TC_EXTRAPOLATION_COEFF
+                
+                history["last_upper"] = new_upper
+                history["last_lower"] = new_lower
+                
+                limits_Tc = {"upper": new_upper, "lower": new_lower}
+                
+                # Для активності використовуємо екстрапольовані межі
+                sum_Tc_clean = (new_upper + new_lower) / 2  # середнє
+                sum_Tc_raw = sum_Tc_raw_current
+                
+                if limits_Tc["upper"] > 0 and limits_Tc["lower"] > 0:
+                    detected_Tc = "Є"
+                elif limits_Tc["upper"] > 0 and limits_Tc["lower"] <= 0:
+                    detected_Tc = "МОЖЕ БУТИ"
+                else:
+                    detected_Tc = "НЕМАЄ"
+                
+                delay_hours = 6
+                history_updated = history
+            else:
+                # Запасний варіант
+                sum_Tc_clean = sum_Tc_clean_current
+                sum_Tc_raw = sum_Tc_raw_current
+                limits_Tc = self._calculate_limits(sum_Tc_clean, sum_Tc_raw, real_time, sigma_Tc)
+                detected_Tc = "НЕМАЄ"
+                delay_hours = 0
+                history_updated = history
+        
+        # Розрахунок активності Tc
+        conc_Tc = sum_Tc_clean * coeff_Tc
+        activity_Tc = conc_Tc * volume
+        conc_Tc_upper = limits_Tc["upper"] * coeff_Tc
+        conc_Tc_lower = limits_Tc["lower"] * coeff_Tc
+        activity_Tc_upper = conc_Tc_upper * volume
+        activity_Tc_lower = conc_Tc_lower * volume
+        
+        # --- Результат ---
+        result = {
+            "group": "reserve",
+            "isotopes": ["18F", "99mTc", "133I", "177Lu", "90Y"],
+            "18F": {
+                "activity": activity_F,
+                "concentration": conc_F,
+                "activity_upper": activity_F_upper,
+                "activity_lower": activity_F_lower,
+                "conc_upper": conc_F_upper,
+                "conc_lower": conc_F_lower,
+                "detected": detected_F,
+                "sum_clean": sum_F_clean,
+                "sum_raw": sum_F_raw,
+                "limits": limits_F
+            },
+            "99mTc": {
+                "activity": activity_Tc,
+                "concentration": conc_Tc,
+                "activity_upper": activity_Tc_upper,
+                "activity_lower": activity_Tc_lower,
+                "conc_upper": conc_Tc_upper,
+                "conc_lower": conc_Tc_lower,
+                "detected": detected_Tc,
+                "sum_clean": sum_Tc_clean,
+                "sum_raw": sum_Tc_raw,
+                "limits": limits_Tc,
+                "delay_hours": delay_hours
+            },
+            "133I": {
+                "activity": activity_I,
+                "concentration": conc_I,
+                "activity_upper": activity_I_upper,
+                "activity_lower": activity_I_lower,
+                "conc_upper": conc_I_upper,
+                "conc_lower": conc_I_lower,
+                "detected": detected_I,
+                "sum_clean": sum_I_clean,
+                "sum_raw": sum_I_raw,
+                "limits": limits_I
+            },
+            "177Lu": {
+                "activity": activity_Lu,
+                "concentration": conc_Lu,
+                "activity_upper": activity_Lu_upper,
+                "activity_lower": activity_Lu_lower,
+                "conc_upper": conc_Lu_upper,
+                "conc_lower": conc_Lu_lower,
+                "detected": detected_Lu,
+                "sum_clean": sum_Lu_clean,
+                "sum_raw": sum_Lu_raw,
+                "limits": limits_Lu
+            },
+            "90Y": {
+                "activity": activity_Y,
+                "concentration": conc_Y,
+                "activity_upper": activity_Y_upper,
+                "activity_lower": activity_Y_lower,
+                "conc_upper": conc_Y_upper,
+                "conc_lower": conc_Y_lower,
+                "detected": detected_Y,
+                "sum_clean": sum_Y_clean,
+                "sum_raw": sum_Y_raw,
+                "limits": limits_Y
+            },
+            "real_time": real_time,
+            "history_updated": history_updated
+        }
+        
+        return result
+
+   
+
+   
+
+    def identify_isotopes_alim(self, spectrum, cistern_position, history=None):
+        """
+        Головний метод ідентифікації ізотопів (ALIM).
+        
+        Вхід:
+            spectrum - list[float] масив 1024 елементів (1023 спектра + час набора в кінці)
+            cistern_position - int номер цистерни
+            history - dict або None, історія для груп A та reserve
+        
+        Вихід:
+            (result, updated_history) - кортеж:
+                result - dict з результатами (структура залежить від групи)
+                updated_history - dict оновлена історія для наступного виклику
+        """
+        # ------------------------------------------------------------
+        # 1. Витягуємо час набора та спектр
+        # ------------------------------------------------------------
+        real_time = spectrum[-1] if len(spectrum) > 0 else 3600.0
+        if real_time <= 0:
+            real_time = 3600.0
+        
+        # Відокремлюємо спектр (1023 канали)
+        raw_spectrum = spectrum[:1023]
+        
+        # ------------------------------------------------------------
+        # 2. Нормалізація спектру (ARR_1)
+        # ------------------------------------------------------------
+        arr1 = self._normalize_spectrum(raw_spectrum, real_time)
+        
+        # ------------------------------------------------------------
+        # 3. Віднімання фону (ARR_2)
+        # ------------------------------------------------------------
+        arr2 = self._subtract_background(arr1)
+        
+        # ------------------------------------------------------------
+        # 4. Визначаємо групу та отримуємо об'єм
+        # ------------------------------------------------------------
+        group = self.cistern_groups.get(cistern_position, "A")
+        volume = self._get_cistern_volume(cistern_position)
+        
+        # ------------------------------------------------------------
+        # 5. Виклик відповідного алгоритму
+        # ------------------------------------------------------------
+        if group == "A":
+            result = self._identify_group_A(arr1, arr2, real_time, volume, history)
+            updated_history = result.pop("history_updated", {})
+        elif group == "B":
+            result = self._identify_group_B(arr1, arr2, real_time, volume)
+            updated_history = {}  # для групи B історія не потрібна
+        elif group == "reserve":
+            result = self._identify_group_reserve(arr1, arr2, real_time, volume, history)
+            updated_history = result.pop("history_updated", {})
+        else:
+            # Невідома група — повертаємо порожній результат
+            result = {
+                "group": "unknown",
+                "isotopes": [],
+                "real_time": real_time
+            }
+            updated_history = {}
+        
+        # ------------------------------------------------------------
+        # 6. Повертаємо результат та оновлену історію
+        # ------------------------------------------------------------
+        return result, updated_history
+    
   
 
 def main():

@@ -1,0 +1,253 @@
+2026-09-08 11:36:12 [SYSTEM] Starting ModBusBridgeService
+2026-09-08 11:36:12 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-09-08 11:36:12 [LOG] Attempting to connect to PLC...
+2026-09-08 11:36:12 Server is running on port 12345
+2026-09-08 11:36:12 [SYSTEM] Starting event loop
+2026-09-08 11:36:16 [ERROR] Socket error: Connection refused
+2026-09-08 11:36:16 [LOG] Socket error: Connection refused
+2026-09-08 11:36:16 [LOG] PLC reconnect will be attempted every 3000 ms
+2026-09-08 11:36:17 [SYSTEM] Starting ModBusBridgeService
+2026-09-08 11:36:17 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-09-08 11:36:17 [LOG] Attempting to connect to PLC...
+2026-09-08 11:36:17 Failed to start server on port 12345: The bound address is already in use
+2026-09-08 11:36:17 [SYSTEM] Failed to start local server
+2026-09-08 11:36:17 [SYSTEM] Starting event loop
+2026-09-08 11:36:19 [LOG] Trying to reconnect to PLC...
+2026-09-08 11:36:21 [ERROR] Socket error: Connection refused
+2026-09-08 11:36:21 [LOG] Socket error: Connection refused
+2026-09-08 11:36:21 [LOG] PLC reconnect will be attempted every 3000 ms
+2026-09-08 11:36:23 [ERROR] Socket error: Connection refused
+2026-09-08 11:36:23 [LOG] Socket error: Connection refused
+2026-09-08 11:36:24 [LOG] Trying to reconnect to PLC...
+2026-09-08 11:36:24 [LOG] Disconnected from PLC
+2026-09-08 11:36:24 [SYSTEM] Application stopped
+2026-09-08 11:36:25 [LOG] Trying to reconnect to PLC...
+2026-09-08 11:36:26 [LOG] Disconnected from PLC
+2026-09-08 11:36:26 Server stopped
+2026-09-08 11:36:26 [SYSTEM] Application stopped
+2026-09-08 11:36:31 [SYSTEM] Starting ModBusBridgeService
+2026-09-08 11:36:31 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-09-08 11:36:31 [LOG] Attempting to connect to PLC...
+2026-09-08 11:36:31 Server is running on port 12345
+2026-09-08 11:36:31 [SYSTEM] Starting event loop
+2026-09-08 11:36:35 [ERROR] Socket error: Connection refused
+2026-09-08 11:36:35 [LOG] Socket error: Connection refused
+2026-09-08 11:36:35 [LOG] PLC reconnect will be attempted every 3000 ms
+2026-09-08 11:36:37 [LOG] Disconnected from PLC
+2026-09-08 11:36:37 Server stopped
+2026-09-08 11:36:37 [SYSTEM] Application stopped
+2026-09-08 11:36:40 [SYSTEM] Starting ModBusBridgeService
+2026-09-08 11:36:40 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-09-08 11:36:40 [LOG] Attempting to connect to PLC...
+2026-09-08 11:36:40 Server is running on port 12345
+2026-09-08 11:36:40 [SYSTEM] Starting event loop
+2026-09-08 11:36:43 [LOG] Disconnected from PLC
+2026-09-08 11:36:43 Server stopped
+2026-09-08 11:36:43 [SYSTEM] Application stopped
+2026-09-08 11:56:17 [SYSTEM] Starting ModBusBridgeService
+2026-09-08 11:56:17 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-09-08 11:56:17 [LOG] Attempting to connect to PLC...
+2026-09-08 11:56:17 Server is running on port 12345
+2026-09-08 11:56:17 [SYSTEM] Starting event loop
+2026-09-08 11:56:21 [ERROR] Socket error: Connection refused
+2026-09-08 11:56:21 [LOG] Socket error: Connection refused
+2026-09-08 11:56:21 [LOG] PLC reconnect will be attempted every 3000 ms
+2026-09-08 11:56:24 [LOG] Trying to reconnect to PLC...
+2026-09-08 11:56:24 [LOG] Disconnected from PLC
+2026-09-08 11:56:24 Server stopped
+2026-09-08 11:56:24 [SYSTEM] Application stopped
+2026-09-08 11:56:30 [SYSTEM] Starting ModBusBridgeService
+2026-09-08 11:56:30 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-09-08 11:56:30 [LOG] Attempting to connect to PLC...
+2026-09-08 11:56:30 Server is running on port 12345
+2026-09-08 11:56:30 [SYSTEM] Starting event loop
+2026-09-08 11:56:34 [ERROR] Socket error: Connection refused
+2026-09-08 11:56:34 [LOG] Socket error: Connection refused
+2026-09-08 11:56:34 [LOG] PLC reconnect will be attempted every 3000 ms
+2026-09-08 11:56:37 [LOG] Trying to reconnect to PLC...
+2026-09-08 11:56:41 [ERROR] Socket error: Connection refused
+2026-09-08 11:56:41 [LOG] Socket error: Connection refused
+2026-09-08 11:56:43 [LOG] Trying to reconnect to PLC...
+2026-09-08 11:56:47 [ERROR] Socket error: Connection refused
+2026-09-08 11:56:47 [LOG] Socket error: Connection refused
+2026-09-08 11:56:49 [LOG] Trying to reconnect to PLC...
+2026-09-08 11:56:53 [ERROR] Socket error: Connection refused
+2026-09-08 11:56:53 [LOG] Socket error: Connection refused
+2026-09-08 11:56:55 [LOG] Trying to reconnect to PLC...
+2026-09-08 11:56:59 [ERROR] Socket error: Connection refused
+2026-09-08 11:56:59 [LOG] Socket error: Connection refused
+2026-09-08 11:57:01 [LOG] Trying to reconnect to PLC...
+2026-09-08 11:57:05 [ERROR] Socket error: Connection refused
+2026-09-08 11:57:05 [LOG] Socket error: Connection refused
+2026-09-08 11:57:07 [LOG] Trying to reconnect to PLC...
+2026-09-08 11:57:11 [ERROR] Socket error: Connection refused
+2026-09-08 11:57:11 [LOG] Socket error: Connection refused
+2026-09-08 11:57:13 [LOG] Trying to reconnect to PLC...
+2026-09-08 11:57:17 [ERROR] Socket error: Connection refused
+2026-09-08 11:57:17 [LOG] Socket error: Connection refused
+2026-09-08 11:57:19 [LOG] Trying to reconnect to PLC...
+2026-09-08 11:57:23 [ERROR] Socket error: Connection refused
+2026-09-08 11:57:23 [LOG] Socket error: Connection refused
+2026-09-08 11:57:25 [LOG] Trying to reconnect to PLC...
+2026-09-08 11:57:29 [ERROR] Socket error: Connection refused
+2026-09-08 11:57:29 [LOG] Socket error: Connection refused
+2026-09-08 11:57:31 [LOG] Trying to reconnect to PLC...
+2026-09-08 11:57:35 [ERROR] Socket error: Connection refused
+2026-09-08 11:57:35 [LOG] Socket error: Connection refused
+2026-09-08 11:57:37 [LOG] Trying to reconnect to PLC...
+2026-09-08 11:57:41 [ERROR] Socket error: Connection refused
+2026-09-08 11:57:41 [LOG] Socket error: Connection refused
+2026-09-08 11:57:43 [LOG] Trying to reconnect to PLC...
+2026-09-08 11:57:47 [ERROR] Socket error: Connection refused
+2026-09-08 11:57:47 [LOG] Socket error: Connection refused
+2026-09-08 11:57:49 [LOG] Trying to reconnect to PLC...
+2026-09-08 11:57:53 [ERROR] Socket error: Connection refused
+2026-09-08 11:57:53 [LOG] Socket error: Connection refused
+2026-09-08 11:57:55 [LOG] Trying to reconnect to PLC...
+2026-09-08 11:57:59 [ERROR] Socket error: Connection refused
+2026-09-08 11:57:59 [LOG] Socket error: Connection refused
+2026-09-08 11:58:01 [LOG] Trying to reconnect to PLC...
+2026-09-08 11:58:05 [ERROR] Socket error: Connection refused
+2026-09-08 11:58:05 [LOG] Socket error: Connection refused
+2026-09-08 11:58:07 [LOG] Trying to reconnect to PLC...
+2026-09-08 11:58:11 [ERROR] Socket error: Connection refused
+2026-09-08 11:58:11 [LOG] Socket error: Connection refused
+2026-09-08 11:58:13 [LOG] Trying to reconnect to PLC...
+2026-09-08 11:58:17 [ERROR] Socket error: Connection refused
+2026-09-08 11:58:17 [LOG] Socket error: Connection refused
+2026-09-08 11:58:19 [LOG] Trying to reconnect to PLC...
+2026-09-08 11:58:23 [ERROR] Socket error: Connection refused
+2026-09-08 11:58:23 [LOG] Socket error: Connection refused
+2026-09-08 11:58:25 [LOG] Trying to reconnect to PLC...
+2026-09-08 11:58:29 [ERROR] Socket error: Connection refused
+2026-09-08 11:58:29 [LOG] Socket error: Connection refused
+2026-09-08 11:58:31 [LOG] Trying to reconnect to PLC...
+2026-09-08 11:58:35 [ERROR] Socket error: Connection refused
+2026-09-08 11:58:35 [LOG] Socket error: Connection refused
+2026-09-08 11:58:37 [LOG] Trying to reconnect to PLC...
+2026-09-08 11:58:41 [ERROR] Socket error: Connection refused
+2026-09-08 11:58:41 [LOG] Socket error: Connection refused
+2026-09-08 11:58:43 [LOG] Trying to reconnect to PLC...
+2026-09-08 11:58:47 [ERROR] Socket error: Connection refused
+2026-09-08 11:58:47 [LOG] Socket error: Connection refused
+2026-09-08 11:58:49 [LOG] Trying to reconnect to PLC...
+2026-09-08 11:58:53 [ERROR] Socket error: Connection refused
+2026-09-08 11:58:53 [LOG] Socket error: Connection refused
+2026-09-08 11:58:55 [LOG] Trying to reconnect to PLC...
+2026-09-08 11:58:59 [ERROR] Socket error: Connection refused
+2026-09-08 11:58:59 [LOG] Socket error: Connection refused
+2026-09-08 11:59:01 [LOG] Trying to reconnect to PLC...
+2026-09-08 11:59:05 [ERROR] Socket error: Connection refused
+2026-09-08 11:59:05 [LOG] Socket error: Connection refused
+2026-09-08 11:59:07 [LOG] Trying to reconnect to PLC...
+2026-09-08 11:59:11 [ERROR] Socket error: Connection refused
+2026-09-08 11:59:11 [LOG] Socket error: Connection refused
+2026-09-08 11:59:13 [LOG] Trying to reconnect to PLC...
+2026-09-08 11:59:17 [ERROR] Socket error: Connection refused
+2026-09-08 11:59:17 [LOG] Socket error: Connection refused
+2026-09-08 11:59:19 [LOG] Trying to reconnect to PLC...
+2026-09-08 11:59:23 [ERROR] Socket error: Connection refused
+2026-09-08 11:59:23 [LOG] Socket error: Connection refused
+2026-09-08 11:59:25 [LOG] Trying to reconnect to PLC...
+2026-09-08 11:59:29 [ERROR] Socket error: Connection refused
+2026-09-08 11:59:29 [LOG] Socket error: Connection refused
+2026-09-08 11:59:31 [LOG] Trying to reconnect to PLC...
+2026-09-08 11:59:35 [ERROR] Socket error: Connection refused
+2026-09-08 11:59:35 [LOG] Socket error: Connection refused
+2026-09-08 11:59:37 [LOG] Trying to reconnect to PLC...
+2026-09-08 11:59:41 [ERROR] Socket error: Connection refused
+2026-09-08 11:59:41 [LOG] Socket error: Connection refused
+2026-09-08 11:59:43 [LOG] Trying to reconnect to PLC...
+2026-09-08 11:59:47 [ERROR] Socket error: Connection refused
+2026-09-08 11:59:47 [LOG] Socket error: Connection refused
+2026-09-08 11:59:49 [LOG] Trying to reconnect to PLC...
+2026-09-08 11:59:53 [ERROR] Socket error: Connection refused
+2026-09-08 11:59:53 [LOG] Socket error: Connection refused
+2026-09-08 11:59:55 [LOG] Trying to reconnect to PLC...
+2026-09-08 11:59:59 [ERROR] Socket error: Connection refused
+2026-09-08 11:59:59 [LOG] Socket error: Connection refused
+2026-09-08 12:00:01 [LOG] Trying to reconnect to PLC...
+2026-09-08 12:00:05 [ERROR] Socket error: Connection refused
+2026-09-08 12:00:05 [LOG] Socket error: Connection refused
+2026-09-08 12:00:07 [LOG] Trying to reconnect to PLC...
+2026-09-08 12:00:11 [ERROR] Socket error: Connection refused
+2026-09-08 12:00:11 [LOG] Socket error: Connection refused
+2026-09-08 12:00:13 [LOG] Trying to reconnect to PLC...
+2026-09-08 12:00:17 [ERROR] Socket error: Connection refused
+2026-09-08 12:00:17 [LOG] Socket error: Connection refused
+2026-09-08 12:00:19 [LOG] Trying to reconnect to PLC...
+2026-09-08 12:00:23 [ERROR] Socket error: Connection refused
+2026-09-08 12:00:23 [LOG] Socket error: Connection refused
+2026-09-08 12:00:25 [LOG] Trying to reconnect to PLC...
+2026-09-08 12:00:29 [ERROR] Socket error: Connection refused
+2026-09-08 12:00:29 [LOG] Socket error: Connection refused
+2026-09-08 12:00:31 [LOG] Trying to reconnect to PLC...
+2026-09-08 12:00:35 [ERROR] Socket error: Connection refused
+2026-09-08 12:00:35 [LOG] Socket error: Connection refused
+2026-09-08 12:00:37 [LOG] Trying to reconnect to PLC...
+2026-09-08 12:00:41 [ERROR] Socket error: Connection refused
+2026-09-08 12:00:41 [LOG] Socket error: Connection refused
+2026-09-08 12:00:43 [LOG] Trying to reconnect to PLC...
+2026-09-08 12:00:47 [ERROR] Socket error: Connection refused
+2026-09-08 12:00:47 [LOG] Socket error: Connection refused
+2026-09-08 12:00:49 [LOG] Trying to reconnect to PLC...
+2026-09-08 12:00:53 [ERROR] Socket error: Connection refused
+2026-09-08 12:00:53 [LOG] Socket error: Connection refused
+2026-09-08 12:00:55 [LOG] Trying to reconnect to PLC...
+2026-09-08 12:00:59 [ERROR] Socket error: Connection refused
+2026-09-08 12:00:59 [LOG] Socket error: Connection refused
+2026-09-08 12:01:01 [LOG] Trying to reconnect to PLC...
+2026-09-08 12:01:05 [ERROR] Socket error: Connection refused
+2026-09-08 12:01:05 [LOG] Socket error: Connection refused
+2026-09-08 12:01:07 [LOG] Trying to reconnect to PLC...
+2026-09-08 12:01:11 [ERROR] Socket error: Connection refused
+2026-09-08 12:01:11 [LOG] Socket error: Connection refused
+2026-09-08 12:01:13 [LOG] Trying to reconnect to PLC...
+2026-09-08 12:01:17 [ERROR] Socket error: Connection refused
+2026-09-08 12:01:17 [LOG] Socket error: Connection refused
+2026-09-08 12:01:19 [LOG] Trying to reconnect to PLC...
+2026-09-08 12:01:23 [ERROR] Socket error: Connection refused
+2026-09-08 12:01:23 [LOG] Socket error: Connection refused
+2026-09-08 12:01:25 [LOG] Trying to reconnect to PLC...
+2026-09-08 12:01:29 [ERROR] Socket error: Connection refused
+2026-09-08 12:01:29 [LOG] Socket error: Connection refused
+2026-09-08 12:01:31 [LOG] Trying to reconnect to PLC...
+2026-09-08 12:01:35 [ERROR] Socket error: Connection refused
+2026-09-08 12:01:35 [LOG] Socket error: Connection refused
+2026-09-08 12:01:37 [LOG] Trying to reconnect to PLC...
+2026-09-08 12:01:41 [ERROR] Socket error: Connection refused
+2026-09-08 12:01:41 [LOG] Socket error: Connection refused
+2026-09-08 12:01:43 [LOG] Trying to reconnect to PLC...
+2026-09-08 12:01:47 [ERROR] Socket error: Connection refused
+2026-09-08 12:01:47 [LOG] Socket error: Connection refused
+2026-09-08 12:01:49 [LOG] Trying to reconnect to PLC...
+2026-09-08 12:01:53 [ERROR] Socket error: Connection refused
+2026-09-08 12:01:53 [LOG] Socket error: Connection refused
+2026-09-08 12:01:55 [LOG] Trying to reconnect to PLC...
+2026-09-08 12:01:59 [ERROR] Socket error: Connection refused
+2026-09-08 12:01:59 [LOG] Socket error: Connection refused
+2026-09-08 12:02:01 [LOG] Trying to reconnect to PLC...
+2026-09-08 12:02:05 [ERROR] Socket error: Connection refused
+2026-09-08 12:02:05 [LOG] Socket error: Connection refused
+2026-09-08 12:02:07 [LOG] Trying to reconnect to PLC...
+2026-09-08 12:02:11 [ERROR] Socket error: Connection refused
+2026-09-08 12:02:11 [LOG] Socket error: Connection refused
+2026-09-08 12:02:13 [LOG] Trying to reconnect to PLC...
+2026-09-08 12:02:17 [ERROR] Socket error: Connection refused
+2026-09-08 12:02:17 [LOG] Socket error: Connection refused
+2026-09-08 12:02:19 [LOG] Trying to reconnect to PLC...
+2026-09-08 12:02:24 [ERROR] Socket error: Connection refused
+2026-09-08 12:02:24 [LOG] Socket error: Connection refused
+2026-09-08 12:02:25 [LOG] Trying to reconnect to PLC...
+2026-09-08 12:02:29 [ERROR] Socket error: Connection refused
+2026-09-08 12:02:29 [LOG] Socket error: Connection refused
+2026-09-08 12:02:31 [LOG] Trying to reconnect to PLC...
+2026-09-08 12:02:36 [ERROR] Socket error: Connection refused
+2026-09-08 12:02:36 [LOG] Socket error: Connection refused
+2026-09-08 12:02:37 [LOG] Trying to reconnect to PLC...
+2026-09-08 12:02:42 [ERROR] Socket error: Connection refused
+2026-09-08 12:02:42 [LOG] Socket error: Connection refused
+2026-09-08 12:02:43 [LOG] Trying to reconnect to PLC...
+2026-09-08 12:02:45 [LOG] Disconnected from PLC
+2026-09-08 12:02:45 Server stopped
+2026-09-08 12:02:45 [SYSTEM] Application stopped

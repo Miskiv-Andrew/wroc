@@ -75,9 +75,15 @@ class DatabaseManager:
         cursor = conn.cursor()
         cursor.execute(query, params)
         return cursor.fetchall()
+
+
+    
     
     def _create_tables_if_not_exist(self):
-        """Создаёт таблицы и индексы, если они не существуют."""
+        """
+        Створює таблиці, якщо вони не існують.
+        Для цистерн використовується нова структура з полями activity (JSON) та concentration (JSON).
+        """
         
         # Таблица устройств
         self._execute_query("""
@@ -91,7 +97,7 @@ class DatabaseManager:
             )
         """)
         
-        # Таблица измерений настенных детекторов
+        # Таблица измерений настенных детекторов (без изменений)
         self._execute_query("""
             CREATE TABLE IF NOT EXISTS measurements_wall (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -106,7 +112,7 @@ class DatabaseManager:
             )
         """)
         
-        # Таблица измерений цистерн
+        # Таблица измерений цистерн (новая структура)
         self._execute_query("""
             CREATE TABLE IF NOT EXISTS measurements_cistern (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -114,12 +120,13 @@ class DatabaseManager:
                 timestamp DATETIME NOT NULL,
                 paed REAL NOT NULL,
                 temperature REAL NOT NULL,
-                activity REAL NOT NULL,
+                activity TEXT,            -- JSON: {"18F": 12.5, "99mTc": 8.3}
+                concentration TEXT,       -- JSON: {"18F": 0.3, "99mTc": 0.2}
                 low_status INTEGER NOT NULL,
                 high_status INTEGER NOT NULL,
                 valid INTEGER NOT NULL,
                 fullness_status TEXT NOT NULL,
-                ready_to_drain INTEGER NOT NULL,
+                "group" TEXT,               -- "A", "B", "reserve"
                 FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
             )
         """)
@@ -143,6 +150,7 @@ class DatabaseManager:
         self._execute_query("CREATE INDEX IF NOT EXISTS idx_events_device ON system_events(device_id)")
         self._execute_query("CREATE INDEX IF NOT EXISTS idx_wall_device ON measurements_wall(device_id)")
         self._execute_query("CREATE INDEX IF NOT EXISTS idx_cistern_device ON measurements_cistern(device_id)")
+
     
     def _load_devices_map(self):
         """Загружает словарь активных приборов {serial_number: device_id}"""
@@ -170,14 +178,14 @@ class DatabaseManager:
     
     def cleanup_old_records(self):
         """
-        Удаляет записи старше 3 лет из всех таблиц.
+        Удаляет записи старше 5 лет из всех таблиц.
         """
-        three_years_ago = (datetime.now() - timedelta(days=3*365)).strftime("%Y-%m-%d %H:%M:%S")
+        five_years_ago = (datetime.now() - timedelta(days=5*365)).strftime("%Y-%m-%d %H:%M:%S")
         
-        self._execute_query("DELETE FROM measurements_wall WHERE timestamp < ?", (three_years_ago,))
-        self._execute_query("DELETE FROM measurements_cistern WHERE timestamp < ?", (three_years_ago,))
-        self._execute_query("DELETE FROM system_events WHERE timestamp < ?", (three_years_ago,))
-    
+        self._execute_query("DELETE FROM measurements_wall WHERE timestamp < ?", (five_years_ago,))
+        self._execute_query("DELETE FROM measurements_cistern WHERE timestamp < ?", (five_years_ago,))
+        self._execute_query("DELETE FROM system_events WHERE timestamp < ?", (five_years_ago,))
+        
     def buffer_wall_measurement(self, device_id, paed, temperature, low_status, high_status, valid):
         """
         Сохраняет измерение настенного детектора в буфер.
@@ -205,16 +213,30 @@ class DatabaseManager:
         conn.commit()
         self.wall_buffer.clear()
     
-    def save_cistern_measurement(self, device_id, paed, temperature, activity, low_status, high_status, valid, fullness_status, ready_to_drain):
+    def save_cistern_measurement(self, device_id, paed, temperature, activity_json, concentration_json, low_status, high_status, valid, fullness_status, group=None):
         """
-        Немедленно сохраняет измерение цистерны в БД (без буферизации).
+        Зберігає вимірювання цистерни безпосередньо в БД (без буферизації).
+        
+        Вхід:
+            device_id - int ID приладу
+            paed - float ПАЕД
+            temperature - float температура
+            activity_json - str JSON з активностями (напр. {"18F": 12.5, "99mTc": 8.3})
+            concentration_json - str JSON з концентраціями (напр. {"18F": 0.3, "99mTc": 0.2})
+            low_status - int 0/1
+            high_status - int 0/1
+            valid - int 0/1
+            fullness_status - str "full" / "empty"
+            group - str або None група цистерни
         """
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self._execute_query("""
             INSERT INTO measurements_cistern 
-            (device_id, timestamp, paed, temperature, activity, low_status, high_status, valid, fullness_status, ready_to_drain)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (device_id, timestamp, paed, temperature, activity, low_status, high_status, valid, fullness_status, ready_to_drain))
+            (device_id, timestamp, paed, temperature, activity, concentration, low_status, high_status, valid, fullness_status, group)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (device_id, timestamp, paed, temperature, activity_json, concentration_json, low_status, high_status, valid, fullness_status, group))
+
+
     
     def save_system_event(self, device_id, event_type, description):
         """
@@ -372,36 +394,45 @@ class DatabaseManager:
                 VALUES (?, ?, ?, ?, 1)
             """, (serial_number, device_type, location_type, position_number))
 
-    def buffer_cistern_measurement(self, device_id, paed, temperature, low_status, high_status, valid, fullness_status):
+    def buffer_cistern_measurement(self, device_id, paed, temperature, low_status, high_status, valid, fullness_status, group=None, activity_json="{}", concentration_json="{}"):
         """
-            Додає вимірювання цистерни в буфер.
-            У буфері зберігається ТІЛЬКИ ОСТАННЄ значення для кожного device_id.
-            Викликається з головного потоку (GUI) при кожному опитуванні (RadDose або GetSpectre).
+        Додає вимірювання цистерни до буфера.
+        В буфері зберігається останнє значення для кожного device_id.
+        
+        Вхід:
+            device_id - int ID приладу
+            paed - float ПАЕД
+            temperature - float температура
+            low_status - int 0/1 стан низькочутливого детектора
+            high_status - int 0/1 стан високочутливого детектора
+            valid - int 0/1 валідність
+            fullness_status - str "full" / "empty"
+            group - str або None група цистерни
+            activity_json - str JSON з активностями (за замовчуванням "{}")
+            concentration_json - str JSON з концентраціями (за замовчуванням "{}")
         """
+        import json
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        self.cistern_buffer[device_id] = (timestamp, paed, temperature, low_status, high_status, valid, fullness_status)
+        self.cistern_buffer[device_id] = (timestamp, paed, temperature, activity_json, concentration_json, low_status, high_status, valid, fullness_status, group)
+        
 
     def flush_cistern_buffer(self):
         """
-            Записує всі буферизовані вимірювання цистерн у БД.
-            Викликається при досягненні ліміту repeat_counter (з calculate_activity).
-            Після запису буфер очищується.
+        Записує всі буферизовані вимірювання цистерн до БД.
         """
         if not self.cistern_buffer:
             return
-        
         conn = self._get_connection()
         cursor = conn.cursor()
-        
-        for device_id, (timestamp, paed, temperature, low_status, high_status, valid, fullness_status) in self.cistern_buffer.items():
+        for device_id, (timestamp, paed, temperature, activity_json, concentration_json, low_status, high_status, valid, fullness_status, group) in self.cistern_buffer.items():
             cursor.execute("""
                 INSERT INTO measurements_cistern 
-                (device_id, timestamp, paed, temperature, activity, low_status, high_status, valid, fullness_status, ready_to_drain)
-                VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, 0)
-            """, (device_id, timestamp, paed, temperature, low_status, high_status, valid, fullness_status))
-        
+                (device_id, timestamp, paed, temperature, activity, concentration, low_status, high_status, valid, fullness_status, group)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (device_id, timestamp, paed, temperature, activity_json, concentration_json, low_status, high_status, valid, fullness_status, group))
         conn.commit()
         self.cistern_buffer.clear()
+
 
 
     def get_device_active_status(self, serial_number: str) -> bool:

@@ -11,6 +11,7 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
 from database.db_manager import DatabaseManager
+import json
 
 
 class DBViewWindow(QMainWindow):
@@ -185,9 +186,69 @@ class DBViewWindow(QMainWindow):
         return date_from, date_to
     
     
+    # def load_paed_data(self):
+    #     """
+    #         Загружает данные ПАЕД из БД и строит график/таблицу
+    #     """
+    #     date_from, date_to = self.get_date_range("paed")
+        
+    #     device_sn = self.ui.combo_device_paed.currentData()
+    #     if not device_sn:
+    #         QMessageBox.warning(self, "Попередження", "Виберіть прилад")
+    #         return
+        
+    #     device_id = self.db_manager.get_device_id(device_sn)
+    #     if not device_id:
+    #         return
+        
+    #     location_type = self.ui.combo_location_type_paed.currentText()
+        
+    #     if location_type in ("Цистерна", "Всі"):
+    #         conn = self.db_manager._get_connection()
+    #         cursor = conn.cursor()
+    #         cursor.execute("""
+    #             SELECT timestamp, paed, temperature, low_status, high_status, valid
+    #             FROM measurements_cistern
+    #             WHERE device_id = ? AND timestamp BETWEEN ? AND ?
+    #             ORDER BY timestamp
+    #         """, (device_id, date_from, date_to))
+    #         rows = cursor.fetchall()
+    #     else:
+    #         conn = self.db_manager._get_connection()
+    #         cursor = conn.cursor()
+    #         cursor.execute("""
+    #             SELECT timestamp, paed, temperature, low_status, high_status, valid
+    #             FROM measurements_wall
+    #             WHERE device_id = ? AND timestamp BETWEEN ? AND ?
+    #             ORDER BY timestamp
+    #         """, (device_id, date_from, date_to))
+    #         rows = cursor.fetchall()
+        
+    #     if not rows:
+    #         self.ax_paed.clear()
+    #         self.ax_paed.text(0.5, 0.5, "Немає даних за вибраний період", transform=self.ax_paed.transAxes, ha='center')
+    #         self.canvas_paed.draw()
+    #         self.fill_paed_table([])
+    #         return
+        
+    #     # Строим график - конвертируем строки в datetime
+    #     self.ax_paed.clear()
+    #     timestamps = [datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S") for row in rows]
+    #     paed_values = [row[1] for row in rows]
+        
+    #     self.ax_paed.plot(timestamps, paed_values, 'b-', linewidth=1.5)
+    #     self.ax_paed.set_xlabel("Час")
+    #     self.ax_paed.set_ylabel("ПАЕД, мкЗв/год")
+    #     self.ax_paed.set_title(f"ПАЕД - {device_sn}")
+    #     self.ax_paed.grid(True, alpha=0.3)
+    #     self.figure_paed.autofmt_xdate()
+    #     self.canvas_paed.draw()
+        
+    #     self.fill_paed_table(rows)    
+
     def load_paed_data(self):
         """
-            Загружает данные ПАЕД из БД и строит график/таблицу
+        Загружает данные ПАЕД из БД и строит график/таблицу.
         """
         date_from, date_to = self.get_date_range("paed")
         
@@ -201,27 +262,43 @@ class DBViewWindow(QMainWindow):
             return
         
         location_type = self.ui.combo_location_type_paed.currentText()
+        group_filter = self.ui.combo_group_paed.currentText()  # Получаем выбранную группу
         
-        if location_type in ("Цистерна", "Всі"):
-            conn = self.db_manager._get_connection()
-            cursor = conn.cursor()
-            cursor.execute("""
+        conn = self.db_manager._get_connection()
+        cursor = conn.cursor()
+        
+        # Если выбрана конкретная группа — работаем только с цистернами
+        if group_filter != "Всі":
+            # Принудительно устанавливаем тип расположения как "Цистерна"
+            # (для пользователя это не меняем, но в запросе используем цистерны)
+            query = """
                 SELECT timestamp, paed, temperature, low_status, high_status, valid
                 FROM measurements_cistern
-                WHERE device_id = ? AND timestamp BETWEEN ? AND ?
+                WHERE device_id = ? AND timestamp BETWEEN ? AND ? AND group = ?
                 ORDER BY timestamp
-            """, (device_id, date_from, date_to))
+            """
+            cursor.execute(query, (device_id, date_from, date_to, group_filter))
             rows = cursor.fetchall()
         else:
-            conn = self.db_manager._get_connection()
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT timestamp, paed, temperature, low_status, high_status, valid
-                FROM measurements_wall
-                WHERE device_id = ? AND timestamp BETWEEN ? AND ?
-                ORDER BY timestamp
-            """, (device_id, date_from, date_to))
-            rows = cursor.fetchall()
+            # Если группа не выбрана — используем старую логику (в зависимости от типа расположения)
+            if location_type in ("Цистерна", "Всі"):
+                query = """
+                    SELECT timestamp, paed, temperature, low_status, high_status, valid
+                    FROM measurements_cistern
+                    WHERE device_id = ? AND timestamp BETWEEN ? AND ?
+                    ORDER BY timestamp
+                """
+                cursor.execute(query, (device_id, date_from, date_to))
+                rows = cursor.fetchall()
+            else:  # Кімната
+                query = """
+                    SELECT timestamp, paed, temperature, low_status, high_status, valid
+                    FROM measurements_wall
+                    WHERE device_id = ? AND timestamp BETWEEN ? AND ?
+                    ORDER BY timestamp
+                """
+                cursor.execute(query, (device_id, date_from, date_to))
+                rows = cursor.fetchall()
         
         if not rows:
             self.ax_paed.clear()
@@ -230,7 +307,7 @@ class DBViewWindow(QMainWindow):
             self.fill_paed_table([])
             return
         
-        # Строим график - конвертируем строки в datetime
+        # Строим график
         self.ax_paed.clear()
         timestamps = [datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S") for row in rows]
         paed_values = [row[1] for row in rows]
@@ -243,8 +320,8 @@ class DBViewWindow(QMainWindow):
         self.figure_paed.autofmt_xdate()
         self.canvas_paed.draw()
         
-        self.fill_paed_table(rows)    
-   
+        self.fill_paed_table(rows)
+    
 
     def fill_paed_table(self, rows):
         """
@@ -273,9 +350,14 @@ class DBViewWindow(QMainWindow):
         
         self.ui.tableView_paed.setModel(model)
         self.ui.tableView_paed.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+
+
         
     def load_activity_data(self):
-        """Загружает данные активности из БД"""
+        """
+        Загружает данные активности из БД и строит график/таблицу.
+        Парсит JSON-поля activity и concentration, отображает изотопы.
+        """
         date_from, date_to = self.get_date_range("activity")
         
         device_sn = self.ui.combo_device_activity.currentData()
@@ -287,15 +369,31 @@ class DBViewWindow(QMainWindow):
         if not device_id:
             return
         
+        group_filter = self.ui.combo_group_activity.currentText()  # Получаем выбранную группу
+        
         conn = self.db_manager._get_connection()
         cursor = conn.cursor()
-        cursor.execute("""
-            SELECT timestamp, paed, activity, fullness_status
-            FROM measurements_cistern
-            WHERE device_id = ? AND timestamp BETWEEN ? AND ?
-            ORDER BY timestamp
-        """, (device_id, date_from, date_to))
-        rows = cursor.fetchall()
+        
+        # Если выбрана конкретная группа — добавляем условие
+        if group_filter != "Всі":
+            query = """
+                SELECT timestamp, paed, activity, concentration, fullness_status
+                FROM measurements_cistern
+                WHERE device_id = ? AND timestamp BETWEEN ? AND ? AND group = ?
+                ORDER BY timestamp
+            """
+            cursor.execute(query, (device_id, date_from, date_to, group_filter))
+            rows = cursor.fetchall()
+        else:
+            # Если группа не выбрана — запрос без фильтра по группе
+            query = """
+                SELECT timestamp, paed, activity, concentration, fullness_status
+                FROM measurements_cistern
+                WHERE device_id = ? AND timestamp BETWEEN ? AND ?
+                ORDER BY timestamp
+            """
+            cursor.execute(query, (device_id, date_from, date_to))
+            rows = cursor.fetchall()
         
         if not rows:
             self.ax_activity.clear()
@@ -304,39 +402,78 @@ class DBViewWindow(QMainWindow):
             self.fill_activity_table([])
             return
         
-        # Строим график - конвертируем строки в datetime
+        # Строим график (суммарная активность по всем изотопам)
         self.ax_activity.clear()
         timestamps = [datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S") for row in rows]
-        activity_values = [row[2] if row[2] else 0 for row in rows]
         
-        self.ax_activity.plot(timestamps, activity_values, 'g-', linewidth=1.5)
+        # Парсим JSON из поля activity и суммируем активности
+        import json
+        total_activities = []
+        for row in rows:
+            activity_json = row[2]  # поле activity
+            if activity_json and activity_json != "{}":
+                try:
+                    act_dict = json.loads(activity_json)
+                    total_act = sum(act_dict.values()) if act_dict else 0
+                    total_activities.append(total_act)
+                except:
+                    total_activities.append(0.0)
+            else:
+                total_activities.append(0.0)
+        
+        self.ax_activity.plot(timestamps, total_activities, 'g-', linewidth=1.5)
         self.ax_activity.set_xlabel("Час")
-        self.ax_activity.set_ylabel("Активність, кБк")
+        self.ax_activity.set_ylabel("Активність, Бк")
         self.ax_activity.set_title(f"Активність - {device_sn}")
         self.ax_activity.grid(True, alpha=0.3)
         self.figure_activity.autofmt_xdate()
         self.canvas_activity.draw()
         
+        # Заполняем таблицу с детальной информацией
         self.fill_activity_table(rows)
     
+    
     def fill_activity_table(self, rows):
-        """Заполняет таблицу активности"""
+        """
+        Заполняет таблицу активности с отображением изотопов и их активностей/концентраций.
+        rows — список кортежей (timestamp, paed, activity_json, concentration_json, fullness_status)
+        """
         model = QStandardItemModel()
-        model.setHorizontalHeaderLabels(["Час", "ПАЕД, мкЗв/год", "Активність, кБк", "Стан цистерни"])
+        # Заголовки: Время, ПАЕД, Состав (изотопы с активностями и концентрациями), Статус цистерны
+        model.setHorizontalHeaderLabels(["Час", "ПАЕД, мкЗв/год", "Склад (активність, концентрація)", "Стан цистерни"])
         
         for row_idx, row in enumerate(rows):
             timestamp = datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S").strftime("%d.%m.%Y %H:%M:%S")
             paed = f"{row[1]:.2f}"
-            activity = f"{row[2]:.2f}" if row[2] else "—"
-            fullness = "Повна" if row[3] == "full" else "Не повна"
+            fullness = "Повна" if row[4] == "full" else "Не повна"
+            
+            # Парсим JSON активностей и концентраций
+            activity_json = row[2]
+            concentration_json = row[3]
+            
+            composition_parts = []
+            if activity_json and activity_json != "{}":
+                try:
+                    act_dict = json.loads(activity_json)
+                    conc_dict = json.loads(concentration_json) if concentration_json and concentration_json != "{}" else {}
+                    for isotope, act in act_dict.items():
+                        conc = conc_dict.get(isotope, 0.0)
+                        composition_parts.append(f"{isotope}: {act:.2f} Бк, {conc:.2f} Бк/л")
+                except:
+                    composition_parts.append("помилка даних")
+            else:
+                composition_parts.append("немає даних")
+            
+            composition_str = "; ".join(composition_parts)
             
             model.setItem(row_idx, 0, QStandardItem(timestamp))
             model.setItem(row_idx, 1, QStandardItem(paed))
-            model.setItem(row_idx, 2, QStandardItem(activity))
+            model.setItem(row_idx, 2, QStandardItem(composition_str))
             model.setItem(row_idx, 3, QStandardItem(fullness))
         
         self.ui.tableView_activity.setModel(model)
         self.ui.tableView_activity.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+
     
     def load_events_data(self):
         """Загружает системные события"""
@@ -405,8 +542,10 @@ class DBViewWindow(QMainWindow):
             self.ui.combo_device_paed.setEnabled(False)
             self.ui.combo_device_paed.clear()
             self.ui.combo_device_paed.addItem("-- Виберіть прилад --")
+            self.ui.combo_group_paed.setCurrentIndex(0)  # Сброс группы на "Всі"
         elif tab == "activity":
             self.ui.combo_device_activity.setCurrentIndex(0)
+            self.ui.combo_group_activity.setCurrentIndex(0)  # Сброс группы на "Всі"
         elif tab == "events":
             self.ui.combo_event_type.setCurrentIndex(0)
             self.ui.combo_device_events.setCurrentIndex(0)

@@ -616,15 +616,22 @@ class DeviceReplaceDialog(QDialog):
                     return int(parts[3])
         return None
     
+
+    
     def _update_config_files(self, old_sn, new_sn, old_device):
-        """Оновлює config.txt, hash.txt, cistern.json"""
+        """
+        Оновлює конфігураційні файли при заміні приладу:
+            - config.txt (заміна SN)
+            - hash.txt (перерахунок SHA-256)
+            - cistern.json (якщо цистерна — оновлює структуру з full, isotopes, group)
+        """
         config_path = "config/config.txt"
         
-        # Читаємо config
+        # Читаємо config.txt
         with open(config_path, "r", encoding="utf-8") as f:
             lines = f.readlines()
         
-        # Оновлюємо рядок зі старим SN
+        # Замінюємо старий SN на новий у відповідному рядку
         updated = False
         for i, line in enumerate(lines):
             if line.startswith(old_sn + ";"):
@@ -638,20 +645,24 @@ class DeviceReplaceDialog(QDialog):
         if not updated:
             raise ValueError(f"SN {old_sn} не знайдено в config.txt")
         
-        # Записуємо config
+        # Записуємо оновлений config.txt
         with open(config_path, "w", encoding="utf-8") as f:
             f.writelines(lines)
         
-        # Оновлюємо hash.txt
+        # Перераховуємо hash.txt
         with open(config_path, "rb") as f:
             data = f.read()
         sha256_hash = hashlib.sha256(data).hexdigest()
         with open("config/hash.txt", "w", encoding="utf-8") as f:
             f.write(sha256_hash)
         
-        # Оновлюємо cistern.json (якщо цистерна)
+        # ------------------------------------------------------------
+        # Якщо замінюється цистерна — оновлюємо cistern.json
+        # ------------------------------------------------------------
         if old_device['location_type'] == 'cistern':
             cistern_path = "config/cistern.json"
+            
+            # Завантажуємо поточний вміст cistern.json (якщо файл існує)
             if os.path.exists(cistern_path):
                 with open(cistern_path, "r", encoding="utf-8") as f:
                     cistern_data = json.load(f)
@@ -659,33 +670,32 @@ class DeviceReplaceDialog(QDialog):
                 cistern_data = {}
             
             pos = str(old_device['position_number'])
-            if pos not in cistern_data:
-                cistern_data[pos] = False
             
+            # Якщо позиція вже існує — залишаємо її значення (full, isotopes, group)
+            # Якщо позиція відсутня — створюємо дефолтну структуру
+            if pos not in cistern_data:
+                cistern_data[pos] = {
+                    "full": False,
+                    "isotopes": [],
+                    "group": "A"
+                }
+            # Якщо позиція є, але запис зберігає старий формат (просто boolean),
+            # конвертуємо його в нову структуру
+            elif isinstance(cistern_data[pos], bool):
+                old_full = cistern_data[pos]
+                cistern_data[pos] = {
+                    "full": old_full,
+                    "isotopes": [],
+                    "group": "A"
+                }
+            # Якщо запис вже є словником — нічого не змінюємо
+            
+            # Записуємо оновлений cistern.json
             with open(cistern_path, "w", encoding="utf-8") as f:
                 json.dump(cistern_data, f, ensure_ascii=False, indent=4)
+
     
-    # def _update_database(self, old_sn, new_sn, old_device):
-    #     """Оновлює БД: старий прилад is_active=0, новий додається"""
-    #     # Деактивуємо старий
-    #     conn = self.db_manager._get_connection()
-    #     cursor = conn.cursor()
-    #     cursor.execute("UPDATE devices SET is_active = 0 WHERE serial_number = ?", (old_sn,))
-        
-    #     # Додаємо новий
-    #     cursor.execute("""
-    #         INSERT INTO devices (serial_number, device_type, location_type, position_number, is_active)
-    #         VALUES (?, ?, ?, ?, 1)
-    #     """, (new_sn, "БДБГ-09S-23", old_device['location_type'], old_device['position_number']))
-        
-    #     conn.commit()
-        
-    #     # Записуємо подію
-    #     self.db_manager.save_system_event(None, "device_replaced", 
-    #         f"Заміна приладу: {old_sn} -> {new_sn}, позиція {old_device['position_number']}")
-        
-    #     # Перезавантажуємо кеш активних приладів в db_manager
-    #     self.db_manager._load_devices_map()
+   
 
     def _update_database(self, old_sn, new_sn, old_device):
         """
