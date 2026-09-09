@@ -386,145 +386,345 @@ class DeviceManager(QObject):
             self.match_devices_with_config()
 
 
+
+
+
+    # def load_config_file(self) -> dict:
+    #     """
+    #     Загружает конфигурацию из файла config/config.txt.
+    #     Возвращает словарь вида:
+    #     {
+    #         "2400126": {"location_type": "room", "posit_number": 1, "expected_address": 2},
+    #         "2400089": {"location_type": "cistern", "posit_number": 3, "expected_address": 1},
+    #         ...
+    #     }
+    #     """
+    #     config_data = {}
+    #     try:            
+    #         with open("config/config.txt", "r", encoding="utf-8") as f:
+    #             for line in f:
+    #                 line = line.strip()
+    #                 if not line or line.startswith("#"):
+    #                     continue
+    #                 parts = line.split(";")
+    #                 if len(parts) != 4:
+    #                     continue
+    #                 serial_number, location_type, posit_number, expected_address = parts
+    #                 config_data[serial_number] = {
+    #                     "location_type": location_type,
+    #                     "posit_number": int(posit_number),
+    #                     "expected_address": int(expected_address)
+    #                 }
+    #     except Exception as e:
+    #         self.device_error.emit("config.txt", f"Ошибка загрузки конфигурации: {e}")
+    #     return config_data  
+
     def load_config_file(self) -> dict:
         """
-        Загружает конфигурацию из файла config/config.txt.
-        Возвращает словарь вида:
-        {
-            "2400126": {"location_type": "room", "posit_number": 1, "expected_address": 2},
-            "2400089": {"location_type": "cistern", "posit_number": 3, "expected_address": 1},
-            ...
-        }
+        Завантажує та перевіряє конфігурацію приладів
+        з файлу config/config.txt.
+
+        Формат кожного робочого рядка:
+
+            serial_number;location_type;posit_number;address
+
+        Наприклад:
+
+            2400089;cistern;1;1
+            2400126;room;1;2
+
+        Допустимі значення:
+
+            location_type:
+                "cistern"   - прилад цистерни ZB;
+                "room"      - настінний прилад CZ.
+
+            posit_number:
+                cistern -> 1 ... 9
+                room    -> 1 ... 3
+
+            address:
+                1 ... 6
+
+        ВАЖЛИВО:
+            Якщо хоча б один робочий рядок конфігурації
+            неправильний, метод НЕ повертає частково
+            завантажену конфігурацію.
+
+            У такому випадку повертається порожній словник {},
+            а через device_error передається опис помилки.
+
+            Це необхідно, щоб програма не працювала з
+            частково пошкодженим config.txt.
+
+        Повертає словник виду:
+
+            {
+                "2400126": {
+                    "location_type": "room",
+                    "posit_number": 1,
+                    "expected_address": 2
+                },
+
+                "2400089": {
+                    "location_type": "cistern",
+                    "posit_number": 1,
+                    "expected_address": 1
+                }
+            }
         """
+
+        # ============================================================
+        # 1. СЛОВНИК РЕЗУЛЬТАТУ
+        # ============================================================
+
         config_data = {}
-        try:            
-            with open("config/config.txt", "r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line or line.startswith("#"):
+
+        # Окремо зберігаємо вже зайняті фізичні позиції.
+        #
+        # Наприклад:
+        #     ("cistern", 1)
+        #     ("room", 2)
+        #
+        # Це дозволяє виявити ситуацію, коли два різні
+        # серійні номери випадково призначені одній ZB або CZ.
+        used_positions = set()
+
+        try:
+
+            # ========================================================
+            # 2. ВІДКРИВАЄМО CONFIG.TXT
+            # ========================================================
+
+            with open(
+                "config/config.txt",
+                "r",
+                encoding="utf-8"
+            ) as f:
+
+                # Читаємо файл построково із номером рядка.
+                #
+                # Номер рядка потрібен для зрозумілого повідомлення
+                # оператору/розробнику у випадку помилки.
+                for line_number, raw_line in enumerate(f, start=1):
+
+                    # Видаляємо пробіли та символи кінця рядка.
+                    line = raw_line.strip()
+
+                    # ------------------------------------------------
+                    # Порожні рядки дозволені.
+                    # ------------------------------------------------
+
+                    if not line:
                         continue
+
+                    # ------------------------------------------------
+                    # Коментарі дозволені.
+                    # ------------------------------------------------
+
+                    if line.startswith("#"):
+                        continue
+
+                    # =================================================
+                    # 3. РОЗБИВАЄМО РЯДОК НА ЧОТИРИ ПОЛЯ
+                    # =================================================
+
                     parts = line.split(";")
+
                     if len(parts) != 4:
-                        continue
-                    serial_number, location_type, posit_number, expected_address = parts
+                        raise ValueError(
+                            f"рядок {line_number}: "
+                            f"очікується 4 поля, отримано {len(parts)}"
+                        )
+
+                    # Прибираємо випадкові пробіли навколо значень.
+                    serial_number = parts[0].strip()
+                    location_type = parts[1].strip().lower()
+                    posit_text = parts[2].strip()
+                    address_text = parts[3].strip()
+
+                    # =================================================
+                    # 4. ПЕРЕВІРЯЄМО СЕРІЙНИЙ НОМЕР
+                    # =================================================
+
+                    if not serial_number:
+                        raise ValueError(
+                            f"рядок {line_number}: "
+                            f"серійний номер приладу порожній"
+                        )
+
+                    # Один і той самий SN не може бути описаний
+                    # у конфігурації двічі.
+                    if serial_number in config_data:
+                        raise ValueError(
+                            f"рядок {line_number}: "
+                            f"SN {serial_number} повторюється у конфігурації"
+                        )
+
+                    # =================================================
+                    # 5. ПЕРЕВІРЯЄМО ТИП РОЗТАШУВАННЯ
+                    # =================================================
+
+                    if location_type not in ("cistern", "room"):
+                        raise ValueError(
+                            f"рядок {line_number}: "
+                            f"невідомий location_type "
+                            f"'{location_type}' для SN {serial_number}"
+                        )
+
+                    # =================================================
+                    # 6. ПЕРЕТВОРЮЄМО ПОЗИЦІЮ ТА АДРЕСУ В INT
+                    # =================================================
+
+                    try:
+                        posit_number = int(posit_text)
+                    except ValueError:
+                        raise ValueError(
+                            f"рядок {line_number}: "
+                            f"некоректна позиція '{posit_text}' "
+                            f"для SN {serial_number}"
+                        )
+
+                    try:
+                        expected_address = int(address_text)
+                    except ValueError:
+                        raise ValueError(
+                            f"рядок {line_number}: "
+                            f"некоректна адреса '{address_text}' "
+                            f"для SN {serial_number}"
+                        )
+
+                    # =================================================
+                    # 7. ПЕРЕВІРЯЄМО ДІАПАЗОН ПОЗИЦІЇ
+                    # =================================================
+
+                    if location_type == "cistern":
+
+                        # В актуальній системі існують
+                        # тільки цистерни ZB1-ZB9.
+                        if posit_number < 1 or posit_number > 9:
+                            raise ValueError(
+                                f"рядок {line_number}: "
+                                f"для cistern допустима позиція 1..9, "
+                                f"отримано {posit_number} "
+                                f"для SN {serial_number}"
+                            )
+
+                    elif location_type == "room":
+
+                        # В актуальній системі існують
+                        # настінні прилади CZ1-CZ3.
+                        if posit_number < 1 or posit_number > 3:
+                            raise ValueError(
+                                f"рядок {line_number}: "
+                                f"для room допустима позиція 1..3, "
+                                f"отримано {posit_number} "
+                                f"для SN {serial_number}"
+                            )
+
+                    # =================================================
+                    # 8. ПЕРЕВІРЯЄМО АДРЕС ПРИЛАДУ
+                    # =================================================
+                    #
+                    # Пошук приладів у DeviceManager виконується
+                    # по адресах 1..6.
+
+                    if expected_address < 1 or expected_address > 6:
+                        raise ValueError(
+                            f"рядок {line_number}: "
+                            f"адреса приладу повинна бути 1..6, "
+                            f"отримано {expected_address} "
+                            f"для SN {serial_number}"
+                        )
+
+                    # =================================================
+                    # 9. ПЕРЕВІРЯЄМО ПОВТОР ФІЗИЧНОЇ ПОЗИЦІЇ
+                    # =================================================
+
+                    position_key = (
+                        location_type,
+                        posit_number
+                    )
+
+                    if position_key in used_positions:
+                        raise ValueError(
+                            f"рядок {line_number}: "
+                            f"позиція {location_type} {posit_number} "
+                            f"вже зайнята іншим приладом"
+                        )
+
+                    used_positions.add(position_key)
+
+                    # =================================================
+                    # 10. ДОДАЄМО ПРИЛАД У КОНФІГУРАЦІЮ
+                    # =================================================
+
                     config_data[serial_number] = {
                         "location_type": location_type,
-                        "posit_number": int(posit_number),
-                        "expected_address": int(expected_address)
+                        "posit_number": posit_number,
+                        "expected_address": expected_address
                     }
+
+            # ========================================================
+            # 11. ПЕРЕВІРЯЄМО, ЩО ФАЙЛ НЕ ПОРОЖНІЙ
+            # ========================================================
+
+            # У режимі налаштування файл може містити не всі 12
+            # приладів, тому повноту ZB1-ZB9 + CZ1-CZ3 тут
+            # навмисно НЕ перевіряємо.
+            #
+            # Але повністю порожня конфігурація для робочого режиму
+            # не має сенсу.
+
+            if not config_data:
+                raise ValueError(
+                    "config.txt не містить жодного запису приладу"
+                )
+
+            # Усі рядки успішно перевірені.
+            return config_data
+
+        # ============================================================
+        # 12. ПОМИЛКА ФОРМАТУ АБО ЗМІСТУ CONFIG.TXT
+        # ============================================================
+
+        except ValueError as e:
+
+            self.device_error.emit(
+                "config.txt",
+                f"Помилка конфігурації: {e}"
+            )
+
+            # Критично важливо:
+            # НЕ повертаємо частково сформований config_data.
+            return {}
+
+        # ============================================================
+        # 13. ПОМИЛКА ВІДКРИТТЯ / ЧИТАННЯ ФАЙЛУ
+        # ============================================================
+
+        except OSError as e:
+
+            self.device_error.emit(
+                "config.txt",
+                f"Помилка відкриття конфігураційного файлу: {e}"
+            )
+
+            return {}
+
+        # ============================================================
+        # 14. НЕПЕРЕДБАЧЕНА ПОМИЛКА
+        # ============================================================
+
         except Exception as e:
-            self.device_error.emit("config.txt", f"Ошибка загрузки конфигурации: {e}")
-        return config_data  
 
+            self.device_error.emit(
+                "config.txt",
+                f"Непередбачена помилка завантаження конфігурації: {e}"
+            )
 
-    # def match_devices_with_config(self):
-
-    #     # Если приборов нет — не трогаем конфигурацию
-    #     if not self.devices:
-    #         self.device_error.emit("config.txt", "Порты RTII знайдено, але жодного приладу не виявлено. Конфігурацію не оновлена.")
-    #         return
-
-    #     # --- Режим настройки системы ---
-    #     if self.debug_mode == 1:
-    #         found_text = "Знайдено прилади:\n"
-    #         for device in self.devices:
-    #             found_text += f"Порт: {device.port}, Адреса: {device.address}, SN: {device.serial_number}\n"
-
-    #         lines = []
-    #         cistern_json_data = {}
-
-    #         for device in self.devices:
-    #             if device.serial_number in self.cistern_dict:
-    #                 location_type = "cistern"
-    #                 posit_number = self.cistern_dict[device.serial_number]
-    #                 line = f"{device.serial_number};{location_type};{posit_number};{device.address}"
-    #                 lines.append(line)
-    #                 # В cistern.json храним состояние цистерн (по умолчанию False)
-    #                 cistern_json_data[posit_number] = False
-
-    #             elif device.serial_number in self.room_dict:
-    #                 location_type = "room"
-    #                 posit_number = self.room_dict[device.serial_number]
-    #                 line = f"{device.serial_number};{location_type};{posit_number};{device.address}"
-    #                 lines.append(line)
-
-    #             else:
-    #                 # Если SN не найден ни в одном словаре — сигнализируем
-    #                 self.device_error.emit(
-    #                     "config.txt",
-    #                     f"SN {device.serial_number} не внесён в словари cistern_dict/room_dict"
-    #                 )
-
-    #         config_text = "# serial_number;location_type;posit_number;address\n" + "\n".join(lines)
-
-    #         try:
-    #             # Записываем config.txt
-    #             with open("config/config.txt", "w", encoding="utf-8") as f:
-    #                 f.write(config_text)
-
-    #             # Читаем обратно и считаем хэш
-    #             with open("config/config.txt", "rb") as f:
-    #                 data = f.read()
-    #             sha256_hash = hashlib.sha256(data).hexdigest()
-
-    #             # Записываем hash.txt
-    #             with open("config/hash.txt", "w", encoding="utf-8") as f:
-    #                 f.write(sha256_hash)
-
-    #             # Перезаписываем cistern.json
-    #             with open("config/cistern.json", "w", encoding="utf-8") as f:
-    #                 json.dump(cistern_json_data, f, ensure_ascii=False, indent=4)
-
-    #             output_text = f"{found_text}\nНові дані занесено у файли конфігурації"
-    #             self.device_info.emit(output_text)
-
-    #         except Exception as e:
-    #             self.device_error.emit("config", f"Помилка запису файлів: {e}")
-
-    #         return
-
-    #     # --- Обычный режим ---
-    #     config_data = self.load_config_file()
-    #     valid_devices = []
-
-    #     for device in self.devices:
-    #         if device.serial_number in config_data:
-    #             cfg = config_data[device.serial_number]
-    #             device.location_type = cfg["location_type"]
-    #             device.posit_number = cfg["posit_number"]
-    #             device.expected_address = cfg["expected_address"]
-    #             #додав для спектру
-    #             device.real_sensor = "S" if device.location_type == "cistern" else "G"
-
-    #             if device.address != device.expected_address:
-    #                 self.device_error.emit(
-    #                     "config.txt",
-    #                     f"Несовпадение адреса для SN {device.serial_number}: "
-    #                     f"ожидался {device.expected_address}, найден {device.address}"
-    #                 )
-    #                 continue
-    #             valid_devices.append(device)
-    #         else:
-    #             self.device_error.emit(
-    #                 "config.txt",
-    #                 f"SN {device.serial_number} найден, но отсутствует в конфигурации"
-    #             )
-
-    #     if valid_devices:
-    #         """
-    #             self.device_found.emit(valid_devices)
-    #             Преобразуем каждый объект DeviceInfo в безопасный словарь.
-    #             Это предотвращает передачу QObject/виджетов между потоками и
-    #             позволяет GUI создавать виджеты исключительно в главном потоке.
-    #         """
-    #         self.devices = valid_devices
-    #         serializable_list = [self._device_to_dict(d) for d in valid_devices]            
-
-    #         # Эмитим список словарей. Слот в App должен ожидать list[dict].
-    #         self.device_found.emit(serializable_list)
-    #     else:
-    #         self.device_found.emit([])
-    #         self.device_info.emit("Прилади не знайдено або не пройшли перевірку конфігурації")
+            return {}
+    
 
 
     def match_devices_with_config(self):
