@@ -10,14 +10,15 @@ class IntervalsDialog(QDialog):
     """
     Діалог для налаштування інтервалів:
     - час накопичення спектру
-    - інтервал запису в БД
     - інтервал відправки ZB
     - інтервал відправки CZ
+    - інтервал запису в БД
+    - інтервал збереження даних цистерн (неактивні режими)
+    - інтервал збереження даних настінних детекторів
     """
 
     def __init__(self, parent=None):
         # QDialog очікує QWidget як parent
-        # Якщо parent є App (QObject), то шукаємо його ui (головне вікно)
         if parent is not None and hasattr(parent, 'ui'):
             real_parent = parent.ui
         else:
@@ -50,6 +51,8 @@ class IntervalsDialog(QDialog):
         self.spin_db_interval = self.ui.findChild(QSpinBox, "spin_db_interval")
         self.spin_zb_interval = self.ui.findChild(QSpinBox, "spin_zb_interval")
         self.spin_cz_interval = self.ui.findChild(QSpinBox, "spin_cz_interval")
+        self.spin_cistern_save_interval = self.ui.findChild(QSpinBox, "spin_cistern_save_interval")
+        self.spin_wall_save_interval = self.ui.findChild(QSpinBox, "spin_wall_save_interval")
 
         self.btn_save = self.ui.findChild(QPushButton, "btn_save")
         self.btn_cancel = self.ui.findChild(QPushButton, "btn_cancel")
@@ -66,6 +69,10 @@ class IntervalsDialog(QDialog):
                 self.spin_zb_interval.setValue(parent.zb_send_interval)
             if hasattr(parent, 'cz_send_interval'):
                 self.spin_cz_interval.setValue(parent.cz_send_interval)
+            if hasattr(parent, 'cistern_save_interval'):
+                self.spin_cistern_save_interval.setValue(parent.cistern_save_interval)
+            if hasattr(parent, 'wall_save_interval'):
+                self.spin_wall_save_interval.setValue(parent.wall_save_interval)
 
         # --------------------------------------------------------------------
         # Підключаємо сигнали
@@ -87,3 +94,9 @@ class IntervalsDialog(QDialog):
 
     def get_cz_interval(self):
         return self.spin_cz_interval.value()
+
+    def get_cistern_save_interval(self):
+        return self.spin_cistern_save_interval.value()
+
+    def get_wall_save_interval(self):
+        return self.spin_wall_save_interval.value()

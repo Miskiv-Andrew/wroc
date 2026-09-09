@@ -4,6 +4,47 @@
         "isotopes": [
             "I-131",
             "Tc-99m"
-        ]
+        ],
+        "group": "A"
+    },
+    "2": {
+        "full": false,
+        "isotopes": [],
+        "group": "A"
+    },
+    "3": {
+        "full": false,
+        "isotopes": [],
+        "group": "reserve"
+    },
+    "4": {
+        "full": false,
+        "isotopes": [],
+        "group": "B"
+    },
+    "5": {
+        "full": false,
+        "isotopes": [],
+        "group": "B"
+    },
+    "6": {
+        "full": false,
+        "isotopes": [],
+        "group": "B"
+    },
+    "7": {
+        "full": false,
+        "isotopes": [],
+        "group": "B"
+    },
+    "8": {
+        "full": false,
+        "isotopes": [],
+        "group": "B"
+    },
+    "9": {
+        "full": false,
+        "isotopes": [],
+        "group": "B"
     }
 }

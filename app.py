@@ -3,20 +3,24 @@
 import sys
 from PySide6.QtWidgets import QApplication, QWidget, QGridLayout, QVBoxLayout, QPushButton, QLabel, QSizePolicy, QSpacerItem, QDialog, QLineEdit, QMessageBox, QHBoxLayout, QSpinBox, QMenu
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtCore import QFile, QThread, QMetaObject, QTimer , Qt, QObject, Signal, QDateTime
+from PySide6.QtCore import QFile, QThread, QMetaObject, QTimer , Qt, QObject, Signal, QDateTime, QProcess
 from devices.device_manager import DeviceManager
 from PySide6.QtGui import QAction, QPixmap
+from PySide6.QtNetwork import QHostAddress
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 import json, numpy as np
 import os, math
 
-# from sklearn.decomposition import NMF
-# from scipy.optimize import nnls
+
+from PySide6.QtCore import QRegularExpression
+from PySide6.QtGui import QRegularExpressionValidator
 
 from database.db_manager import DatabaseManager
 from dialogs.device_replace_dialog import DeviceReplaceDialog
 import json
+
+from modbus_bridge_client import ModBusBridgeClient
 
 
 # ============================================================
@@ -125,9 +129,9 @@ class SpectrumWidget(QWidget):
 class DeviceCardBarrel(QWidget):
     """
         Клас детектору у контейнері
-    """
-  
+    """  
     def __init__(self, parent_app=None):
+
         super().__init__()
         self.parent_app = parent_app
         self.repeat_counter = 100
@@ -165,7 +169,6 @@ class DeviceCardBarrel(QWidget):
         if btn_hist:
             btn_hist.clicked.connect(self.plot_activity_histogram)
 
-        
         self.last_temperature = 0.0
 
         # Для хранения последних значений
@@ -177,10 +180,14 @@ class DeviceCardBarrel(QWidget):
         self.is_full = False  
 
         self.last_acquisition_time = 0.0    
-
         self.total_acquisition_time = 0.0 
 
         self.algorithm_history = {}  # для зберігання динаміки Tc (група A та reserve)
+
+        # ------------------------------------------------------------
+        # НОВЫЙ АТРИБУТ: активен ли режим накопления спектра
+        # ------------------------------------------------------------
+        self.spectrum_active = False
 
     def clear_history(self):
         """
@@ -406,7 +413,11 @@ class DeviceCardBarrel(QWidget):
         if len(channels) != 1024:
             return
         
-        # Отрумуємо і сумуємо час набора спектра (останній елемент)
+        # Перший отриманий спектр — включаємо режим накопичення
+        if self.spectrum_counter == 0:
+            self.spectrum_active = True
+        
+        # Отримуємо і сумуємо час набора спектра (останній елемент)
         self.last_acquisition_time = channels[-1]
         self.total_acquisition_time += self.last_acquisition_time
         
@@ -421,6 +432,7 @@ class DeviceCardBarrel(QWidget):
         if self.spectrum_counter >= self.repeat_counter:
             self.calculate_activity()
 
+
     def is_spectrum_ready(self) -> bool:
         """Проверяет, накоплено ли 600 спектров"""
         return self.spectrum_counter >= 600
@@ -428,11 +440,12 @@ class DeviceCardBarrel(QWidget):
     
     def reset_spectrum(self):
         """
-            Сбрасывает накопленный спектр и счётчик
+        Сбрасывает накопленный спектр и счётчик.
         """
         self.spectrum_buffer = [0] * 1024
         self.spectrum_counter = 0
         self.total_acquisition_time = 0.0
+        self.spectrum_active = False
         self.update_spectrum_display()
         
         # Сохраняем событие
@@ -457,9 +470,6 @@ class DeviceCardBarrel(QWidget):
         if hasattr(self, 'spectrum') and self.spectrum:
             # Передаём данные в SpectrumWidget для отрисовки
             self.spectrum.update_data(self.spectrum_buffer) 
-
-
-
 
 
 
@@ -509,23 +519,33 @@ class DeviceCardBarrel(QWidget):
         concentration_dict = {}
         output_lines = [f"Цистерна №{self.posit_number} (група {group}):", f"Час набора: {real_time:.1f} сек"]
         
+        # Словник для відповідності назви ізотопу -> код name
+        isotope_code_map = {
+            "18F": 3,
+            "99mTc": 2,
+            "133I": 1,
+            "177Lu": 4,
+            "90Y": 5
+        }
+        
+        # Збираємо дані по ізотопах для відправки в Bridge
+        isotopes_for_bridge = []
+        id_counter = 1
+        
         for name in isotopes_list:
             data = result.get(name, {})
             if not data:
                 continue
             
-            # Отримуємо дані
             activity = data.get("activity", 0.0)
             concentration = data.get("concentration", 0.0)
             detected = data.get("detected", "НЕМАЄ")
             sum_clean = data.get("sum_clean", 0.0)
             
-            # Заповнюємо словники для БД
             if activity > 0 or concentration > 0:
                 activity_dict[name] = activity
                 concentration_dict[name] = concentration
             
-            # Формуємо рядок для виводу
             if sum_clean > 0:
                 output_lines.append(
                     f"  {name}: активність = {activity:.2f} Бк, "
@@ -533,19 +553,27 @@ class DeviceCardBarrel(QWidget):
                 )
             else:
                 output_lines.append(f"  {name}: не виявлено (сума = 0)")
+            
+            code = isotope_code_map.get(name, 0)
+            if code != 0:
+                isotopes_for_bridge.append({
+                    "id": id_counter,
+                    "name": code,
+                    "activity": activity,
+                    "concentration": concentration
+                })
+                id_counter += 1
         
-        # Додаємо інформацію про фон, якщо є
         if "background" in result:
             bg_data = result.get("background", {})
             if bg_data.get("subtracted", False):
                 output_lines.append(f"  Фон: віднято")
         
-        # Виводимо в textEdit
         self.parent_app.ui.textEdit.append("\n".join(output_lines))
         self.parent_app.ui.textEdit.append("---")
         
         # ------------------------------------------------------------
-        # 6. Експорт спектрів (залишаємо як було)
+        # 6. Експорт спектрів
         # ------------------------------------------------------------
         export_dir = "export"
         os.makedirs(export_dir, exist_ok=True)
@@ -559,7 +587,6 @@ class DeviceCardBarrel(QWidget):
         with open(os.path.join(export_dir, "spectrum_total.txt"), "w") as f:
             f.write("\n".join(str(int(x)) for x in export_total_spectrum))
         
-        # Зберігаємо компоненти, якщо є
         components = result.get("components", {})
         for name, spectrum in components.items():
             spectrum_with_time_export = list(spectrum) + [real_time]
@@ -568,10 +595,9 @@ class DeviceCardBarrel(QWidget):
                 f.write("\n".join(str(int(x)) for x in spectrum_with_time_export))
         
         # ------------------------------------------------------------
-        # 7. Збереження в БД (тільки якщо є дані)
+        # 7. Збереження в БД
         # ------------------------------------------------------------
         if activity_dict or concentration_dict:
-            # Перетворюємо на JSON-рядки
             activity_json = json.dumps(activity_dict) if activity_dict else "{}"
             concentration_json = json.dumps(concentration_dict) if concentration_dict else "{}"
             
@@ -597,10 +623,77 @@ class DeviceCardBarrel(QWidget):
                 )
         
         # ------------------------------------------------------------
-        # 8. Скидання буферів
+        # 8. Розрахунок ready_to_drain
+        # ------------------------------------------------------------
+        ready_to_drain = self.parent_app._calculate_ready_to_drain(
+            self.posit_number,
+            activity_dict,
+            concentration_dict
+        )
+        
+        # ------------------------------------------------------------
+        # 9. Відправка повних даних ZB до Bridge
+        # ------------------------------------------------------------
+        if self.posit_number in (1, 2):
+            isotope_count = 2
+        elif self.posit_number == 3:
+            isotope_count = 5
+        else:
+            isotope_count = 3
+        
+        isotopes_for_bridge_final = []
+        
+        if isotopes_for_bridge:
+            for i in range(1, isotope_count + 1):
+                found = False
+                for iso in isotopes_for_bridge:
+                    if iso["id"] == i:
+                        isotopes_for_bridge_final.append(iso)
+                        found = True
+                        break
+                if not found:
+                    isotopes_for_bridge_final.append({
+                        "id": i,
+                        "name": 0,
+                        "activity": 0.0,
+                        "concentration": 0.0
+                    })
+        else:
+            for i in range(1, isotope_count + 1):
+                isotopes_for_bridge_final.append({
+                    "id": i,
+                    "name": 0,
+                    "activity": 0.0,
+                    "concentration": 0.0
+                })
+        
+        zb_object = {
+            "number": self.posit_number,
+            "sn": int(self.serial_number) if self.serial_number.isdigit() else 0,
+            "temperature": self.last_temperature,
+            "paed": self.last_paed_from_spectrum,
+            "high_sensitivity": 1 if self.last_high_status == 1 else 0,
+            "low_sensitivity": 1 if self.last_low_status == 1 else 0,
+            "valid": 1 if self.last_valid == 1 else 0,
+            "device_connection": 1,
+            "ready_to_drain": ready_to_drain,
+            "isotopes": isotopes_for_bridge_final
+        }
+        
+        self.parent_app._send_zb_data([zb_object])
+        
+        # ------------------------------------------------------------
+        # 10. Скидаємо флаг спектральної активності
+        # ------------------------------------------------------------
+        self.spectrum_active = False
+        
+        # ------------------------------------------------------------
+        # 11. Скидання буферів
         # ------------------------------------------------------------
         self.parent_app.db_manager.flush_cistern_buffer()
         self.reset_spectrum()
+
+
 
 
     def plot_activity_histogram(self):
@@ -902,16 +995,11 @@ class App(QObject):
         self.wall_container = None
         self.wall_layout = None
 
-
-
         # загрузка формы из .ui файла
         self.load_ui() 
 
         # создание потока и объекта DeviceManager
         self.setup_device_manager()
-
-        # # связывание кнопок и сигналов
-        # self.setup_connections()   
 
         # Загружаем файл состояния цистерн
         self.load_cistern_data("config/cistern.json")
@@ -927,18 +1015,18 @@ class App(QObject):
         if hasattr(self, 'butt_system_stop'):
             self.butt_system_stop.setEnabled(False)
 
-
         # Загрузка эталонных спектров
         self.load_calibration_spectra()
 
-        # Атрибут для хранения таймера опроса внешней системы
-        self.poll_timer = None
+        # ------------------------------------------------------------
+        # НОВЫЕ АТРИБУТЫ ДЛЯ ИНТЕРВАЛОВ СОХРАНЕНИЯ В БД
+        # ------------------------------------------------------------
+        self.cistern_save_interval = 3600   # секунды (по умолчанию 1 час)
+        self.wall_save_interval = 1800      # секунды (по умолчанию 30 минут)
 
-
-        self.spectrum_accumulation_time = 3600
-        self.db_write_interval = 5
-        self.zb_send_interval = 60
-        self.cz_send_interval = 60
+        # Устанавливаем интервалы в DatabaseManager
+        self.db_manager.set_cistern_save_interval(self.cistern_save_interval)
+        self.db_manager.set_wall_save_interval(self.wall_save_interval)
 
         # ============================================================
         # БЛОК КОНСТАНТ АЛГОРИТМІВ ІДЕНТИФІКАЦІЇ (ALIM)
@@ -1016,9 +1104,42 @@ class App(QObject):
         self.DEAD_TIME_COEFF = 0.00002
         self.SPECTRUM_CHANNELS = 1023
 
+        # ============================================================
+        # КОНСТАНТИ ДЛЯ РОЗРАХУНКУ ready_to_drain (Закон 1320)
+        # ============================================================
+        # Група A (18F, 99mTc)
+        self.READY_TO_DRAIN_A_F_ACTIVITY_LIMIT = 1_000_000       # Бк
+        self.READY_TO_DRAIN_A_F_CONCENTRATION_LIMIT = 10_000     # Бк/л
+        self.READY_TO_DRAIN_A_TC_ACTIVITY_LIMIT = 10_000_000     # Бк
+        self.READY_TO_DRAIN_A_TC_CONCENTRATION_LIMIT = 100_000   # Бк/л
+
+        # Група B (133I, 177Lu, 90Y)
+        self.READY_TO_DRAIN_B_I_ACTIVITY_LIMIT = 1_000_000       # Бк
+        self.READY_TO_DRAIN_B_I_CONCENTRATION_LIMIT = 100_000    # Бк/л
+        self.READY_TO_DRAIN_B_LU_ACTIVITY_LIMIT = 10_000_000     # Бк
+        self.READY_TO_DRAIN_B_LU_CONCENTRATION_LIMIT = 1_000_000 # Бк/л
+        self.READY_TO_DRAIN_B_Y_ACTIVITY_LIMIT = 100_000         # Бк
+        self.READY_TO_DRAIN_B_Y_CONCENTRATION_LIMIT = 1_000_000  # Бк/л
+
+        # Нижня та верхня межі для суми активностей (обидві групи)
+        self.READY_TO_DRAIN_ACTIVITY_SUM_MIN = 1000
+        self.READY_TO_DRAIN_ACTIVITY_SUM_MAX = 10000
+
+        # Атрибут для хранения процесса C++ диспетчера
+        self.bridge_process = None
+
+        # --------------------------------------------------------------------
+        # Екземпляр ModBusBridgeClient для зв'язку з C++ диспетчером
+        # --------------------------------------------------------------------        
+        self.modbus_client = ModBusBridgeClient(
+            host="127.0.0.1",
+            port=12345,
+            parent=self
+        )
 
         # связывание кнопок и сигналов
         self.setup_connections()   
+
 
 
     def load_ui(self):
@@ -1039,9 +1160,10 @@ class App(QObject):
         self.ui.showMaximized() 
 
 
+  
     def setup_ui(self):
         """
-            Розмітка контейнерів для карток приладів
+        Розмітка контейнерів для карток приладів та налаштування елементів керування ПЛК.
         """
         self.barrel_container = self.ui.findChild(QWidget, "containerBarrel")
         self.wall_container = self.ui.findChild(QWidget, "containerWall")
@@ -1051,6 +1173,45 @@ class App(QObject):
         self.btn_connect_plc = self.ui.findChild(QPushButton, "btn_connect_plc")  # кнопка
         self.indicator_plc = self.ui.findChild(QLabel, "indicator_plc")      # индикатор PLC
         self.indicator_bridge = self.ui.findChild(QLabel, "indicator_bridge") # индикатор Bridge
+
+        # --------------------------------------------------------------------
+        # 1. ВАЛІДАЦІЯ IP-АДРЕСИ
+        # --------------------------------------------------------------------
+        # Встановлюємо регулярний вираз для перевірки IPv4-адреси.
+        # Вираз перевіряє чотири октети, кожен від 0 до 255.
+        # Дозволені значення: 0.0.0.0 ... 255.255.255.255
+        #
+        # Пояснення частин регулярного виразу:
+        #   25[0-5]       -> 250-255
+        #   2[0-4][0-9]   -> 200-249
+        #   [01]?[0-9][0-9]? -> 0-199 (з можливим ведучим нулем)
+        #   \.            -> крапка-роздільник
+        #   {3}           -> рівно три повторення (для перших трьох октетів)
+        #   $             -> кінець рядка (щоб не пропускати зайві символи)
+        # --------------------------------------------------------------------
+        ip_regex = QRegularExpression(
+            r'^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$'
+        )
+        
+        # Створюємо валідатор на основі регулярного виразу
+        validator = QRegularExpressionValidator(ip_regex, self.plc_ip_edit)
+        
+        # Встановлюємо валідатор на поле введення IP
+        self.plc_ip_edit.setValidator(validator)
+        
+        # Встановлюємо підказку (placeholder text) для поля IP
+        self.plc_ip_edit.setPlaceholderText("192.168.1.50")
+
+        # --------------------------------------------------------------------
+        # 2. НАЛАШТУВАННЯ ПОЛЯ ПОРТУ
+        # --------------------------------------------------------------------
+        # Встановлюємо значення порту за замовчуванням (502 — стандартний порт ModBus TCP)
+        self.plc_port_spin.setValue(502)
+
+        # --------------------------------------------------------------------
+        # 3. НАЛАШТУВАННЯ ІНДИКАТОРІВ (початковий стан — червоний, немає підключень)
+        # --------------------------------------------------------------------
+        self.update_plc_indicators(plc_connected=False, bridge_connected=False)
 
         self.barrel_grid = self.barrel_container.layout()
         if self.barrel_grid is None:
@@ -1092,6 +1253,205 @@ class App(QObject):
             self.ui.textEdit.append("Увага: меню 'Прилади' не знайдено")
 
 
+    def start_bridge(self, plc_ip: str, plc_port: int) -> bool:
+        """
+        Запускає ModBusBridgeService.exe через QProcess.
+        
+        Вхід:
+            plc_ip - IP-адреса ПЛК (рядок)
+            plc_port - порт ПЛК (int)
+        
+        Вихід:
+            True - якщо процес успішно запущено
+            False - якщо сталася помилка
+        """
+        # --------------------------------------------------------------------
+        # 1. Якщо процес вже запущений — не створюємо новий
+        # --------------------------------------------------------------------
+        if self.bridge_process is not None:
+            state = self.bridge_process.state()
+            if state == QProcess.ProcessState.Running or state == QProcess.ProcessState.Starting:
+                self.ui.textEdit.append("ModBusBridgeService вже запущений")
+                return False
+        
+        # --------------------------------------------------------------------
+        # 2. Перевіряємо наявність виконуваного файлу
+        # --------------------------------------------------------------------
+        executable = os.path.join("ModBusBridgeService_Runtime", "ModBusBridgeService.exe")
+        if not os.path.exists(executable):
+            self.ui.textEdit.append(f"Помилка: файл {executable} не знайдено")
+            return False
+        
+        # --------------------------------------------------------------------
+        # 3. Формуємо аргументи командного рядка
+        # --------------------------------------------------------------------
+        args = [str(plc_ip), str(plc_port)]
+        
+        self.ui.textEdit.append(f"Запуск {executable} з аргументами: {args}")
+        
+        # --------------------------------------------------------------------
+        # 4. Створюємо та налаштовуємо QProcess
+        # --------------------------------------------------------------------
+        self.bridge_process = QProcess(self)
+        self.bridge_process.setProgram(executable)
+        self.bridge_process.setArguments(args)
+        
+        # --------------------------------------------------------------------
+        # 5. Підключаємо сигнали
+        # --------------------------------------------------------------------
+        self.bridge_process.started.connect(self.on_bridge_started)
+        self.bridge_process.finished.connect(self.on_bridge_finished)
+        self.bridge_process.errorOccurred.connect(self.on_bridge_error)
+        self.bridge_process.readyReadStandardOutput.connect(self.on_bridge_stdout)
+        self.bridge_process.readyReadStandardError.connect(self.on_bridge_stderr)
+        
+        # --------------------------------------------------------------------
+        # 6. Запускаємо процес
+        # --------------------------------------------------------------------
+        self.bridge_process.start()
+        
+        # --------------------------------------------------------------------
+        # 7. Чекаємо, поки процес запуститься (неблокуюче очікування)
+        # --------------------------------------------------------------------
+        if not self.bridge_process.waitForStarted(3000):
+            self.ui.textEdit.append("Помилка: не вдалося запустити ModBusBridgeService")
+            self.bridge_process = None
+            return False
+        
+        self.ui.textEdit.append("ModBusBridgeService успішно запущено")
+        return True
+
+
+    def stop_bridge(self):
+        """
+        Зупиняє ModBusBridgeService.exe.
+        """
+        if self.bridge_process is None:
+            return
+        
+        state = self.bridge_process.state()
+        if state == QProcess.ProcessState.NotRunning:
+            self.ui.textEdit.append("ModBusBridgeService вже зупинено")
+            self.bridge_process = None
+            return
+        
+        self.ui.textEdit.append("Зупинка ModBusBridgeService...")
+        
+        # Відправляємо сигнал завершення
+        self.bridge_process.terminate()
+        
+        # Чекаємо 3 секунди
+        if not self.bridge_process.waitForFinished(3000):
+            # Якщо не завершився — примусово завершуємо
+            self.ui.textEdit.append("Примусове завершення ModBusBridgeService")
+            self.bridge_process.kill()
+            self.bridge_process.waitForFinished(1000)
+        
+        self.ui.textEdit.append("ModBusBridgeService зупинено")
+        self.bridge_process = None
+
+
+    def on_bridge_started(self):
+        """
+        Обробник сигналу started — процес C++ запущено.
+        """
+        self.ui.textEdit.append("[Bridge] Процес запущено")
+
+
+    def on_bridge_finished(self, exit_code, exit_status):
+        """
+        Обробник сигналу finished — процес C++ завершився.
+        """
+        status_text = "нормально" if exit_status == QProcess.ExitStatus.NormalExit else "аварійно"
+        self.ui.textEdit.append(f"[Bridge] Процес завершено з кодом {exit_code} ({status_text})")
+        
+        # Оновлюємо індикатори
+        self.update_plc_indicators(plc_connected=False, bridge_connected=False)
+        
+        self.bridge_process = None
+
+
+    def on_bridge_error(self, error):
+        """
+        Обробник сигналу errorOccurred — помилка процесу C++.
+        """
+        error_map = {
+            QProcess.ProcessError.FailedToStart: "Не вдалося запустити процес",
+            QProcess.ProcessError.Crashed: "Процес аварійно завершився",
+            QProcess.ProcessError.Timedout: "Таймаут під час очікування",
+            QProcess.ProcessError.WriteError: "Помилка запису в процес",
+            QProcess.ProcessError.ReadError: "Помилка читання з процесу",
+            QProcess.ProcessError.UnknownError: "Невідома помилка"
+        }
+        error_text = error_map.get(error, f"Помилка: {error}")
+        self.ui.textEdit.append(f"[Bridge] {error_text}")
+        self.update_plc_indicators(plc_connected=False, bridge_connected=False)
+        self.bridge_process = None
+
+
+    def on_bridge_stdout(self):
+        """
+        Обробник сигналу readyReadStandardOutput — вивід stdout від C++.
+        """
+        if self.bridge_process is None:
+            return
+        data = self.bridge_process.readAllStandardOutput()
+        text = data.data().decode('utf-8', errors='replace').strip()
+        if text:
+            self.ui.textEdit.append(f"[Bridge stdout] {text}")
+
+
+    def on_bridge_stderr(self):
+        """
+        Обробник сигналу readyReadStandardError — вивід stderr від C++.
+        """
+        if self.bridge_process is None:
+            return
+        data = self.bridge_process.readAllStandardError()
+        text = data.data().decode('utf-8', errors='replace').strip()
+        if text:
+            self.ui.textEdit.append(f"[Bridge stderr] {text}")
+
+
+
+    def update_plc_indicators(self, plc_connected: bool, bridge_connected: bool):
+        """
+        Оновлює кольорові індикатори стану підключення до ПЛК та Bridge.
+        
+        Вхід:
+            plc_connected   - True, якщо C++ підключений до ПЛК
+            bridge_connected - True, якщо Python підключений до C++ (локальний сокет)
+        """
+        # --------------------------------------------------------------------
+        # Індикатор PLC (підключення C++ → ПЛК)
+        # --------------------------------------------------------------------
+        if plc_connected:
+            self.indicator_plc.setStyleSheet(
+                "background-color: #4CAF50; border-radius: 5px; min-width: 16px; min-height: 16px;"
+            )
+            self.indicator_plc.setToolTip("PLC підключено")
+        else:
+            self.indicator_plc.setStyleSheet(
+                "background-color: #f44336; border-radius: 5px; min-width: 16px; min-height: 16px;"
+            )
+            self.indicator_plc.setToolTip("PLC не підключено")
+
+        # --------------------------------------------------------------------
+        # Індикатор Bridge (підключення Python → C++)
+        # --------------------------------------------------------------------
+        if bridge_connected:
+            self.indicator_bridge.setStyleSheet(
+                "background-color: #4CAF50; border-radius: 5px; min-width: 16px; min-height: 16px;"
+            )
+            self.indicator_bridge.setToolTip("З'єднання з Bridge встановлено")
+        else:
+            self.indicator_bridge.setStyleSheet(
+                "background-color: #f44336; border-radius: 5px; min-width: 16px; min-height: 16px;"
+            )
+            self.indicator_bridge.setToolTip("З'єднання з Bridge відсутнє")
+
+
+
     def on_open_intervals(self):
         """
         Відкриває діалог налаштування інтервалів.
@@ -1105,13 +1465,27 @@ class App(QObject):
             self.zb_send_interval = dialog.get_zb_interval()
             self.cz_send_interval = dialog.get_cz_interval()
             
+            # НОВЫЕ ИНТЕРВАЛЫ ДЛЯ БД
+            self.cistern_save_interval = dialog.get_cistern_save_interval()
+            self.wall_save_interval = dialog.get_wall_save_interval()
+            
+            # Применяем интервалы к DatabaseManager
+            if hasattr(self, 'db_manager'):
+                self.db_manager.set_cistern_save_interval(self.cistern_save_interval)
+                self.db_manager.set_wall_save_interval(self.wall_save_interval)
+            
             self.ui.textEdit.append(
                 f"Налаштування інтервалів збережено: "
                 f"спектр={self.spectrum_accumulation_time}с, "
                 f"ZB={self.zb_send_interval}с, "
                 f"CZ={self.cz_send_interval}с, "
-                f"БД={self.db_write_interval}хв"
+                f"БД={self.db_write_interval}хв, "
+                f"збереження цистерн={self.cistern_save_interval}с, "
+                f"збереження приміщення={self.wall_save_interval}с"
             )
+
+
+
 
     def db_window(self):
         """
@@ -1195,13 +1569,194 @@ class App(QObject):
         # Кнопка подключения к PLC
         self.btn_connect_plc.clicked.connect(self.on_connect_plc_clicked)
 
+        # --------------------------------------------------------------------
+        # Сигналы ModBusBridgeClient
+        # --------------------------------------------------------------------
+        if hasattr(self, 'modbus_client') and self.modbus_client is not None:
+            self.modbus_client.connected.connect(self.on_bridge_connected)
+            self.modbus_client.disconnected.connect(self.on_bridge_disconnected)
+            self.modbus_client.dataReceived.connect(self.on_bridge_data_received)
+            self.modbus_client.errorOccurred.connect(self.on_bridge_error_message)
+            self.modbus_client.logMessage.connect(self.on_bridge_log_message)
+        else:
+            self.ui.textEdit.append("Увага: ModBusBridgeClient не створено")
+
+
+
 
 
     def on_connect_plc_clicked(self):
+        """
+        Обробник натискання кнопки «Підключитися до ПЛК».
+        Перевіряє IP, запускає C++ процес і підключається до Bridge.
+        """
         ip = self.plc_ip_edit.text().strip()
         port = self.plc_port_spin.value()
-        self.ui.textEdit.append(f"Подключение к ПЛК {ip}:{port} (заглушка)")
-        # Позже здесь будет запуск C++ процесса и подключение к Bridge
+        
+        # --------------------------------------------------------------------
+        # Перевірка IP за допомогою QHostAddress
+        # --------------------------------------------------------------------
+        if not ip:
+            self.ui.textEdit.append("Помилка: IP-адреса не може бути порожньою")
+            return
+        
+        host = QHostAddress(ip)
+        if host.protocol() != QHostAddress.IPv4Protocol:
+            self.ui.textEdit.append(f"Помилка: '{ip}' не є коректною IPv4-адресою")
+            return
+        
+        self.ui.textEdit.append(f"Підключення до ПЛК {ip}:{port}")
+        
+        # --------------------------------------------------------------------
+        # Запускаємо C++ процес
+        # --------------------------------------------------------------------
+        if not self.start_bridge(ip, port):
+            return
+        
+        # --------------------------------------------------------------------
+        # Підключаємося до Bridge через локальний сокет
+        # --------------------------------------------------------------------
+        self.ui.textEdit.append("[Bridge] Спроба підключення до Bridge...")
+        
+        # Робимо до 3 спроб з інтервалом 1 секунда
+        max_attempts = 3
+        attempt = 0
+        connected = False
+        
+        while attempt < max_attempts:
+            attempt += 1
+            self.ui.textEdit.append(f"[Bridge] Спроба {attempt} з {max_attempts}...")
+            
+            # Викликаємо підключення
+            if self.modbus_client.connect_to_bridge():
+                connected = True
+                break
+            
+            # Якщо не вдалося — чекаємо 1 секунду перед наступною спробою
+            if attempt < max_attempts:
+                import time
+                time.sleep(1)
+        
+        if connected:
+            self.ui.textEdit.append("[Bridge] Підключення до Bridge успішне")
+            # Індикатор bridge оновиться через сигнал connected
+        else:
+            self.ui.textEdit.append(
+                f"[Bridge] Не вдалося підключитися до Bridge після {max_attempts} спроб"
+            )
+            # Індикатор bridge залишиться червоним (disconnected)
+
+
+
+    def on_bridge_connected(self):
+        """
+        Обробник сигналу connected — підключення до Bridge встановлено.
+        """
+        self.ui.textEdit.append("[Bridge] З'єднання з Bridge встановлено")
+        # При подключении к Bridge считаем, что PLC также доступен (C++ уже подключился или подключится)
+        self.update_plc_indicators(plc_connected=True, bridge_connected=True)
+
+    def on_bridge_disconnected(self):
+        """
+        Обробник сигналу disconnected — з'єднання з Bridge втрачено.
+        """
+        self.ui.textEdit.append("[Bridge] З'єднання з Bridge втрачено")
+        self.update_plc_indicators(plc_connected=False, bridge_connected=False)
+
+
+    def on_bridge_data_received(self, data):
+        """
+        Обробник сигналу dataReceived — отримано JSON від Bridge.
+        
+        Вхід:
+            data - dict, розпарсений JSON від C++ диспетчера
+        """
+        try:
+            msg_type = data.get("type", "unknown")
+            
+            if msg_type == "read":
+                # --------------------------------------------------------------------
+                # Отримано дані про стан цистерн (fullness) від C++ диспетчера
+                # Формат: {"type": "read", "data": {"zb": [{"number": 1, "fullness": 0}, ...]}}
+                # --------------------------------------------------------------------
+                zb_list = data.get("data", {}).get("zb", [])
+                
+                if not zb_list:
+                    # Якщо список порожній — ігноруємо
+                    return
+                
+                updated = False
+                for zb in zb_list:
+                    number = zb.get("number")
+                    fullness = zb.get("fullness")
+                    
+                    # --------------------------------------------------------------------
+                    # Перевірка коректності даних
+                    # --------------------------------------------------------------------
+                    if number is None or fullness is None:
+                        self.ui.textEdit.append(
+                            f"[Bridge] Помилка: неповні дані для цистерни: {zb}"
+                        )
+                        continue
+                    
+                    if number < 1 or number > 9:
+                        self.ui.textEdit.append(
+                            f"[Bridge] Помилка: невірний номер цистерни {number}"
+                        )
+                        continue
+                    
+                    if fullness not in (0, 1):
+                        self.ui.textEdit.append(
+                            f"[Bridge] Помилка: невірне значення fullness={fullness} для ZB{number}"
+                        )
+                        continue
+                    
+                    # --------------------------------------------------------------------
+                    # Оновлюємо стан цистерни в словнику
+                    # --------------------------------------------------------------------
+                    new_fullness = bool(fullness)  # 1 -> True, 0 -> False
+                    if self.cistern_dict.get(number) != new_fullness:
+                        self.cistern_dict[number] = new_fullness
+                        updated = True
+                
+                # --------------------------------------------------------------------
+                # Якщо були зміни — синхронізуємо з GUI та DeviceManager
+                # --------------------------------------------------------------------
+                if updated:
+                    self.sync_devices_with_cisterns()
+                    self.sync_cisterns_to_manager.emit(self.cistern_dict)
+                    
+            else:
+                # Для інших типів повідомлень — виводимо в лог (тільки якщо увімкнено детальний режим)
+                if self.bridge_debug_mode:
+                    self.ui.textEdit.append(f"[Bridge] Отримано повідомлення типу '{msg_type}'")
+                    
+        except Exception as e:
+            self.ui.textEdit.append(f"[Bridge] Помилка при обробці даних: {e}")
+
+
+
+
+    def on_bridge_error_message(self, message):
+        """
+        Обробник сигналу errorOccurred — помилка від Bridge.
+        
+        Вхід:
+            message - str текст помилки
+        """
+        self.ui.textEdit.append(f"[Bridge ERROR] {message}")
+
+
+    def on_bridge_log_message(self, message):
+        """
+        Обробник сигналу logMessage — діагностичне повідомлення від Bridge.
+        
+        Вхід:
+            message - str текст повідомлення
+        """
+        self.ui.textEdit.append(f"[Bridge] {message}")
+
+
 
     def load_calibration_spectra(self):
         """
@@ -1249,11 +1804,6 @@ class App(QObject):
         """
             Остановка опроса приборов
         """
-        # Останавливаем таймер опроса внешней системы
-        if hasattr(self, 'poll_timer') and self.poll_timer is not None:
-            self.poll_timer.stop()
-            self.poll_timer = None
-        
         if self.device_manager:
             self.device_manager.stop_all()
             self.ui.textEdit.append("Систему зупинено")
@@ -1271,6 +1821,7 @@ class App(QObject):
             # Разблокируем кнопку поиска
             if hasattr(self, 'butt_search_dev'):
                 self.butt_search_dev.setEnabled(True)
+
 
 
     def on_device_packet(self, packet):
@@ -1297,7 +1848,6 @@ class App(QObject):
                     accuracy = data["accuracy"]
                     card.set_dose_value(dose, accuracy)
                     
-                    # Відправляємо ПАЕД в DeviceManager для оновлення стану приладу
                     self.device_manager.update_device_paed.emit(sn, dose)
                     
                     low_failure = data.get("low_sens_failure", True)
@@ -1306,12 +1856,11 @@ class App(QObject):
                     
                     card.set_detector_status(low_failure, high_failure, result_valid)
                     
-                    # Збереження в БД через буфер для цистерн,
-                    # для настінних — через буфер настінних.
                     device_id = self.db_manager.get_device_id(sn)
                     if device_id is not None:
+                        temp_value = getattr(card, 'last_temperature', 0.0)
+                        
                         if card.location_type == "room":
-                            temp_value = getattr(card, 'last_temperature', 0.0)
                             self.db_manager.buffer_wall_measurement(
                                 device_id=device_id,
                                 paed=dose,
@@ -1320,11 +1869,23 @@ class App(QObject):
                                 high_status=1 if high_failure else 0,
                                 valid=1 if result_valid else 0
                             )
+                            cz_object = {
+                                "number": card.posit_number,
+                                "sn": int(sn) if sn.isdigit() else 0,
+                                "temperature": temp_value,
+                                "paed": dose,
+                                "high_sensitivity": 1 if high_failure else 0,
+                                "low_sensitivity": 1 if low_failure else 0,
+                                "valid": 1 if result_valid else 0,
+                                "device_connection": 1
+                            }
+                            self._send_cz_data([cz_object])
+                            
                         elif card.location_type == "cistern":
-                            temp_value = getattr(card, 'last_temperature', 0.0)
                             fullness_status = "full" if getattr(card, 'is_full', False) else "empty"
                             group = self.cistern_groups.get(card.posit_number, "A")
-                            # Додаємо в буфер цистерни з порожніми JSON (активність і концентрація будуть пізніше)
+                            
+                            # --- Добавлен spectrum_active ---
                             self.db_manager.buffer_cistern_measurement(
                                 device_id=device_id,
                                 paed=dose,
@@ -1335,8 +1896,40 @@ class App(QObject):
                                 fullness_status=fullness_status,
                                 group=group,
                                 activity_json="{}",
-                                concentration_json="{}"
+                                concentration_json="{}",
+                                spectrum_active=card.spectrum_active
                             )
+                            
+                            # Визначаємо кількість позицій
+                            if card.posit_number in (1, 2):
+                                isotope_count = 2
+                            elif card.posit_number == 3:
+                                isotope_count = 5
+                            else:
+                                isotope_count = 3
+                            
+                            isotopes = []
+                            for i in range(1, isotope_count + 1):
+                                isotopes.append({
+                                    "id": i,
+                                    "name": 0,
+                                    "activity": 0.0,
+                                    "concentration": 0.0
+                                })
+                            
+                            zb_object = {
+                                "number": card.posit_number,
+                                "sn": int(sn) if sn.isdigit() else 0,
+                                "temperature": temp_value,
+                                "paed": dose,
+                                "high_sensitivity": 1 if high_failure else 0,
+                                "low_sensitivity": 1 if low_failure else 0,
+                                "valid": 1 if result_valid else 0,
+                                "device_connection": 1,
+                                "ready_to_drain": 0,
+                                "isotopes": isotopes
+                            }
+                            self._send_zb_data([zb_object])
                     else:
                         self.ui.textEdit.append(f"Помилка: прилад {sn} не знайдено в БД")
 
@@ -1361,30 +1954,22 @@ class App(QObject):
                     test_byte = packet.buff.get("test_byte", 0)
                     result_valid = packet.buff.get("valid", False)
 
-                    # Відправляємо ПАЕД в DeviceManager
                     self.device_manager.update_device_paed.emit(sn, paed_value)
-                    
-                    # Запам'ятовуємо ПАЕД для використання в calculate_activity
                     card.last_paed_from_spectrum = paed_value
-                    
-                    # Передаємо дані в картку приладу (накопичення спектру)
                     card.add_spectrum_data(channels)
-                    
-                    # Оновлюємо ПАЕД на картці
                     card.set_dose_value(paed_value, accuracy)
                     
-                    # Оновлюємо стан детекторів з test_byte
-                    # Інверсія: 1 = норма, 0 = відмова (відповідно до логіки виведення)
                     high_failure = not bool(test_byte & 0b00000001)
                     low_failure = not bool(test_byte & 0b00000010)
                     card.set_detector_status(low_failure, high_failure, result_valid)
                     
-                    # Збереження ПАЕД в буфер цистерни (з порожніми JSON)
                     device_id = self.db_manager.get_device_id(sn)
                     if device_id is not None and card.location_type == "cistern":
                         temp_value = getattr(card, 'last_temperature', 0.0)
                         fullness_status = "full" if getattr(card, 'is_full', False) else "empty"
                         group = self.cistern_groups.get(card.posit_number, "A")
+                        
+                        # --- Добавлен spectrum_active ---
                         self.db_manager.buffer_cistern_measurement(
                             device_id=device_id,
                             paed=paed_value,
@@ -1395,12 +1980,12 @@ class App(QObject):
                             fullness_status=fullness_status,
                             group=group,
                             activity_json="{}",
-                            concentration_json="{}"
+                            concentration_json="{}",
+                            spectrum_active=card.spectrum_active
                         )
                     elif device_id is None:
                         self.ui.textEdit.append(f"Помилка: прилад {sn} не знайдено в БД")
                     
-                    # Перевіряємо, чи досягнуто ліміт накопичених спектрів
                     if card.is_spectrum_ready():
                         card.calculate_activity()
                 else:
@@ -1410,6 +1995,8 @@ class App(QObject):
             self.ui.textEdit.append(f"Error parsing packet for {sn}: {e}\n-------------------")
 
 
+
+   
 
 
     def create_device_card(self, device):
@@ -1515,9 +2102,6 @@ class App(QObject):
         # Отправляем начальное состояние цистерн в DeviceManager
         self.sync_cisterns_to_manager.emit(self.cistern_dict)
 
-        # Начинаем процедуру опроса внешней Системы Управления
-        self.start_test_polling("config/cistern.json")
-
         # Разблокируем кнопку поиска
         self.butt_search_dev.setEnabled(True)
 
@@ -1548,61 +2132,426 @@ class App(QObject):
         self.butt_system_stop.setEnabled(False)
 
 
+
+
+
+    # def load_cistern_data(self, json_file: str):
+    #     """
+    #     Загружает данные о заполненности цистерн, списках изотопов и группах из файла.
+    #     Если файл отсутствует или повреждён, создаёт дефолтные данные для 20 цистерн
+    #     с предустановленными группами:
+    #         - цистерны 1, 2 → группа "A"
+    #         - цистерна 3 → группа "reserve"
+    #         - цистерны 4–9 → группа "B"
+    #         - цистерны 10–20 → группа "A" (по умолчанию)
+    #     """
+    #     try:
+    #         with open(json_file, "r", encoding="utf-8") as f:
+    #             data = json.load(f)
+            
+    #         self.cistern_dict = {}       # {номер: full}
+    #         self.cistern_isotopes = {}   # {номер: [изотопы]}
+    #         self.cistern_groups = {}     # {номер: группа}
+            
+    #         for k, v in data.items():
+    #             pos = int(k)
+    #             self.cistern_dict[pos] = bool(v.get("full", False))
+    #             self.cistern_isotopes[pos] = v.get("isotopes", [])
+    #             self.cistern_groups[pos] = v.get("group", "A")  # если поля нет — группа A
+                    
+    #     except (FileNotFoundError, json.JSONDecodeError):
+    #         # Файл отсутствует или битый — создаём дефолт
+    #         print(f"Файл {json_file} відсутній або пошкоджений. Створюємо дефолтні дані (20 порожніх цистерн)")
+            
+    #         self.cistern_dict = {i: False for i in range(1, 21)}
+    #         self.cistern_isotopes = {i: [] for i in range(1, 21)}
+    #         self.cistern_groups = {}
+            
+    #         # Задаём группы для цистерн 1–9, остальные по умолчанию A
+    #         for i in range(1, 10):
+    #             if i == 1 or i == 2:
+    #                 self.cistern_groups[i] = "A"
+    #             elif i == 3:
+    #                 self.cistern_groups[i] = "reserve"
+    #             elif 4 <= i <= 9:
+    #                 self.cistern_groups[i] = "B"
+    #             else:
+    #                 self.cistern_groups[i] = "A"
+    #         for i in range(10, 21):
+    #             self.cistern_groups[i] = "A"
+            
+    #         # Записываем новый файл с полной структурой
+    #         with open(json_file, "w", encoding="utf-8") as f:
+    #             export_data = {}
+    #             for i in range(1, 21):
+    #                 export_data[str(i)] = {
+    #                     "full": False,
+    #                     "isotopes": [],
+    #                     "group": self.cistern_groups.get(i, "A")
+    #                 }
+    #             json.dump(export_data, f, ensure_ascii=False, indent=4)
+
+
     def load_cistern_data(self, json_file: str):
         """
-        Загружает данные о заполненности цистерн, списках изотопов и группах из файла.
-        Если файл отсутствует или повреждён, создаёт дефолтные данные для 20 цистерн
-        с предустановленными группами:
-            - цистерны 1, 2 → группа "A"
-            - цистерна 3 → группа "reserve"
-            - цистерны 4–9 → группа "B"
-            - цистерны 10–20 → группа "A" (по умолчанию)
+        Завантажує стан цистерн ZB1-ZB9 з JSON-файлу.
+
+        Для актуальної конфігурації WROCLAW використовуються
+        тільки 9 цистерн:
+
+            ZB1, ZB2     -> група "A"
+            ZB3          -> група "reserve"
+            ZB4 ... ZB9  -> група "B"
+
+        Для кожної цистерни зберігаються:
+            full      - ознака заповненості;
+            isotopes  - список раніше визначених ізотопів;
+            group     - група алгоритму ідентифікації.
+
+        Метод захищений від:
+            - відсутності cistern.json;
+            - пошкодженого JSON;
+            - неправильного типу кореневого об'єкта;
+            - неправильних номерів цистерн;
+            - неправильного типу запису окремої цистерни;
+            - неправильного типу поля full;
+            - неправильного типу поля isotopes;
+            - відсутніх записів ZB1-ZB9;
+            - застарілих записів цистерн 10-20.
+
+        Група цистерни визначається її фізичною позицією,
+        а не значенням з JSON-файлу. Це виключає ситуацію,
+        коли через пошкоджений або застарілий cistern.json
+        для цистерни буде вибрано неправильний алгоритм.
         """
+
+        # ============================================================
+        # 1. СТВОРЮЄМО ЕТАЛОННУ СТРУКТУРУ ДЛЯ ZB1-ZB9
+        # ============================================================
+
+        # Словник заповненості цистерн.
+        # За замовчуванням усі цистерни вважаються порожніми.
+        self.cistern_dict = {
+            i: False
+            for i in range(1, 10)
+        }
+
+        # Словник раніше визначених ізотопів.
+        # За замовчуванням список для кожної цистерни порожній.
+        self.cistern_isotopes = {
+            i: []
+            for i in range(1, 10)
+        }
+
+        # Група алгоритму визначається жорстко за позицією цистерни.
+        #
+        # ZB1-ZB2 -> F-18 + Tc-99m
+        # ZB3     -> резервний алгоритм усіх п'яти ізотопів
+        # ZB4-ZB9 -> I-131 + Lu-177 + Y-90
+        self.cistern_groups = {
+            1: "A",
+            2: "A",
+            3: "reserve",
+            4: "B",
+            5: "B",
+            6: "B",
+            7: "B",
+            8: "B",
+            9: "B",
+        }
+
+        # Ознака того, що файл необхідно привести
+        # до актуальної повної структури ZB1-ZB9.
+        need_rewrite = False
+
+        # ============================================================
+        # 2. НАМАГАЄМОСЯ ПРОЧИТАТИ ІСНУЮЧИЙ ФАЙЛ
+        # ============================================================
+
         try:
             with open(json_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            
-            self.cistern_dict = {}       # {номер: full}
-            self.cistern_isotopes = {}   # {номер: [изотопы]}
-            self.cistern_groups = {}     # {номер: группа}
-            
-            for k, v in data.items():
-                pos = int(k)
-                self.cistern_dict[pos] = bool(v.get("full", False))
-                self.cistern_isotopes[pos] = v.get("isotopes", [])
-                self.cistern_groups[pos] = v.get("group", "A")  # если поля нет — группа A
-                    
-        except (FileNotFoundError, json.JSONDecodeError):
-            # Файл отсутствует или битый — создаём дефолт
-            print(f"Файл {json_file} відсутній або пошкоджений. Створюємо дефолтні дані (20 порожніх цистерн)")
-            
-            self.cistern_dict = {i: False for i in range(1, 21)}
-            self.cistern_isotopes = {i: [] for i in range(1, 21)}
-            self.cistern_groups = {}
-            
-            # Задаём группы для цистерн 1–9, остальные по умолчанию A
-            for i in range(1, 10):
-                if i == 1 or i == 2:
-                    self.cistern_groups[i] = "A"
-                elif i == 3:
-                    self.cistern_groups[i] = "reserve"
-                elif 4 <= i <= 9:
-                    self.cistern_groups[i] = "B"
+
+            # Кореневий JSON-об'єкт обов'язково повинен бути словником:
+            #
+            # {
+            #     "1": {...},
+            #     "2": {...}
+            # }
+            #
+            # Якщо там список, число, рядок тощо —
+            # файл структурно неправильний.
+            if not isinstance(data, dict):
+                raise ValueError(
+                    "Кореневий об'єкт cistern.json повинен бути словником."
+                )
+
+            # ========================================================
+            # 3. ЗАВАНТАЖУЄМО ТІЛЬКИ КОРЕКТНІ ЗАПИСИ ZB1-ZB9
+            # ========================================================
+
+            for key, value in data.items():
+
+                # ----------------------------------------------------
+                # Перевіряємо номер цистерни
+                # ----------------------------------------------------
+
+                try:
+                    position = int(key)
+                except (TypeError, ValueError):
+                    print(
+                        f"Некоректний номер цистерни у {json_file}: "
+                        f"{key!r}. Запис пропущено."
+                    )
+                    need_rewrite = True
+                    continue
+
+                # В актуальній системі існують тільки ZB1-ZB9.
+                if position < 1 or position > 9:
+                    print(
+                        f"Застарілий або некоректний запис ZB{position} "
+                        f"у {json_file}. Запис пропущено."
+                    )
+                    need_rewrite = True
+                    continue
+
+                # ----------------------------------------------------
+                # Перевіряємо структуру запису
+                # ----------------------------------------------------
+
+                if not isinstance(value, dict):
+                    print(
+                        f"Некоректні дані для ZB{position} "
+                        f"у {json_file}. Використано значення за замовчуванням."
+                    )
+                    need_rewrite = True
+                    continue
+
+                # ----------------------------------------------------
+                # Завантажуємо full
+                # ----------------------------------------------------
+
+                full_value = value.get("full", False)
+
+                # Не використовуємо просто bool(full_value), тому що,
+                # наприклад:
+                #
+                #     bool("false") == True
+                #
+                # що могло б помилково позначити цистерну як заповнену.
+                if isinstance(full_value, bool):
+                    self.cistern_dict[position] = full_value
                 else:
-                    self.cistern_groups[i] = "A"
-            for i in range(10, 21):
-                self.cistern_groups[i] = "A"
-            
-            # Записываем новый файл с полной структурой
-            with open(json_file, "w", encoding="utf-8") as f:
-                export_data = {}
-                for i in range(1, 21):
-                    export_data[str(i)] = {
-                        "full": False,
-                        "isotopes": [],
-                        "group": self.cistern_groups.get(i, "A")
-                    }
-                json.dump(export_data, f, ensure_ascii=False, indent=4)
+                    print(
+                        f"Некоректне поле 'full' для ZB{position} "
+                        f"у {json_file}. Використано False."
+                    )
+                    self.cistern_dict[position] = False
+                    need_rewrite = True
+
+                # ----------------------------------------------------
+                # Завантажуємо список ізотопів
+                # ----------------------------------------------------
+
+                isotopes_value = value.get("isotopes", [])
+
+                if isinstance(isotopes_value, list):
+                    # Зберігаємо тільки рядкові значення.
+                    #
+                    # Це захищає подальший код від випадкових
+                    # чисел, словників або інших об'єктів у JSON.
+                    valid_isotopes = [
+                        isotope
+                        for isotope in isotopes_value
+                        if isinstance(isotope, str)
+                    ]
+
+                    self.cistern_isotopes[position] = valid_isotopes
+
+                    # Якщо частина значень була відкинута,
+                    # файл треба нормалізувати.
+                    if len(valid_isotopes) != len(isotopes_value):
+                        need_rewrite = True
+
+                else:
+                    print(
+                        f"Некоректне поле 'isotopes' для ZB{position} "
+                        f"у {json_file}. Використано порожній список."
+                    )
+                    self.cistern_isotopes[position] = []
+                    need_rewrite = True
+
+                # ----------------------------------------------------
+                # Поле group з файлу навмисно НЕ використовуємо.
+                # ----------------------------------------------------
+                #
+                # Група є характеристикою позиції цистерни,
+                # а не змінним станом.
+                #
+                # Тому:
+                #   ZB1-ZB2 -> A
+                #   ZB3     -> reserve
+                #   ZB4-ZB9 -> B
+                #
+                # завжди визначаються self.cistern_groups.
+
+                expected_group = self.cistern_groups[position]
+
+                if value.get("group") != expected_group:
+                    need_rewrite = True
+
+            # --------------------------------------------------------
+            # Перевіряємо, чи присутні всі ZB1-ZB9
+            # --------------------------------------------------------
+
+            expected_positions = {
+                str(i)
+                for i in range(1, 10)
+            }
+
+            actual_positions = {
+                str(key)
+                for key in data.keys()
+                if str(key).isdigit()
+                and 1 <= int(key) <= 9
+            }
+
+            if actual_positions != expected_positions:
+                need_rewrite = True
+
+        # ============================================================
+        # 4. ФАЙЛ ВІДСУТНІЙ
+        # ============================================================
+
+        except FileNotFoundError:
+            print(
+                f"Файл {json_file} відсутній. "
+                f"Буде створено новий файл для ZB1-ZB9."
+            )
+
+            need_rewrite = True
+
+        # ============================================================
+        # 5. JSON СИНТАКСИЧНО ПОШКОДЖЕНИЙ
+        # ============================================================
+
+        except json.JSONDecodeError as error:
+            print(
+                f"Файл {json_file} містить пошкоджений JSON: {error}. "
+                f"Буде створено коректну структуру ZB1-ZB9."
+            )
+
+            need_rewrite = True
+
+        # ============================================================
+        # 6. JSON МАЄ НЕПРАВИЛЬНУ СТРУКТУРУ
+        # ============================================================
+
+        except (TypeError, ValueError) as error:
+            print(
+                f"Некоректна структура файлу {json_file}: {error}. "
+                f"Буде створено коректну структуру ZB1-ZB9."
+            )
+
+            need_rewrite = True
+
+        # ============================================================
+        # 7. ІНШІ ПОМИЛКИ ЧИТАННЯ ФАЙЛУ
+        # ============================================================
+
+        except OSError as error:
+            # Помилка файлової системи не повинна валити запуск
+            # всього застосунку.
+            #
+            # У пам'яті залишаються безпечні значення,
+            # створені на початку методу.
+            print(
+                f"Не вдалося прочитати файл {json_file}: {error}. "
+                f"Використовуються значення за замовчуванням."
+            )
+
+            # Тут не намагаємося одразу перезаписувати файл,
+            # оскільки причина може бути у відсутності прав,
+            # недоступному диску тощо.
+            return
+
+        # ============================================================
+        # 8. НОРМАЛІЗУЄМО ФАЙЛ ПРИ НЕОБХІДНОСТІ
+        # ============================================================
+
+        if need_rewrite:
+
+            export_data = {}
+
+            for position in range(1, 10):
+                export_data[str(position)] = {
+                    "full": self.cistern_dict[position],
+                    "isotopes": self.cistern_isotopes[position],
+                    "group": self.cistern_groups[position],
+                }
+
+            try:
+                # На випадок, якщо каталог config відсутній,
+                # створюємо його перед записом.
+                directory = os.path.dirname(json_file)
+
+                if directory:
+                    os.makedirs(directory, exist_ok=True)
+
+                # ----------------------------------------------------
+                # АТОМАРНИЙ ЗАПИС
+                # ----------------------------------------------------
+                #
+                # Спочатку записуємо повний JSON у тимчасовий файл.
+                # Тільки після успішного завершення запису
+                # замінюємо основний cistern.json.
+                #
+                # Це зменшує ризик залишити напівзаписаний JSON,
+                # наприклад, при аварійному завершенні програми
+                # безпосередньо під час запису.
+
+                temp_file = json_file + ".tmp"
+
+                with open(temp_file, "w", encoding="utf-8") as f:
+                    json.dump(
+                        export_data,
+                        f,
+                        ensure_ascii=False,
+                        indent=4
+                    )
+
+                    # Гарантуємо передачу даних з буфера Python
+                    # операційній системі перед заміною файлу.
+                    f.flush()
+                    os.fsync(f.fileno())
+
+                # os.replace() замінює старий файл новим.
+                # На одному файловому томі ця операція є атомарною.
+                os.replace(temp_file, json_file)
+
+                print(
+                    f"Файл {json_file} приведено до актуальної "
+                    f"структури ZB1-ZB9."
+                )
+
+            except OSError as error:
+                # Навіть якщо файл не вдалося оновити,
+                # програма продовжує працювати з коректною
+                # структурою self.cistern_dict у пам'яті.
+                print(
+                    f"Не вдалося оновити файл {json_file}: {error}"
+                )
+
+                # Якщо тимчасовий файл залишився після помилки,
+                # намагаємося його видалити.
+                temp_file = json_file + ".tmp"
+
+                try:
+                    if os.path.exists(temp_file):
+                        os.remove(temp_file)
+                except OSError:
+                    pass
+
 
     
     def sync_devices_with_cisterns(self):
@@ -1647,123 +2596,68 @@ class App(QObject):
             except Exception as e:
                 continue
 
-    def start_test_polling(self, json_file: str):
-        """
-            Запускает имитационный опрос Системы Управления (состояние заполненности цистерн).
-            Каждые 30 секунд получает словарь с новыми данными и сравнивает его
-            с self.cistern_dict. При изменении обновляет словарь, приборы и файл.
-        """
-        # Если таймер уже существует — останавливаем его
-        if self.poll_timer is not None and self.poll_timer.isActive():
-            self.poll_timer.stop()
-        
-        self.poll_timer = QTimer()
-        self.poll_timer.setInterval(30_000)  # 30 секунд
-        self.poll_timer.timeout.connect(lambda: self.poll_system(json_file))
-        self.poll_timer.start()
-
-
-
-    def poll_system(self, json_file: str, new_data: dict = None):
-        """
-        Опрос Системы Управления.
-        Сравниваем новые данные new_data со словарём self.cistern_dict.
-        При изменении обновляем словарь, приборы и файл.
-        Если в новых данных есть номер цистерны, которого нет в словаре —
-        фиксируем ошибку и предупреждаем администратора.
-        """
-        # Если new_data не передан — используем данные из lineEdit (имитация)
-        # if new_data is None:
-        #     text = self.ui.lineEdit.text().strip()
-        #     if text == "Full":
-        #         new_data = {1: True}                
-        #     elif text == "Empty":
-        #         new_data = {1: False}                
-        #     else:                
-        #         return
-
-        updated = False
-        for num, new_value in new_data.items():
-            if num not in self.cistern_dict:
-                # Ошибка: цистерна отсутствует в конфигурации
-                self.ui.textEdit.append(
-                    f"УВАГА: отримано дані по цистерні №{num}, "
-                    f"якої немає у конфігурації cistern_dict. "
-                    f"Перевірте налаштування та файл cistern.json!"
-                )
-                continue
-
-            current_value = self.cistern_dict[num]
-            if new_value != current_value:
-                self.cistern_dict[num] = new_value
-                updated = True
-
-                # Обновляем GUI‑карточки и сбрасываем спектр при изменении состояния
-                for sn, card in self.cards_by_sn.items():
-                    if getattr(card, "posit_number", None) == num or getattr(card, "posit", None) == num:
-                        old_full = getattr(card, "is_full", False)
-                        card.is_full = new_value
-                        card.set_barrel_image(new_value)
-                        
-                        # Если состояние изменилось
-                        if old_full != new_value:
-                            if new_value:
-                                # Цистерна стала полной
-                                if hasattr(card, 'reset_spectrum'):
-                                    card.reset_spectrum()
-                                    self.ui.textEdit.append(f"Цистерна №{num} заповнена. Початок накопичення спектру.")
-                                # Системное событие - заполнение цистерны
-                                device_id = self.db_manager.get_device_id(card.serial_number)
-                                if device_id:
-                                    self.db_manager.save_system_event(device_id, "cistern_filled", f"Цистерна №{num} заповнена")
-                            else:
-                                # Цистерна стала пустой
-                                if hasattr(card, 'reset_spectrum'):
-                                    card.reset_spectrum()
-                                    self.ui.textEdit.append(f"Цистерна №{num} спорожнена. Спектр скинуто.")
-                                # Системное событие - слив цистерны
-                                device_id = self.db_manager.get_device_id(card.serial_number)
-                                if device_id:
-                                    self.db_manager.save_system_event(device_id, "cistern_drained", f"Цистерна №{num} спорожнена")
-                        break
-
-        # Если были изменения — перезаписываем файл cistern.json и синхронизируем с DeviceManager
-        if updated:
-            with open(json_file, "w", encoding="utf-8") as f:
-                export_data = {}
-                for pos, full in self.cistern_dict.items():
-                    export_data[str(pos)] = {
-                        "full": full,
-                        "isotopes": self.cistern_isotopes.get(pos, []),
-                        "group": self.cistern_groups.get(pos, "A")
-                    }
-                json.dump(export_data, f, ensure_ascii=False, indent=4)
-                try:
-                    self.sync_cisterns_to_manager.emit(self.cistern_dict)
-                except Exception:
-                    pass
-
     
     def cleanup(self):
-        # Останавливаем таймер опроса внешней системы
-        if hasattr(self, 'poll_timer') and self.poll_timer is not None:
-            self.poll_timer.stop()
-            self.poll_timer = None
-        
-        # DeviceManager корректно останавливаем в его потоке
-        try:
-            QMetaObject.invokeMethod(self.device_manager, "stop_all", Qt.ConnectionType.QueuedConnection)
-        except Exception:
-            pass
-        
-        # Корректно завершаем поток менеджера
+        """
+        Коректне завершення роботи програми.
+        Зупиняє всі таймери, процеси та закриває з'єднання.
+        """
+        # --------------------------------------------------------------------
+        # 2. Закриваємо з'єднання з Bridge (ModBusBridgeClient)
+        # --------------------------------------------------------------------
+        if hasattr(self, 'modbus_client') and self.modbus_client is not None:
+            self.ui.textEdit.append("[Bridge] Закриття з'єднання з Bridge...")
+            self.modbus_client.shutdown()
+            self.ui.textEdit.append("[Bridge] З'єднання з Bridge закрито")
+
+        # --------------------------------------------------------------------
+        # 3. Зупиняємо C++ процес (ModBusBridgeService)
+        # --------------------------------------------------------------------
+        self.stop_bridge()
+
+        # --------------------------------------------------------------------
+        # 4. Зупиняємо DeviceManager (коректно в його потоці)
+        # --------------------------------------------------------------------
+        if self.device_manager is not None:
+            try:
+                QMetaObject.invokeMethod(
+                    self.device_manager,
+                    "stop_all",
+                    Qt.ConnectionType.QueuedConnection
+                )
+            except Exception as e:
+                self.ui.textEdit.append(f"Помилка при зупинці DeviceManager: {e}")
+
+        # --------------------------------------------------------------------
+        # 5. Завершуємо потік DeviceManager
+        # --------------------------------------------------------------------
         if self.device_manager_thread is not None and self.device_manager_thread.isRunning():
             self.device_manager_thread.quit()
-            self.device_manager_thread.wait(2000)
+            if not self.device_manager_thread.wait(2000):
+                self.device_manager_thread.terminate()
+                self.device_manager_thread.wait(1000)
+
+        # --------------------------------------------------------------------
+        # 6. Закриваємо з'єднання з БД та записуємо подію зупинки
+        # --------------------------------------------------------------------
+        if self.db_manager is not None:
+            self.db_manager.save_system_event(None, "app_stop", "Програма зупинена")
+            self.db_manager.close()
+
+        self.ui.textEdit.append("Програма завершена")
+
+    def is_bridge_connected(self) -> bool:
+        """
+        Перевіряє, чи встановлено з'єднання з Bridge (ModBusBridgeClient).
         
-        self.db_manager.save_system_event(None, "app_stop", "Програма зупинена")
-        self.db_manager.close()
-    
+        Вихід:
+            True - якщо з'єднання активне
+            False - якщо з'єднання відсутнє або клієнт не створено
+        """
+        if hasattr(self, 'modbus_client') and self.modbus_client is not None:
+            return self.modbus_client.is_connected()
+        return False
+        
 
     def start_polling_and_test_system(self):
         """
@@ -1783,8 +2677,7 @@ class App(QObject):
         
         # Запуск опроса
         self.start_polling.emit()
-        self.start_test_polling("config/cistern.json")
-            
+                   
     def on_device_connection_status(self, serial_number: str, connected: bool, crc_error: bool):
         """
         Обработка изменения статуса связи прибора
@@ -1802,10 +2695,8 @@ class App(QObject):
     
     def open_replace_dialog(self):
         """
-            Открывает диалог замены/активации приборов.
-            Активные  и неактивные приборы для замены 
-            берутся из БД (is_active = 1, 0),
-            
+        Открывает диалог замены/активации приборов.
+        Активные и неактивные приборы для замены берутся из БД (is_active = 1, 0).
         """
         # Активные приборы (для замены) - берем из БД
         active_devices = self.db_manager.get_all_active_devices()
@@ -1813,8 +2704,17 @@ class App(QObject):
         # Неактивные приборы (для активации) - берем из БД
         inactive_devices = self.db_manager.get_inactive_devices()
         
-        dialog = DeviceReplaceDialog(self.db_manager, active_devices, inactive_devices, self.ui)
+        dialog = DeviceReplaceDialog(
+            self.db_manager,
+            active_devices,
+            inactive_devices,
+            self.ui,
+            self  # передаем ссылку на App для отправки данных в Bridge
+        )
         dialog.exec()
+
+
+
 
     def on_search_devices(self):
         """
@@ -1944,26 +2844,60 @@ class App(QObject):
     def _load_base_spectrum(self, name):
         """
         Завантаження базового спектру з self.calibration_spectra.
-        
+
         Вхід:
-            name - ім'я файлу без розширення (напр. "base_I")
-        
+            name - логічне ім'я спектру.
+
         Вихід:
-            list[float] - спектр довжиною 1023 (обрізаний або доповнений)
-            None - якщо спектр не знайдено
+            list[float] - спектр довжиною 1023 каналів.
+            None - якщо необхідний спектр не знайдено.
+
+        Примітка:
+            У алгоритмах ідентифікації базовий спектр йоду
+            запитується під логічним ім'ям "base_I".
+
+            Фактичний файл у папці calibration має ім'я:
+                I-131.txt
+
+            Тому для "base_I" використовуємо спектр "I-131".
         """
-        spectrum = self.calibration_spectra.get(name)
+
+        # ------------------------------------------------------------
+        # 1. ВИЗНАЧАЄМО ФАКТИЧНЕ ІМ'Я СПЕКТРУ
+        # ------------------------------------------------------------
+
+        spectrum_name = name
+
+        # Алгоритми груп B та reserve використовують логічне
+        # ім'я "base_I", але реальний файл називається I-131.txt.
+        if name == "base_I":
+            spectrum_name = "I-131"
+
+        # ------------------------------------------------------------
+        # 2. ОТРИМУЄМО СПЕКТР
+        # ------------------------------------------------------------
+
+        spectrum = self.calibration_spectra.get(spectrum_name)
+
         if spectrum is None:
             return None
-        
-        # Приводимо до 1023 каналів
+
+        # ------------------------------------------------------------
+        # 3. ПРИВОДИМО СПЕКТР ДО 1023 РОБОЧИХ КАНАЛІВ
+        # ------------------------------------------------------------
+        #
+        # 1024-е значення у файлі використовується як час набору,
+        # тому для спектральних розрахунків використовуються
+        # тільки перші 1023 значення.
+
         if len(spectrum) >= 1023:
             return list(spectrum[:1023])
-        else:
-            # Доповнюємо нулями
-            result = list(spectrum)
-            result.extend([0.0] * (1023 - len(result)))
-            return result
+
+        # Теоретичний захист на випадок короткого масиву.
+        result = list(spectrum)
+        result.extend([0.0] * (1023 - len(result)))
+
+        return result     
 
     def _calculate_decay_coefficient(self, T, half_life_minutes):
         """
@@ -2812,32 +3746,338 @@ class App(QObject):
         # 6. Повертаємо результат та оновлену історію
         # ------------------------------------------------------------
         return result, updated_history
+
+
+
+    def _send_zb_data(self, zb_list):
+        """
+        Відправляє дані цистерн (ZB) до Bridge.
+        
+        Вхід:
+            zb_list - список об'єктів ZB, кожен з яких містить поля:
+                number, sn, temperature, paed, high_sensitivity, low_sensitivity,
+                valid, device_connection, ready_to_drain, isotopes (масив)
+        
+        Якщо Bridge не підключений — виводить попередження в textEdit і не відправляє.
+        """
+        if not self.is_bridge_connected():
+            self.ui.textEdit.append("[ZB] Bridge не підключений, дані не відправлені")
+            return
+        
+        if not zb_list:
+            return
+        
+        try:
+            if not self.modbus_client.send_zb(zb_list):
+                self.ui.textEdit.append("[ZB] Помилка при відправці даних")
+        except Exception as e:
+            self.ui.textEdit.append(f"[ZB] Виняток при відправці: {e}")
+
+    def _send_cz_data(self, cz_list):
+        """
+        Відправляє дані настінних детекторів (CZ) до Bridge.
+        
+        Вхід:
+            cz_list - список об'єктів CZ, кожен з яких містить поля:
+                number, sn, temperature, paed, high_sensitivity, low_sensitivity,
+                valid, device_connection
+        
+        Якщо Bridge не підключений — виводить попередження в textEdit і не відправляє.
+        """
+        if not self.is_bridge_connected():
+            self.ui.textEdit.append("[CZ] Bridge не підключений, дані не відправлені")
+            return
+        
+        if not cz_list:
+            return
+        
+        try:
+            if not self.modbus_client.send_cz(cz_list):
+                self.ui.textEdit.append("[CZ] Помилка при відправці даних")
+        except Exception as e:
+            self.ui.textEdit.append(f"[CZ] Виняток при відправці: {e}")
+
+
+    def _calculate_ready_to_drain(self, posit_number, activity_dict, concentration_dict):
+        """
+        Розраховує готовність до сливу для цистерни на основі активностей та концентрацій.
+        
+        Вхід:
+            posit_number - номер цистерни (1..9)
+            activity_dict - словник {назва_ізотопу: активність_Бк}
+            concentration_dict - словник {назва_ізотопу: концентрація_Бк_л}
+        
+        Вихід:
+            1 - якщо умови сливу виконані
+            0 - якщо умови не виконані
+        """
+        if not activity_dict or not concentration_dict:
+            return 0
+        
+        group = self.cistern_groups.get(posit_number, "A")
+        
+        if group == "A":
+            return self._check_ready_to_drain_group_a(activity_dict, concentration_dict)
+        elif group == "B":
+            return self._check_ready_to_drain_group_b(activity_dict, concentration_dict)
+        elif group == "reserve":
+            return self._check_ready_to_drain_reserve(activity_dict, concentration_dict)
+        
+        return 0
+
+    def _check_ready_to_drain_group_a(self, activity_dict, concentration_dict):
+        """
+        Перевіряє умови сливу для групи A (ZB1, ZB2).
+        """
+        A_F = activity_dict.get("18F", 0.0)
+        A_Tc = activity_dict.get("99mTc", 0.0)
+        S_F = concentration_dict.get("18F", 0.0)
+        S_Tc = concentration_dict.get("99mTc", 0.0)
+        
+        # Якщо активностей немає — не готово
+        if A_F == 0 and A_Tc == 0:
+            return 0
+        
+        # Тільки 18F
+        if A_F > 0 and A_Tc == 0:
+            return 1 if (A_F < self.READY_TO_DRAIN_A_F_ACTIVITY_LIMIT and
+                        S_F < self.READY_TO_DRAIN_A_F_CONCENTRATION_LIMIT) else 0
+        
+        # Тільки 99mTc
+        if A_Tc > 0 and A_F == 0:
+            return 1 if (A_Tc < self.READY_TO_DRAIN_A_TC_ACTIVITY_LIMIT and
+                        S_Tc < self.READY_TO_DRAIN_A_TC_CONCENTRATION_LIMIT) else 0
+        
+        # Обидва ізотопи
+        activity_sum = A_F / self.READY_TO_DRAIN_A_F_ACTIVITY_LIMIT + \
+                    A_Tc / self.READY_TO_DRAIN_A_TC_ACTIVITY_LIMIT
+        concentration_sum = S_F / self.READY_TO_DRAIN_A_F_CONCENTRATION_LIMIT + \
+                            S_Tc / self.READY_TO_DRAIN_A_TC_CONCENTRATION_LIMIT
+        
+        if (self.READY_TO_DRAIN_ACTIVITY_SUM_MIN < activity_sum < self.READY_TO_DRAIN_ACTIVITY_SUM_MAX and
+            concentration_sum <= 1):
+            return 1
+        return 0
+
+
+    def _check_ready_to_drain_group_b(self, activity_dict, concentration_dict):
+        """
+        Перевіряє умови сливу для групи B (ZB4-ZB9).
+        """
+        A_I = activity_dict.get("133I", 0.0)
+        A_Lu = activity_dict.get("177Lu", 0.0)
+        A_Y = activity_dict.get("90Y", 0.0)
+        S_I = concentration_dict.get("133I", 0.0)
+        S_Lu = concentration_dict.get("177Lu", 0.0)
+        S_Y = concentration_dict.get("90Y", 0.0)
+        
+        # Якщо активностей немає — не готово
+        if A_I == 0 and A_Lu == 0 and A_Y == 0:
+            return 0
+        
+        # Підраховуємо кількість присутніх ізотопів
+        present = []
+        if A_I > 0: present.append("I")
+        if A_Lu > 0: present.append("Lu")
+        if A_Y > 0: present.append("Y")
+        
+        # Тільки один ізотоп
+        if len(present) == 1:
+            if "I" in present:
+                return 1 if (A_I < self.READY_TO_DRAIN_B_I_ACTIVITY_LIMIT and
+                            S_I < self.READY_TO_DRAIN_B_I_CONCENTRATION_LIMIT) else 0
+            if "Lu" in present:
+                return 1 if (A_Lu < self.READY_TO_DRAIN_B_LU_ACTIVITY_LIMIT and
+                            S_Lu < self.READY_TO_DRAIN_B_LU_CONCENTRATION_LIMIT) else 0
+            if "Y" in present:
+                return 1 if (A_Y < self.READY_TO_DRAIN_B_Y_ACTIVITY_LIMIT and
+                            S_Y < self.READY_TO_DRAIN_B_Y_CONCENTRATION_LIMIT) else 0
+            return 0
+        
+        # Декілька ізотопів
+        activity_sum = A_I / self.READY_TO_DRAIN_B_I_ACTIVITY_LIMIT + \
+                    A_Lu / self.READY_TO_DRAIN_B_LU_ACTIVITY_LIMIT + \
+                    A_Y / self.READY_TO_DRAIN_B_Y_ACTIVITY_LIMIT
+        concentration_sum = S_I / self.READY_TO_DRAIN_B_I_CONCENTRATION_LIMIT + \
+                            S_Lu / self.READY_TO_DRAIN_B_LU_CONCENTRATION_LIMIT + \
+                            S_Y / self.READY_TO_DRAIN_B_Y_CONCENTRATION_LIMIT
+        
+        if (self.READY_TO_DRAIN_ACTIVITY_SUM_MIN < activity_sum < self.READY_TO_DRAIN_ACTIVITY_SUM_MAX and
+            concentration_sum <= 1):
+            return 1
+        return 0
+
+    def _check_ready_to_drain_reserve(self, activity_dict, concentration_dict):
+        """
+        Перевіряє умови сливу для резервної цистерни (ZB3).
+        """
+        # Перевіряємо групу A (якщо є відповідні ізотопи)
+        ready_a = 1
+        A_F = activity_dict.get("18F", 0.0)
+        A_Tc = activity_dict.get("99mTc", 0.0)
+        
+        if A_F > 0 or A_Tc > 0:
+            ready_a = self._check_ready_to_drain_group_a(activity_dict, concentration_dict)
+        
+        # Перевіряємо групу B (якщо є відповідні ізотопи)
+        ready_b = 1
+        A_I = activity_dict.get("133I", 0.0)
+        A_Lu = activity_dict.get("177Lu", 0.0)
+        A_Y = activity_dict.get("90Y", 0.0)
+        
+        if A_I > 0 or A_Lu > 0 or A_Y > 0:
+            ready_b = self._check_ready_to_drain_group_b(activity_dict, concentration_dict)
+        
+        return 1 if (ready_a == 1 and ready_b == 1) else 0
+
+    def _send_ready_to_drain_update(self, posit_number, ready_to_drain):
+        """
+        Відправляє оновлення статусу ready_to_drain для цистерни в Bridge.
+        """
+        if not self.is_bridge_connected():
+            return
+        
+        zb_object = {
+            "number": posit_number,
+            "ready_to_drain": ready_to_drain
+        }
+        
+        try:
+            if not self.modbus_client.send_zb([zb_object]):
+                self.ui.textEdit.append(f"[ZB] Помилка при відправці ready_to_drain для ZB{posit_number}")
+        except Exception as e:
+            self.ui.textEdit.append(f"[ZB] Виняток при відправці ready_to_drain: {e}")
+
+
+    def _send_replacement_to_bridge(self, zb_number: int, new_sn: int):
+        """
+        Отправляет информацию о замене прибора в Bridge.
+        
+        Вход:
+            zb_number - номер цистерны (1..9)
+            new_sn - новый серийный номер прибора
+        """
+        if not self.is_bridge_connected():
+            self.ui.textEdit.append(
+                f"[REPLACEMENT] Bridge не подключен, "
+                f"данные о замене ZB{zb_number}->{new_sn} не отправлены"
+            )
+            return
+        
+        try:
+            success = self.modbus_client.send_replacement(zb_number, new_sn)
+            if not success:
+                self.ui.textEdit.append(
+                    f"[REPLACEMENT] Ошибка при отправке замены ZB{zb_number}->{new_sn}"
+                )
+        except Exception as e:
+            self.ui.textEdit.append(
+                f"[REPLACEMENT] Исключение при отправке замены ZB{zb_number}->{new_sn}: {e}"
+            )
+
     
-  
+            
+
+# def main():
+#     """
+#     Точка входу в програму.
+#     Спочатку перевіряємо пароль, потім запускаємо основне вікно.
+#     """
+#     # Створюємо об'єкт програми Qt
+#     app = QApplication(sys.argv)
+
+#     # ------------------------------------------------------------
+#     # 1. Показуємо діалог вводу пароля
+#     # ------------------------------------------------------------
+#     password_dialog = PasswordDialog()
+#     result = password_dialog.exec()  # exec() повертає QDialog.Accepted або QDialog.Rejected
+
+#     # Якщо користувач натиснув Cancel або ввів неправильний пароль — виходимо
+#     if result != QDialog.Accepted:
+#         sys.exit(0)  # завершуємо програму без помилок
+
+#     # ------------------------------------------------------------
+#     # 2. Пароль правильний — створюємо головне вікно
+#     # ------------------------------------------------------------
+#     window = App()
+#     app.aboutToQuit.connect(window.cleanup)
+#     sys.exit(app.exec())
 
 def main():
     """
     Точка входу в програму.
-    Спочатку перевіряємо пароль, потім запускаємо основне вікно.
+
+    Перед запуском програми встановлюємо робочу директорію
+    в каталог, де знаходиться app.py.
+
+    Це необхідно, щоб усі відносні шляхи програми:
+        _UI/
+        config/
+        calibration/
+        data/
+        ModBusBridgeService_Runtime/
+    працювали однаково незалежно від того, звідки була
+    запущена програма: IDE, ярлик Windows, автозапуск тощо.
+
+    Після цього перевіряємо пароль і запускаємо основне вікно.
     """
-    # Створюємо об'єкт програми Qt
+
+    # ============================================================
+    # 1. ВСТАНОВЛЮЄМО РОБОЧУ ДИРЕКТОРІЮ ПРОГРАМИ
+    # ============================================================
+
+    # Отримуємо абсолютний шлях до каталогу,
+    # в якому знаходиться поточний файл app.py.
+    application_dir = os.path.dirname(os.path.abspath(__file__))
+
+    # Робимо цей каталог поточною робочою директорією.
+    #
+    # Після цього всі відносні шляхи, наприклад:
+    #   config/config.txt
+    #   data/clinic.db
+    #   calibration/background.txt
+    #   _UI/main_window_form.ui
+    #
+    # будуть шукатися саме відносно каталогу програми.
+    os.chdir(application_dir)
+
+    # ============================================================
+    # 2. СТВОРЮЄМО QT APPLICATION
+    # ============================================================
+
     app = QApplication(sys.argv)
 
-    # ------------------------------------------------------------
-    # 1. Показуємо діалог вводу пароля
-    # ------------------------------------------------------------
+    # ============================================================
+    # 3. АВТОРИЗАЦІЯ
+    # ============================================================
+
     password_dialog = PasswordDialog()
-    result = password_dialog.exec()  # exec() повертає QDialog.Accepted або QDialog.Rejected
 
-    # Якщо користувач натиснув Cancel або ввів неправильний пароль — виходимо
+    # exec() повертає:
+    #   QDialog.Accepted
+    # або
+    #   QDialog.Rejected
+    result = password_dialog.exec()
+
+    # Якщо користувач натиснув Cancel —
+    # завершуємо програму штатно.
     if result != QDialog.Accepted:
-        sys.exit(0)  # завершуємо програму без помилок
+        sys.exit(0)
 
-    # ------------------------------------------------------------
-    # 2. Пароль правильний — створюємо головне вікно
-    # ------------------------------------------------------------
+    # ============================================================
+    # 4. СТВОРЮЄМО ГОЛОВНЕ ВІКНО
+    # ============================================================
+
     window = App()
+
+    # Перед повним завершенням QApplication викликаємо cleanup(),
+    # щоб коректно зупинити потоки, таймери, Bridge і БД.
     app.aboutToQuit.connect(window.cleanup)
+
+    # ============================================================
+    # 5. ЗАПУСКАЄМО ГОЛОВНИЙ ЦИКЛ QT
+    # ============================================================
+
     sys.exit(app.exec())
 
 

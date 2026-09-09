@@ -9,6 +9,7 @@ from   datetime import datetime, timedelta
 
 
 class DatabaseManager:
+
     def __init__(self, db_path="data/clinic.db"):
         """
         Инициализация менеджера базы данных.
@@ -24,12 +25,28 @@ class DatabaseManager:
         # Буфер для настенных детекторов: {device_id: (timestamp, paed, temperature, low_status, high_status, valid)}
         self.wall_buffer = {}
         
-        # Таймер для сброса буфера раз в 30 минут
-        self.flush_timer = QTimer()
-        self.flush_timer.timeout.connect(self._flush_wall_buffer)
-        self.flush_timer.start(30 * 60 * 1000)  # 30 минут
+        # ------------------------------------------------------------
+        # НОВЫЕ АТРИБУТЫ ДЛЯ ИНТЕРВАЛОВ СОХРАНЕНИЯ
+        # ------------------------------------------------------------
+        self.cistern_save_interval = 3600   # секунды (по умолчанию 1 час)
+        self.wall_save_interval = 1800      # секунды (по умолчанию 30 минут)
         
+        # ------------------------------------------------------------
+        # ТАЙМЕРЫ ДЛЯ ПЕРИОДИЧЕСКОГО СБРОСА БУФЕРОВ
+        # ------------------------------------------------------------
+        # Таймер для настенных детекторов (заменяет старый flush_timer)
+        self.wall_timer = QTimer()
+        self.wall_timer.timeout.connect(self._flush_wall_buffer)
+        self.wall_timer.start(self.wall_save_interval * 1000)  # переводим в мс
+        
+        # Таймер для цистерн (только для неактивных режимов)
+        self.cistern_timer = QTimer()
+        self.cistern_timer.timeout.connect(self.flush_inactive_cistern_buffer)
+        self.cistern_timer.start(self.cistern_save_interval * 1000)
+        
+        # ------------------------------------------------------------
         # Создаём таблицы, если их нет
+        # ------------------------------------------------------------
         self._create_tables_if_not_exist()
 
         # Заполняем devices из config.txt
@@ -40,7 +57,6 @@ class DatabaseManager:
         
         # Очищаем старые записи при старте
         self.cleanup_old_records()
-
         
         # Запускаем таймер для ежедневной очистки (24 часа)
         self.cleanup_timer = QTimer()
@@ -50,9 +66,13 @@ class DatabaseManager:
         # Явно создаём соединение при старте
         self._get_connection()
 
-        # Буфер для цистерн: зберігає останнє вимірювання ПАЕД та температури для кожної цистерни.
-        # Ключ — device_id, значення — кортеж (timestamp, paed, temperature, low_status, high_status, valid, fullness_status)
+        # Буфер для цистерн: хранит последнее измерение для каждой цистерны.
+        # Ключ — device_id, значение — кортеж:
+        # (timestamp, paed, temperature, activity_json, concentration_json,
+        #  low_status, high_status, valid, fullness_status, group, spectrum_active)
         self.cistern_buffer = {}
+
+
     
     def _get_connection(self):
         """Возвращает соединение с БД. Создаёт новое, если нет активного."""
@@ -212,6 +232,9 @@ class DatabaseManager:
         
         conn.commit()
         self.wall_buffer.clear()
+
+
+        
     
     def save_cistern_measurement(self, device_id, paed, temperature, activity_json, concentration_json, low_status, high_status, valid, fullness_status, group=None):
         """
@@ -394,37 +417,62 @@ class DatabaseManager:
                 VALUES (?, ?, ?, ?, 1)
             """, (serial_number, device_type, location_type, position_number))
 
-    def buffer_cistern_measurement(self, device_id, paed, temperature, low_status, high_status, valid, fullness_status, group=None, activity_json="{}", concentration_json="{}"):
+    def buffer_cistern_measurement(self, device_id, paed, temperature, low_status, high_status, valid, fullness_status, group=None, activity_json="{}", concentration_json="{}", spectrum_active=False):
         """
-        Додає вимірювання цистерни до буфера.
-        В буфері зберігається останнє значення для кожного device_id.
-        
-        Вхід:
-            device_id - int ID приладу
-            paed - float ПАЕД
-            temperature - float температура
-            low_status - int 0/1 стан низькочутливого детектора
-            high_status - int 0/1 стан високочутливого детектора
-            valid - int 0/1 валідність
-            fullness_status - str "full" / "empty"
-            group - str або None група цистерни
-            activity_json - str JSON з активностями (за замовчуванням "{}")
-            concentration_json - str JSON з концентраціями (за замовчуванням "{}")
+            Додає вимірювання цистерни до буфера.
+            В буфері зберігається останнє значення для кожного device_id.
+            
+            Вхід:
+                device_id - int ID приладу
+                paed - float ПАЕД
+                temperature - float температура
+                low_status - int 0/1 стан низькочутливого детектора
+                high_status - int 0/1 стан високочутливого детектора
+                valid - int 0/1 валідність
+                fullness_status - str "full" / "empty"
+                group - str або None група цистерни
+                activity_json - str JSON з активностями (за замовчуванням "{}")
+                concentration_json - str JSON з концентраціями (за замовчуванням "{}")
+                spectrum_active - bool, чи активний режим накопичення спектру
         """
-        import json
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        self.cistern_buffer[device_id] = (timestamp, paed, temperature, activity_json, concentration_json, low_status, high_status, valid, fullness_status, group)
+        self.cistern_buffer[device_id] = (
+            timestamp,
+            paed,
+            temperature,
+            activity_json,
+            concentration_json,
+            low_status,
+            high_status,
+            valid,
+            fullness_status,
+            group,
+            spectrum_active
+        )
         
 
     def flush_cistern_buffer(self):
         """
         Записує всі буферизовані вимірювання цистерн до БД.
+        Використовується при завершенні ідентифікації та при зупинці системи.
         """
         if not self.cistern_buffer:
             return
         conn = self._get_connection()
         cursor = conn.cursor()
-        for device_id, (timestamp, paed, temperature, activity_json, concentration_json, low_status, high_status, valid, fullness_status, group) in self.cistern_buffer.items():
+        for device_id, (
+            timestamp,
+            paed,
+            temperature,
+            activity_json,
+            concentration_json,
+            low_status,
+            high_status,
+            valid,
+            fullness_status,
+            group,
+            spectrum_active  # этот элемент игнорируем при вставке
+        ) in self.cistern_buffer.items():
             cursor.execute("""
                 INSERT INTO measurements_cistern 
                 (device_id, timestamp, paed, temperature, activity, concentration, low_status, high_status, valid, fullness_status, group)
@@ -433,6 +481,81 @@ class DatabaseManager:
         conn.commit()
         self.cistern_buffer.clear()
 
+    def flush_inactive_cistern_buffer(self):
+        """
+        Скидає в БД тільки ті записи з буфера цистерн, для яких spectrum_active == False.
+        Використовується таймером для періодичного збереження даних неактивних цистерн.
+        """
+        if not self.cistern_buffer:
+            return
+        
+        # Собираем device_id, которые нужно сбросить
+        to_flush = []
+        for device_id, record in self.cistern_buffer.items():
+            spectrum_active = record[10]  # spectrum_active — 11-й элемент кортежа (индекс 10)
+            if not spectrum_active:
+                to_flush.append(device_id)
+        
+        if not to_flush:
+            return
+        
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        
+        for device_id in to_flush:
+            (
+                timestamp,
+                paed,
+                temperature,
+                activity_json,
+                concentration_json,
+                low_status,
+                high_status,
+                valid,
+                fullness_status,
+                group,
+                spectrum_active
+            ) = self.cistern_buffer[device_id]
+            
+            cursor.execute("""
+                INSERT INTO measurements_cistern 
+                (device_id, timestamp, paed, temperature, activity, concentration, low_status, high_status, valid, fullness_status, group)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (device_id, timestamp, paed, temperature, activity_json, concentration_json, low_status, high_status, valid, fullness_status, group))
+        
+        conn.commit()
+        
+        # Удаляем сброшенные записи из буфера
+        for device_id in to_flush:
+            del self.cistern_buffer[device_id]
+
+    def set_cistern_save_interval(self, seconds):
+        """
+        Встановлює інтервал збереження даних для неактивних цистерн.
+        
+        Вхід:
+            seconds - int, інтервал у секундах
+        """
+        if seconds < 1:
+            return
+        self.cistern_save_interval = seconds
+        if hasattr(self, 'cistern_timer') and self.cistern_timer is not None:
+            self.cistern_timer.stop()
+            self.cistern_timer.start(seconds * 1000)
+
+    def set_wall_save_interval(self, seconds):
+        """
+        Встановлює інтервал збереження даних для настінних детекторів.
+        
+        Вхід:
+            seconds - int, інтервал у секундах
+        """
+        if seconds < 1:
+            return
+        self.wall_save_interval = seconds
+        if hasattr(self, 'wall_timer') and self.wall_timer is not None:
+            self.wall_timer.stop()
+            self.wall_timer.start(seconds * 1000)
 
 
     def get_device_active_status(self, serial_number: str) -> bool:
