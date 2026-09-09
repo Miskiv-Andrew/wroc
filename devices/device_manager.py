@@ -190,100 +190,329 @@ class DeviceManager(QObject):
 
 
 ############################################################ БЛОК  ПОИСКА ПРИБОРОВ ################################################################
+
     @Slot()   
     def find_rpii_ports(self):
         """
-            Поиск доступных COM-портов, фильтрация по FTDI (VID=0x0403) или производителю.
-            Сохраняем только нужные порты в self.available_ports
-            Если порты найдены, сразу приступаем к опросу приборов
+        Поиск доступных COM-портов PII/FTDI.
+
+        Алгоритм:
+
+            1. Сбрасываем результаты предыдущего поиска.
+            2. Получаем список COM-портов системы.
+            3. Отбираем FTDI-порты.
+            4. Если подходящие порты найдены —
+            запускаем сканирование адресов 1..6.
+            5. Если портов нет —
+            явно фиксируем отсутствие приборов.
+
+        ВАЖНО:
+            Каждый новый поиск должен начинаться с чистого состояния.
+
+            Нельзя оставлять self.devices от предыдущего поиска,
+            потому что физически приборы или PII могли быть
+            отключены между двумя поисками.
         """
+
+        # ============================================================
+        # 1. СБРАСЫВАЕМ РЕЗУЛЬТАТ ПРЕДЫДУЩЕГО ПОИСКА
+        # ============================================================
+
+        # Список COM-портов должен формироваться заново.
         self.available_ports.clear()
 
-        ports = serial.tools.list_ports.comports()
+        # Список найденных приборов также обязательно очищаем.
+        #
+        # Раньше self.devices очищался только внутри scan_devices().
+        # Поэтому если при повторном поиске FTDI-портов вообще
+        # не находилось, scan_devices() не вызывался и в self.devices
+        # оставались приборы от предыдущего поиска.
+        self.devices.clear()
+
+        # ============================================================
+        # 2. ПОЛУЧАЕМ ВСЕ COM-ПОРТЫ ОПЕРАЦИОННОЙ СИСТЕМЫ
+        # ============================================================
+
+        try:
+            ports = serial.tools.list_ports.comports()
+
+        except Exception as e:
+
+            # При невозможности получить список портов также
+            # явно сообщаем GUI, что актуальных найденных
+            # приборов сейчас нет.
+            self.device_found.emit([])
+
+            self.device_error.emit(
+                "find_rpii_ports",
+                f"Помилка отримання списку COM-портів: {e}"
+            )
+
+            return
+
+        # ============================================================
+        # 3. ОТБИРАЕМ FTDI-ПОРТЫ
+        # ============================================================
 
         for port in ports:
-            # FTDI VID = 0x0403
+
             is_ftdi = False
-            
-            # Проверка по VID/PID
-            if port.vid is not None and port.vid == 0x0403:
+
+            # --------------------------------------------------------
+            # Основная проверка по VID
+            # --------------------------------------------------------
+            #
+            # FTDI:
+            #     VID = 0x0403
+
+            if (
+                port.vid is not None
+                and port.vid == 0x0403
+            ):
                 is_ftdi = True
-            
-            # Проверка по строке производителя (запасной вариант)
-            if not is_ftdi and port.manufacturer and "FTDI" in port.manufacturer:
+
+            # --------------------------------------------------------
+            # Резервная проверка по производителю
+            # --------------------------------------------------------
+
+            if (
+                not is_ftdi
+                and port.manufacturer
+                and "FTDI" in port.manufacturer.upper()
+            ):
                 is_ftdi = True
-            
+
+            # --------------------------------------------------------
+            # Добавляем подходящий порт
+            # --------------------------------------------------------
+
             if is_ftdi:
-                self.available_ports.append(port.device)
+                self.available_ports.append(
+                    port.device
+                )
+
+        # ============================================================
+        # 4. ЕСЛИ FTDI-ПОРТЫ НАЙДЕНЫ —
+        #    ПЕРЕХОДИМ К СКАНИРОВАНИЮ АДРЕСОВ 1..6
+        # ============================================================
 
         if self.available_ports:
+
             self.scan_devices()
-        else:
-            self.device_error.emit("find_rpii_ports", "Не знайдено жодного розширювачу портів RTII")
+            return
+
+        # ============================================================
+        # 5. FTDI-ПОРТЫ НЕ НАЙДЕНЫ
+        # ============================================================
+
+        # Явно сообщаем GUI, что актуального списка приборов нет.
+        #
+        # Это особенно важно при ПОВТОРНОМ поиске:
+        # GUI не должен продолжать считать старые приборы найденными.
+        self.device_found.emit([])
+
+        self.device_error.emit(
+            "find_rpii_ports",
+            "Не знайдено жодного розширювача портів RTII"
+        )
+        
 
 
 
-    def try_request(self, ser, package: bytes, addr: int, pause: float, expected_length: int) -> bytearray | None:
+    def try_request(
+        self,
+        ser,
+        package: bytes,
+        addr: int,
+        pause: float,
+        expected_length: int
+    ) -> bytearray | None:
         """
-            Метод отправки пакета и проверки ответа.
-            - ser: объект COM-порта
-            - package: базовый пакет команды (без CRC и адреса)
-            - addr: адрес прибора
-            - pause: время ожидания ответа
-            - expected_length: ожидаемая длина ответа
-            - возвращает валидный пакет "Серийный номер" или None.
+        Відправляє запит приладу під час пошуку та перевіряє відповідь.
+
+        Метод використовується під час сканування адрес 1..6
+        для отримання серійного номера приладу.
+
+        Перевіряється:
+
+            1. очищення старих даних перед новим запитом;
+            2. наявність відповіді;
+            3. заголовок 0x55 0xAA;
+            4. довжина пакета;
+            5. CRC;
+            6. адреса приладу у відповіді;
+            7. код команди у відповіді.
+
+        Повертає:
+            bytearray - коректний пакет відповіді;
+            None      - якщо відповідь не отримана або некоректна.
         """
 
         def _send_once() -> bytearray | None:
-            # Формируем пакет: вставляем адрес в 3-й байт
+            """
+            Одна спроба запиту приладу.
+            """
+
+            # ========================================================
+            # 1. ОЧИЩУЄМО СТАРІ ДАНІ ПЕРЕД НОВИМ ЗАПИТОМ
+            # ========================================================
+            #
+            # Це принципово важливо при послідовному опитуванні
+            # адрес 1..6.
+            #
+            # У буфері COM-порту не повинна залишитися запізніла
+            # відповідь від попереднього приладу.
+
+            try:
+                ser.reset_input_buffer()
+            except Exception:
+                # Якщо конкретний драйвер не підтримав очищення,
+                # сам пошук через це не перериваємо.
+                pass
+
+            # ========================================================
+            # 2. ФОРМУЄМО ПАКЕТ З ПОТРІБНОЮ АДРЕСОЮ
+            # ========================================================
+
             packet = bytearray(package)
+
+            # У протоколі адреса приладу знаходиться
+            # у четвертому байті пакета.
             packet[3] = addr
 
-            # Считаем CRC и добавляем в конец
+            # Додаємо CRC.
             crc = self.calc_crc(packet)
             packet.append(crc)
 
-            # Отправляем пакет
-            ser.write(packet)
+            # ========================================================
+            # 3. ВІДПРАВЛЯЄМО ЗАПИТ
+            # ========================================================
+
+            try:
+                written = ser.write(packet)
+            except serial.SerialException:
+                return None
+
+            # Перевіряємо, що пакет був записаний повністю.
+            if written != len(packet):
+                return None
+
+            # Чекаємо відповідь від приладу.
             time.sleep(pause)
 
-            # Читаем ответ
-            response = ser.read_all()
+            # ========================================================
+            # 4. ЧИТАЄМО ВСІ ОТРИМАНІ ДАНІ
+            # ========================================================
+
+            try:
+                response = ser.read_all()
+            except serial.SerialException:
+                return None
+
             if not response:
                 return None
 
-            # Проверяем длину
+            # ========================================================
+            # 5. ШУКАЄМО ПОЧАТОК ПАКЕТА
+            # ========================================================
+
+            start_index = response.find(b"\x55\xAA")
+
+            if start_index == -1:
+                return None
+
+            # Відкидаємо можливий шум перед заголовком.
+            response = response[start_index:]
+
+            # ========================================================
+            # 6. ПЕРЕВІРЯЄМО ДОВЖИНУ
+            # ========================================================
+
             if len(response) < expected_length:
                 return None
 
-            # Находим начало пакета (0x55, 0xAA)
-            start_index = response.find(b"\x55\xAA")
-            if start_index == -1:
-                ser.reset_input_buffer()
-                return None
-
-            # Отбрасываем мусор до заголовка
-            response = response[start_index:]
-
-            # Если длина больше ожидаемой — лишнее отбрасываем
+            # Якщо після пакета прийшли зайві байти,
+            # беремо тільки очікувану довжину відповіді.
             if len(response) > expected_length:
                 response = response[:expected_length]
 
-            # Проверяем CRC
+            # Для подальших перевірок використовуємо bytearray.
+            response = bytearray(response)
+
+            # ========================================================
+            # 7. ПЕРЕВІРЯЄМО CRC
+            # ========================================================
+
             if not self.verify_crc(response):
-                ser.reset_input_buffer()
                 return None
+
+            # ========================================================
+            # 8. ПЕРЕВІРЯЄМО АДРЕСУ ВІДПОВІДІ
+            # ========================================================
+            #
+            # Ми опитуємо адреси послідовно:
+            #
+            #     1, 2, 3, 4, 5, 6
+            #
+            # Тому відповідь повинна належати саме тому адресу,
+            # який опитується зараз.
+            #
+            # Це захищає від ситуації, коли запізніла відповідь
+            # попереднього приладу випадково приймається
+            # як відповідь наступного.
+
+            if len(response) <= 3:
+                return None
+
+            if response[3] != addr:
+                return None
+
+            # ========================================================
+            # 9. ПЕРЕВІРЯЄМО КОД КОМАНДИ
+            # ========================================================
+            #
+            # try_request() зараз використовується тільки
+            # для пошуку серійного номера.
+            #
+            # COMMAND_SER_NUM має код:
+            #
+            #     0x05
+            #
+            # у п'ятому байті пакета.
+
+            if len(response) <= 4:
+                return None
+
+            if response[4] != COMMAND_SER_NUM.data[4]:
+                return None
+
+            # ========================================================
+            # 10. ПАКЕТ ПРОЙШОВ УСІ ПЕРЕВІРКИ
+            # ========================================================
 
             return response
 
-        # Первая попытка
-        resp = _send_once()
-        if resp is not None:
-            return resp
+        # ============================================================
+        # ПЕРША СПРОБА
+        # ============================================================
 
-        # Повтор через 1 сек
+        response = _send_once()
+
+        if response is not None:
+            return response
+
+        # ============================================================
+        # ДРУГА СПРОБА
+        # ============================================================
+        #
+        # Якщо прилад не відповів з першого разу,
+        # робимо одну повторну спробу через 1 секунду.
+
         time.sleep(1.0)
+
         return _send_once()
+
+    
     
 
     def verify_config_file(self) -> bool:
@@ -323,101 +552,264 @@ class DeviceManager(QObject):
             # Если произошла ошибка при чтении или вычислении — отправляем сигнал
             self.device_error.emit("config.txt", f"Помилка при відкритті конфігураційних файлів: {e}")
             return False
+        
 
 
     def scan_devices(self):
         """
-            Опрос всех доступных портов и адресов (1..6).
-            Для каждого адреса отправляется запрос серийного номера.
-            Ответ проверяется по длине, заголовку, CRC.
-            При успешном ответе формируется объект DeviceInfo
-            и записывается в self.devices (список подключенных девайсов)
+        Виконує пошук приладів на всіх знайдених FTDI/PII портах.
+
+        Для кожного COM-порту послідовно перевіряються адреси 1..6.
+        На кожну адресу відправляється команда SER_NUM.
+
+        Якщо отримано коректну відповідь:
+            - перевіряється серійний номер;
+            - створюється DeviceInfo;
+            - прилад додається до self.devices.
+
+        ВАЖЛИВО:
+            Кожен новий пошук вважається самостійним.
+
+            Якщо поточний пошук не підтвердив наявність приладів,
+            GUI обов'язково повинен отримати device_found([]).
+
+            Старі результати попереднього пошуку не повинні
+            залишатися актуальними.
         """
+
+        # ============================================================
+        # 1. ПОЧИНАЄМО НОВИЙ ПОШУК З ЧИСТОГО СПИСКУ
+        # ============================================================
 
         self.devices.clear()
 
+        # ============================================================
+        # 2. ПЕРЕБИРАЄМО ВСІ ЗНАЙДЕНІ FTDI / PII ПОРТИ
+        # ============================================================
+
         for port_name in self.available_ports:
+
             try:
-                with serial.Serial(port_name, baudrate = 19200, timeout = 0.5) as ser:
+
+                # ----------------------------------------------------
+                # Відкриваємо COM-порт тільки на час пошуку.
+                #
+                # Конструкція "with" гарантує закриття порту
+                # після завершення сканування цього порту,
+                # у тому числі при виникненні SerialException.
+                # ----------------------------------------------------
+
+                with serial.Serial(
+                    port_name,
+                    baudrate=19200,
+                    timeout=0.5
+                ) as ser:
+
+                    # =================================================
+                    # 3. ПЕРЕБИРАЄМО МОЖЛИВІ АДРЕСИ 1..6
+                    # =================================================
+
                     for addr in range(1, 7):
-                        # Отправляем очередной запрос серийного номера
+
+                        # ---------------------------------------------
+                        # Запитуємо серійний номер.
+                        #
+                        # try_request() вже відповідає за:
+                        #
+                        #   - очищення RX-буфера;
+                        #   - відправлення запиту;
+                        #   - повторну спробу;
+                        #   - перевірку довжини;
+                        #   - заголовок;
+                        #   - CRC;
+                        #   - адресу відповіді;
+                        #   - код команди SER_NUM.
+                        # ---------------------------------------------
+
                         response = self.try_request(
-                            ser = ser,
-                            package = COMMAND_SER_NUM.data,
-                            addr = addr,
-                            pause = 0.5,
-                            expected_length = COMMAND_SER_NUM.length
+                            ser=ser,
+                            package=COMMAND_SER_NUM.data,
+                            addr=addr,
+                            pause=0.5,
+                            expected_length=COMMAND_SER_NUM.length
                         )
 
+                        # Прилад за цією адресою не відповів
+                        # або відповідь не пройшла перевірку.
                         if response is None:
                             continue
 
-                        # Извлекаем серийный номер
-                        serial_number = self._ser_num_data(response)
+                        # =================================================
+                        # 4. ВИТЯГУЄМО СЕРІЙНИЙ НОМЕР
+                        # =================================================
 
-                        # Записываем данные в объект DeviceInfo
-                        device = DeviceInfo(
-                            port = port_name,
-                            address = addr,
-                            device_type = "БДБГ-09S-23",
-                            serial_number = serial_number,
-                            description = "Прилад виявлено"
+                        serial_number = self._ser_num_data(
+                            response
                         )
 
-                        # По умолчанию цистерна пустая
-                        device.set_full(False)                       
+                        # =================================================
+                        # 5. ПЕРЕВІРЯЄМО BCD СЕРІЙНОГО НОМЕРА
+                        # =================================================
+                        #
+                        # _ser_num_data() тепер повертає None,
+                        # якщо в BCD-полях присутні значення A..F
+                        # або пакет не містить достатньо даних.
+                        #
+                        # Такий прилад не можна додавати
+                        # до списку знайдених.
 
-                        # Добавляем прибор в список приборов
-                        self.devices.append(device)
+                        if serial_number is None:
+
+                            self.device_error.emit(
+                                port_name,
+                                (
+                                    "Некоректний серійний номер "
+                                    f"у відповіді приладу з адресою {addr}"
+                                )
+                            )
+
+                            continue
+
+                        # =================================================
+                        # 6. ЗАХИСТ ВІД ПОВТОРНОГО SN
+                        # =================================================
+                        #
+                        # Один і той самий фізичний прилад не повинен
+                        # з'явитися у self.devices більше одного разу.
+                        #
+                        # Наприклад, це може статися при аномальній
+                        # поведінці RS-485 або неправильній адресації.
+
+                        duplicate_sn = any(
+                            device.serial_number == serial_number
+                            for device in self.devices
+                        )
+
+                        if duplicate_sn:
+
+                            self.device_error.emit(
+                                port_name,
+                                (
+                                    f"Повторно виявлено SN {serial_number} "
+                                    f"за адресою {addr}. "
+                                    "Прилад не додано повторно."
+                                )
+                            )
+
+                            continue
+
+                        # =================================================
+                        # 7. СТВОРЮЄМО ОБ'ЄКТ ЗНАЙДЕНОГО ПРИЛАДУ
+                        # =================================================
+
+                        device = DeviceInfo(
+                            port=port_name,
+                            address=addr,
+                            device_type="БДБГ-09S-23",
+                            serial_number=serial_number,
+                            description="Прилад виявлено"
+                        )
+
+                        # Під час фізичного пошуку стан цистерни
+                        # ще не визначається.
+                        #
+                        # Реальний стан надалі буде отримано
+                        # через логіку PLC.
+                        device.set_full(False)
+
+                        # =================================================
+                        # 8. ДОДАЄМО ПРИЛАД У ПОТОЧНИЙ РЕЗУЛЬТАТ
+                        # =================================================
+
+                        self.devices.append(
+                            device
+                        )
+
+            # ========================================================
+            # 9. ПОМИЛКА ОДНОГО COM-ПОРТУ
+            # ========================================================
+            #
+            # Помилка одного PII не повинна переривати
+            # перевірку інших COM-портів.
 
             except serial.SerialException as e:
-                self.device_error.emit(port_name, f"Помилка відкриття порту: {e}")
-                # print(f"Ошибка открытия порта {port_name}: {e}")
 
-       
-        # --- Режим отладки---
-        if self.debug_mode == 1:
-            # В режиме разработчика не проводим сверку - выодим найденные приборы и формируем новые конфигурационные файлы
-            self.match_devices_with_config()
+                self.device_error.emit(
+                    port_name,
+                    f"Помилка відкриття або роботи з портом: {e}"
+                )
+
+                continue
+
+            # ========================================================
+            # 10. НЕПЕРЕДБАЧЕНА ПОМИЛКА ПІД ЧАС СКАНУВАННЯ ПОРТУ
+            # ========================================================
+            #
+            # Один аварійний порт не повинен зупинити
+            # весь процес пошуку приладів.
+
+            except Exception as e:
+
+                self.device_error.emit(
+                    port_name,
+                    f"Непередбачена помилка сканування порту: {e}"
+                )
+
+                continue
+
+        # ============================================================
+        # 11. НЕ ЗНАЙДЕНО ЖОДНОГО ПРИЛАДУ
+        # ============================================================
+
+        if not self.devices:
+
+            # Явно очищаємо актуальний список у GUI.
+            self.device_found.emit([])
+
+            self.device_error.emit(
+                "scan_devices",
+                "Порти RTII знайдено, але жодного приладу не виявлено."
+            )
+
             return
 
-        # --- Обычный режим ---
-        if self.verify_config_file():
+        # ============================================================
+        # 12. РЕЖИМ ПЕРВИННОГО НАЛАШТУВАННЯ ОБ'ЄКТА
+        # ============================================================
+
+        if self.debug_mode == 1:
+
+            # match_devices_with_config() перевірить,
+            # що знайдено всі очікувані прилади,
+            # немає невідомих SN та дублів,
+            # і тільки після цього дозволить
+            # сформувати конфігураційні файли.
             self.match_devices_with_config()
 
+            return
+
+        # ============================================================
+        # 13. ШТАТНИЙ РОБОЧИЙ РЕЖИМ
+        # ============================================================
+
+        # Перед використанням config.txt перевіряємо SHA-256.
+        if not self.verify_config_file():
+
+            # Фізичні прилади можуть бути знайдені,
+            # але без достовірної конфігурації
+            # використовувати їх не можна.
+            self.device_found.emit([])
+
+            return
+
+        # ============================================================
+        # 14. CONFIG.TXT ПРОЙШОВ ПЕРЕВІРКУ
+        # ============================================================
+
+        self.match_devices_with_config()   
 
 
-
-
-    # def load_config_file(self) -> dict:
-    #     """
-    #     Загружает конфигурацию из файла config/config.txt.
-    #     Возвращает словарь вида:
-    #     {
-    #         "2400126": {"location_type": "room", "posit_number": 1, "expected_address": 2},
-    #         "2400089": {"location_type": "cistern", "posit_number": 3, "expected_address": 1},
-    #         ...
-    #     }
-    #     """
-    #     config_data = {}
-    #     try:            
-    #         with open("config/config.txt", "r", encoding="utf-8") as f:
-    #             for line in f:
-    #                 line = line.strip()
-    #                 if not line or line.startswith("#"):
-    #                     continue
-    #                 parts = line.split(";")
-    #                 if len(parts) != 4:
-    #                     continue
-    #                 serial_number, location_type, posit_number, expected_address = parts
-    #                 config_data[serial_number] = {
-    #                     "location_type": location_type,
-    #                     "posit_number": int(posit_number),
-    #                     "expected_address": int(expected_address)
-    #                 }
-    #     except Exception as e:
-    #         self.device_error.emit("config.txt", f"Ошибка загрузки конфигурации: {e}")
-    #     return config_data  
+    
 
     def load_config_file(self) -> dict:
         """
@@ -724,122 +1116,668 @@ class DeviceManager(QObject):
             )
 
             return {}
-    
 
 
     def match_devices_with_config(self):
+        """
+        Сопоставляет физически найденные приборы с конфигурацией.
 
-        # Если приборов нет — не трогаем конфигурацию
+        Режимы:
+
+            debug_mode == 1
+                Первичная настройка объекта.
+                Конфигурационные файлы создаются только тогда,
+                когда найдены ВСЕ ожидаемые приборы.
+
+            debug_mode is None
+                Штатный рабочий режим.
+                Найденные приборы сверяются с config.txt.
+
+        ВАЖНО:
+            В штатном режиме система может продолжать работу
+            с исправными приборами даже если часть приборов
+            физически отсутствует.
+
+            Однако каждый прибор, который есть в config.txt,
+            но не был обнаружен при текущем поиске,
+            должен быть явно зарегистрирован как отсутствующий.
+        """
+
+        # ============================================================
+        # 1. ПРИБОРОВ НЕТ
+        # ============================================================
+
         if not self.devices:
-            self.device_error.emit("config.txt", "Порты RTII знайдено, але жодного приладу не виявлено. Конфігурацію не оновлена.")
+
+            self.device_found.emit([])
+
+            self.device_error.emit(
+                "config.txt",
+                (
+                    "Порти RTII знайдено, але жодного приладу "
+                    "не виявлено. Конфігурацію не оновлено."
+                )
+            )
+
             return
 
-        # --- Режим настройки системы ---
+        # ============================================================
+        # 2. РЕЖИМ ПЕРВИЧНОЙ НАСТРОЙКИ ОБЪЕКТА
+        # ============================================================
+
         if self.debug_mode == 1:
-            found_text = "Знайдено прилади:\n"
-            for device in self.devices:
-                found_text += f"Порт: {device.port}, Адреса: {device.address}, SN: {device.serial_number}\n"
+
+            expected_serials = (
+                set(self.cistern_dict.keys())
+                | set(self.room_dict.keys())
+            )
+
+            found_serials = [
+                device.serial_number
+                for device in self.devices
+            ]
+
+            # --------------------------------------------------------
+            # 2.1. Проверяем дубли SN
+            # --------------------------------------------------------
+
+            duplicate_serials = {
+                serial_number
+                for serial_number in found_serials
+                if found_serials.count(serial_number) > 1
+            }
+
+            if duplicate_serials:
+
+                duplicates_text = ", ".join(
+                    sorted(duplicate_serials)
+                )
+
+                self.device_found.emit([])
+
+                self.device_error.emit(
+                    "config.txt",
+                    (
+                        "Конфігураційні файли НЕ створено.\n"
+                        "Один або декілька серійних номерів "
+                        "виявлено більше одного разу:\n"
+                        f"{duplicates_text}"
+                    )
+                )
+
+                return
+
+            found_serials_set = set(found_serials)
+
+            missing_serials = (
+                expected_serials
+                - found_serials_set
+            )
+
+            unknown_serials = (
+                found_serials_set
+                - expected_serials
+            )
+
+            # --------------------------------------------------------
+            # 2.2. Неизвестные SN
+            # --------------------------------------------------------
+
+            if unknown_serials:
+
+                unknown_text = ", ".join(
+                    sorted(unknown_serials)
+                )
+
+                self.device_found.emit([])
+
+                self.device_error.emit(
+                    "config.txt",
+                    (
+                        "Конфігураційні файли НЕ створено.\n"
+                        "Виявлено прилади з невідомими "
+                        "серійними номерами:\n"
+                        f"{unknown_text}"
+                    )
+                )
+
+                return
+
+            # --------------------------------------------------------
+            # 2.3. Не все ожидаемые приборы найдены
+            # --------------------------------------------------------
+
+            if missing_serials:
+
+                missing_text = ", ".join(
+                    sorted(missing_serials)
+                )
+
+                self.device_found.emit([])
+
+                self.device_error.emit(
+                    "config.txt",
+                    (
+                        "Конфігураційні файли НЕ створено.\n"
+                        "Не знайдено всі прилади системи.\n"
+                        "Відсутні серійні номери:\n"
+                        f"{missing_text}"
+                    )
+                )
+
+                return
+
+            expected_device_count = len(
+                expected_serials
+            )
+
+            if len(self.devices) != expected_device_count:
+
+                self.device_found.emit([])
+
+                self.device_error.emit(
+                    "config.txt",
+                    (
+                        "Конфігураційні файли НЕ створено.\n"
+                        f"Очікується {expected_device_count} приладів, "
+                        f"фактично знайдено {len(self.devices)}."
+                    )
+                )
+
+                return
+
+            # ========================================================
+            # 3. ВСЕ ПРИБОРЫ НАЙДЕНЫ
+            # ========================================================
+
+            found_text = "Знайдено всі прилади системи:\n"
 
             lines = []
+
             cistern_json_data = {}
 
             for device in self.devices:
+
+                found_text += (
+                    f"Порт: {device.port}, "
+                    f"Адреса: {device.address}, "
+                    f"SN: {device.serial_number}\n"
+                )
+
+                # ----------------------------------------------------
+                # 3.1. Прибор цистерны
+                # ----------------------------------------------------
+
                 if device.serial_number in self.cistern_dict:
+
+                    cistern_info = (
+                        self.cistern_dict[
+                            device.serial_number
+                        ]
+                    )
+
                     location_type = "cistern"
-                    posit_number = self.cistern_dict[device.serial_number]["position"]
-                    isotopes = self.cistern_dict[device.serial_number]["isotopes"]
-                    group = self.cistern_dict[device.serial_number]["group"]
-                    line = f"{device.serial_number};{location_type};{posit_number};{device.address}"
-                    lines.append(line)
-                    cistern_json_data[posit_number] = {
+
+                    posit_number = (
+                        cistern_info["position"]
+                    )
+
+                    isotopes = (
+                        cistern_info["isotopes"]
+                    )
+
+                    group = (
+                        cistern_info["group"]
+                    )
+
+                    device.location_type = (
+                        location_type
+                    )
+
+                    device.posit_number = (
+                        posit_number
+                    )
+
+                    device.expected_address = (
+                        device.address
+                    )
+
+                    device.real_sensor = "S"
+
+                    device.is_active = True
+
+                    lines.append(
+                        (
+                            f"{device.serial_number};"
+                            f"{location_type};"
+                            f"{posit_number};"
+                            f"{device.address}"
+                        )
+                    )
+
+                    cistern_json_data[
+                        str(posit_number)
+                    ] = {
                         "full": False,
                         "isotopes": isotopes,
                         "group": group
                     }
+
+                # ----------------------------------------------------
+                # 3.2. Настенный прибор
+                # ----------------------------------------------------
+
                 elif device.serial_number in self.room_dict:
+
                     location_type = "room"
-                    posit_number = self.room_dict[device.serial_number]
-                    line = f"{device.serial_number};{location_type};{posit_number};{device.address}"
-                    lines.append(line)
-                else:
-                    self.device_error.emit(
-                        "config.txt",
-                        f"SN {device.serial_number} не внесён в словари cistern_dict/room_dict"
+
+                    posit_number = (
+                        self.room_dict[
+                            device.serial_number
+                        ]
                     )
 
-            config_text = "# serial_number;location_type;posit_number;address\n" + "\n".join(lines)
+                    device.location_type = (
+                        location_type
+                    )
+
+                    device.posit_number = (
+                        posit_number
+                    )
+
+                    device.expected_address = (
+                        device.address
+                    )
+
+                    device.real_sensor = "G"
+
+                    device.is_active = True
+
+                    lines.append(
+                        (
+                            f"{device.serial_number};"
+                            f"{location_type};"
+                            f"{posit_number};"
+                            f"{device.address}"
+                        )
+                    )
+
+            lines.sort()
+
+            config_text = (
+                "# serial_number;location_type;posit_number;address\n"
+                + "\n".join(lines)
+            )
+
+            # ========================================================
+            # 4. ЗАПИСЬ CONFIG / HASH / CISTERN
+            # ========================================================
 
             try:
-                with open("config/config.txt", "w", encoding="utf-8") as f:
-                    f.write(config_text)
 
-                with open("config/config.txt", "rb") as f:
+                with open(
+                    "config/config.txt",
+                    "w",
+                    encoding="utf-8"
+                ) as f:
+
+                    f.write(
+                        config_text
+                    )
+
+                with open(
+                    "config/config.txt",
+                    "rb"
+                ) as f:
+
                     data = f.read()
-                sha256_hash = hashlib.sha256(data).hexdigest()
 
-                with open("config/hash.txt", "w", encoding="utf-8") as f:
-                    f.write(sha256_hash)
+                sha256_hash = hashlib.sha256(
+                    data
+                ).hexdigest()
 
-                with open("config/cistern.json", "w", encoding="utf-8") as f:
-                    json.dump(cistern_json_data, f, ensure_ascii=False, indent=4)
+                with open(
+                    "config/hash.txt",
+                    "w",
+                    encoding="utf-8"
+                ) as f:
 
-                output_text = f"{found_text}\nНові дані занесено у файли конфігурації"
-                self.device_info.emit(output_text)
+                    f.write(
+                        sha256_hash
+                    )
+
+                with open(
+                    "config/cistern.json",
+                    "w",
+                    encoding="utf-8"
+                ) as f:
+
+                    json.dump(
+                        cistern_json_data,
+                        f,
+                        ensure_ascii=False,
+                        indent=4
+                    )
 
             except Exception as e:
-                self.device_error.emit("config", f"Помилка запису файлів: {e}")
+
+                self.device_found.emit([])
+
+                self.device_error.emit(
+                    "config",
+                    f"Помилка запису файлів: {e}"
+                )
+
+                return
+
+            # ========================================================
+            # 5. УСПЕШНЫЙ COMMISSIONING
+            # ========================================================
+
+            self.device_info.emit(
+                (
+                    f"{found_text}\n"
+                    "Усі прилади знайдено.\n"
+                    "Нові дані занесено у файли конфігурації."
+                )
+            )
+
+            serializable_list = [
+                self._device_to_dict(device)
+                for device in self.devices
+            ]
+
+            self.device_found.emit(
+                serializable_list
+            )
 
             return
 
+        # ============================================================
+        # 6. ШТАТНЫЙ РАБОЧИЙ РЕЖИМ
+        # ============================================================
 
-        # --- Обычный режим ---
         config_data = self.load_config_file()
+
+        if not config_data:
+
+            self.devices = []
+
+            self.device_found.emit([])
+
+            self.device_info.emit(
+                "Прилади не пройшли перевірку конфігурації."
+            )
+
+            return
+
         valid_devices = []
 
-        for device in self.devices:
-            if device.serial_number in config_data:
-                cfg = config_data[device.serial_number]
-                device.location_type = cfg["location_type"]
-                device.posit_number = cfg["posit_number"]
-                device.expected_address = cfg["expected_address"]
-                device.real_sensor = "S" if device.location_type == "cistern" else "G"
+        # ============================================================
+        # 7. СОПОСТАВЛЯЕМ ФИЗИЧЕСКИ НАЙДЕННЫЕ ПРИБОРЫ
+        # ============================================================
 
-                if device.address != device.expected_address:
-                    self.device_error.emit(
-                        "config.txt",
-                        f"Несовпадение адреса для SN {device.serial_number}: "
-                        f"ожидался {device.expected_address}, найден {device.address}"
-                    )
-                    continue
-                
-                # Перевіряємо активність приладу в БД
-                is_active_in_db = self.db_manager.get_device_active_status(device.serial_number)
-                
-                # Якщо прилад знайдено фізично - він має бути активним
-                if not is_active_in_db:
-                    # Активуємо в БД
-                    self.db_manager.activate_device(device.serial_number)
-                    self.db_manager.reload_devices_map()  # Оновлюємо кеш
-                    self.system_event.emit(device.serial_number, "device_activated", 
-                                        f"Прилад {device.serial_number} автоматично активовано при пошуку")
-                    device.is_active = True
-                else:
-                    device.is_active = True
-                
-                valid_devices.append(device)
-            else:
+        for device in self.devices:
+
+            if device.serial_number not in config_data:
+
                 self.device_error.emit(
                     "config.txt",
-                    f"SN {device.serial_number} найден, но отсутствует в конфигурации"
+                    (
+                        f"SN {device.serial_number} знайдено, "
+                        "але він відсутній у конфігурації."
+                    )
                 )
 
-        if valid_devices:
-            self.devices = valid_devices
-            serializable_list = [self._device_to_dict(d) for d in valid_devices]
-            self.device_found.emit(serializable_list)
-        else:
+                continue
+
+            cfg = config_data[
+                device.serial_number
+            ]
+
+            device.location_type = (
+                cfg["location_type"]
+            )
+
+            device.posit_number = (
+                cfg["posit_number"]
+            )
+
+            device.expected_address = (
+                cfg["expected_address"]
+            )
+
+            device.real_sensor = (
+                "S"
+                if device.location_type == "cistern"
+                else "G"
+            )
+
+            # --------------------------------------------------------
+            # 7.1. Проверяем адрес прибора
+            # --------------------------------------------------------
+
+            if device.address != device.expected_address:
+
+                self.device_error.emit(
+                    "config.txt",
+                    (
+                        f"Несовпадение адреса для SN "
+                        f"{device.serial_number}: "
+                        f"ожидался {device.expected_address}, "
+                        f"найден {device.address}"
+                    )
+                )
+
+                continue
+
+            # --------------------------------------------------------
+            # 7.2. Прибор физически найден —
+            #      при необходимости активируем его в БД
+            # --------------------------------------------------------
+
+            is_active_in_db = (
+                self.db_manager
+                .get_device_active_status(
+                    device.serial_number
+                )
+            )
+
+            if not is_active_in_db:
+
+                self.db_manager.activate_device(
+                    device.serial_number
+                )
+
+                self.db_manager.reload_devices_map()
+
+                self.system_event.emit(
+                    device.serial_number,
+                    "device_activated",
+                    (
+                        f"Прилад {device.serial_number} "
+                        "автоматично активовано при пошуку"
+                    )
+                )
+
+            device.is_active = True
+
+            valid_devices.append(
+                device
+            )
+
+        # ============================================================
+        # 8. ОПРЕДЕЛЯЕМ ПРИБОРЫ ИЗ CONFIG.TXT,
+        #    КОТОРЫЕ ФИЗИЧЕСКИ НЕ НАЙДЕНЫ
+        # ============================================================
+        #
+        # Это последнее исправление цепочки №3.
+        #
+        # Раньше проверялась только связь:
+        #
+        #     найденный прибор -> существует ли он в config.txt
+        #
+        # Но отсутствовала обратная проверка:
+        #
+        #     config.txt -> был ли этот прибор физически найден
+        #
+        # Поэтому один отсутствующий БДБГ мог просто исчезнуть
+        # из результата без явного сообщения.
+
+        configured_serials = set(
+            config_data.keys()
+        )
+
+        valid_serials = {
+            device.serial_number
+            for device in valid_devices
+        }
+
+        missing_serials = (
+            configured_serials
+            - valid_serials
+        )
+
+        # ============================================================
+        # 9. РЕГИСТРИРУЕМ КАЖДЫЙ ОТСУТСТВУЮЩИЙ ПРИБОР
+        # ============================================================
+
+        for serial_number in sorted(
+            missing_serials
+        ):
+
+            cfg = config_data[
+                serial_number
+            ]
+
+            location_type = (
+                cfg["location_type"]
+            )
+
+            posit_number = (
+                cfg["posit_number"]
+            )
+
+            expected_address = (
+                cfg["expected_address"]
+            )
+
+            # --------------------------------------------------------
+            # Формируем понятное имя позиции
+            # --------------------------------------------------------
+
+            if location_type == "cistern":
+                position_name = (
+                    f"ZB{posit_number}"
+                )
+
+            else:
+                position_name = (
+                    f"CZ{posit_number}"
+                )
+
+            # --------------------------------------------------------
+            # Выводим ошибку в интерфейс / журнал сообщений
+            # --------------------------------------------------------
+
+            self.device_error.emit(
+                serial_number,
+                (
+                    f"Прилад {position_name}, "
+                    f"SN {serial_number}, "
+                    f"очікувана адреса {expected_address} "
+                    "присутній у config.txt, "
+                    "але фізично не знайдений."
+                )
+            )
+
+            # --------------------------------------------------------
+            # Создаём системное событие
+            # --------------------------------------------------------
+            #
+            # Это важно для последующего анализа:
+            # оператор сможет увидеть, что конкретный прибор
+            # отсутствовал уже во время процедуры поиска.
+            #
+            # Дальнейшую полноценную обработку offline/online
+            # будем отдельно проверять в цепочке №27.
+
+            self.system_event.emit(
+                serial_number,
+                "device_not_found",
+                (
+                    f"Прилад {position_name}, "
+                    f"SN {serial_number} "
+                    "не знайдений під час пошуку."
+                )
+            )
+
+        # ============================================================
+        # 10. НИ ОДИН ПРИБОР НЕ ПРОШЁЛ ПРОВЕРКУ
+        # ============================================================
+
+        if not valid_devices:
+
+            self.devices = []
+
             self.device_found.emit([])
-            self.device_info.emit("Прилади не знайдено або не пройшли перевірку конфігурації")
+
+            self.device_info.emit(
+                (
+                    "Прилади не знайдено або "
+                    "не пройшли перевірку конфігурації."
+                )
+            )
+
+            return
+
+        # ============================================================
+        # 11. СОХРАНЯЕМ ТОЛЬКО РЕАЛЬНО НАЙДЕННЫЕ
+        #     И ПРОШЕДШИЕ ПРОВЕРКУ ПРИБОРЫ
+        # ============================================================
+
+        self.devices = (
+            valid_devices
+        )
+
+        # ============================================================
+        # 12. ЕСЛИ ЧАСТЬ ПРИБОРОВ ОТСУТСТВУЕТ —
+        #     ЯВНО СООБЩАЕМ О ДЕГРАДИРОВАННОМ РЕЖИМЕ
+        # ============================================================
+
+        if missing_serials:
+
+            self.device_info.emit(
+                (
+                    f"Пошук завершено. "
+                    f"Працюючих приладів: {len(valid_devices)}. "
+                    f"Не знайдено: {len(missing_serials)}."
+                )
+            )
+
+        else:
+
+            self.device_info.emit(
+                (
+                    f"Пошук завершено успішно. "
+                    f"Знайдено {len(valid_devices)} приладів."
+                )
+            )
+
+        # ============================================================
+        # 13. ПЕРЕДАЁМ АКТУАЛЬНЫЕ ПРИБОРЫ В GUI
+        # ============================================================
+
+        serializable_list = [
+            self._device_to_dict(device)
+            for device in valid_devices
+        ]
+
+        self.device_found.emit(
+            serializable_list
+        )
+
+
 
 
     def _device_to_dict(self, device):
@@ -910,20 +1848,104 @@ class DeviceManager(QObject):
 ################################################ БЛОК МЕТОДОВ ДАННЫХ ПРИБОРОВ ######################################################
     
 
-    def _ser_num_data(self, data: bytearray) -> str:
-        """       
-            Возвращает строку с серийным номером.
+    def _ser_num_data(self, data: bytearray) -> str | None:
         """
-        # начинаем с младших 4 бит байта 8
-        s = chr((data[8] & 0x0F) + ord('0'))
+        Извлекает серийный номер прибора из ответа SER_NUM.
 
-        # идём от 7 до 5 включительно, в обратном порядке
+        Серийный номер хранится в BCD-формате.
+
+        Для корректного BCD каждый используемый полубайт
+        должен находиться в диапазоне 0..9.
+
+        Возвращает:
+            str  - корректный серийный номер;
+            None - если данные серийного номера повреждены.
+        """
+
+        # ============================================================
+        # 1. ПРОВЕРЯЕМ МИНИМАЛЬНУЮ ДЛИНУ ПАКЕТА
+        # ============================================================
+        #
+        # Для получения серийного номера используются байты:
+        #
+        #     data[5]
+        #     data[6]
+        #     data[7]
+        #     data[8]
+        #
+        # Поэтому пакет должен содержать как минимум 9 байт.
+
+        if data is None or len(data) < 9:
+            return None
+
+        # ============================================================
+        # 2. ИЗВЛЕКАЕМ BCD-ЦИФРЫ
+        # ============================================================
+        #
+        # Формат, используемый существующим протоколом:
+        #
+        #     младший полубайт data[8],
+        #     затем data[7] HIGH / LOW,
+        #     затем data[6] HIGH / LOW,
+        #     затем data[5] HIGH / LOW.
+        #
+        # В результате получаем семизначный серийный номер.
+
+        digits = []
+
+        # Первая цифра серийного номера.
+        digits.append(
+            data[8] & 0x0F
+        )
+
+        # Остальные шесть цифр.
         for i in range(7, 4, -1):
-            high_self = (data[i] >> 4) & 0x0F
-            low_self = data[i] & 0x0F
-            s += chr(high_self + ord('0')) + chr(low_self + ord('0'))
 
-        return s
+            high_nibble = (
+                data[i] >> 4
+            ) & 0x0F
+
+            low_nibble = (
+                data[i]
+            ) & 0x0F
+
+            digits.append(
+                high_nibble
+            )
+
+            digits.append(
+                low_nibble
+            )
+
+        # ============================================================
+        # 3. ПРОВЕРЯЕМ КОРРЕКТНОСТЬ BCD
+        # ============================================================
+        #
+        # Допустимы только значения 0..9.
+        #
+        # Значения:
+        #
+        #     A, B, C, D, E, F
+        #
+        # не являются десятичными цифрами и означают,
+        # что содержимое SER_NUM нельзя считать корректным.
+
+        for digit in digits:
+
+            if digit < 0 or digit > 9:
+                return None
+
+        # ============================================================
+        # 4. ФОРМИРУЕМ СТРОКУ СЕРИЙНОГО НОМЕРА
+        # ============================================================
+
+        serial_number = "".join(
+            str(digit)
+            for digit in digits
+        )
+
+        return serial_number
+
 
     def _temp_data(self, data: bytearray, b1: int = 0) -> str | None:
         """       

@@ -2132,66 +2132,6 @@ class App(QObject):
         self.butt_system_stop.setEnabled(False)
 
 
-
-
-
-    # def load_cistern_data(self, json_file: str):
-    #     """
-    #     Загружает данные о заполненности цистерн, списках изотопов и группах из файла.
-    #     Если файл отсутствует или повреждён, создаёт дефолтные данные для 20 цистерн
-    #     с предустановленными группами:
-    #         - цистерны 1, 2 → группа "A"
-    #         - цистерна 3 → группа "reserve"
-    #         - цистерны 4–9 → группа "B"
-    #         - цистерны 10–20 → группа "A" (по умолчанию)
-    #     """
-    #     try:
-    #         with open(json_file, "r", encoding="utf-8") as f:
-    #             data = json.load(f)
-            
-    #         self.cistern_dict = {}       # {номер: full}
-    #         self.cistern_isotopes = {}   # {номер: [изотопы]}
-    #         self.cistern_groups = {}     # {номер: группа}
-            
-    #         for k, v in data.items():
-    #             pos = int(k)
-    #             self.cistern_dict[pos] = bool(v.get("full", False))
-    #             self.cistern_isotopes[pos] = v.get("isotopes", [])
-    #             self.cistern_groups[pos] = v.get("group", "A")  # если поля нет — группа A
-                    
-    #     except (FileNotFoundError, json.JSONDecodeError):
-    #         # Файл отсутствует или битый — создаём дефолт
-    #         print(f"Файл {json_file} відсутній або пошкоджений. Створюємо дефолтні дані (20 порожніх цистерн)")
-            
-    #         self.cistern_dict = {i: False for i in range(1, 21)}
-    #         self.cistern_isotopes = {i: [] for i in range(1, 21)}
-    #         self.cistern_groups = {}
-            
-    #         # Задаём группы для цистерн 1–9, остальные по умолчанию A
-    #         for i in range(1, 10):
-    #             if i == 1 or i == 2:
-    #                 self.cistern_groups[i] = "A"
-    #             elif i == 3:
-    #                 self.cistern_groups[i] = "reserve"
-    #             elif 4 <= i <= 9:
-    #                 self.cistern_groups[i] = "B"
-    #             else:
-    #                 self.cistern_groups[i] = "A"
-    #         for i in range(10, 21):
-    #             self.cistern_groups[i] = "A"
-            
-    #         # Записываем новый файл с полной структурой
-    #         with open(json_file, "w", encoding="utf-8") as f:
-    #             export_data = {}
-    #             for i in range(1, 21):
-    #                 export_data[str(i)] = {
-    #                     "full": False,
-    #                     "isotopes": [],
-    #                     "group": self.cistern_groups.get(i, "A")
-    #                 }
-    #             json.dump(export_data, f, ensure_ascii=False, indent=4)
-
-
     def load_cistern_data(self, json_file: str):
         """
         Завантажує стан цистерн ZB1-ZB9 з JSON-файлу.
