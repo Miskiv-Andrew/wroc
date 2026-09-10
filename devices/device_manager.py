@@ -23,8 +23,13 @@ import struct
 import json
 
 
-# Порог ПАЕД для запуска спектра (мкЗв/год)
-PAED_THRESHOLD_FOR_SPECTRUM = 30.0
+# Максимальное значение ПАЕД, при котором разрешается
+# переход к набору спектра.
+#
+# Согласно актуальным алгоритмам WROCLAW:
+# спектральный анализ разрешается после снижения ПАЕД
+# до значения не выше 50 мкЗв/ч.
+PAED_THRESHOLD_FOR_SPECTRUM = 50.0
 
 class DeviceManager(QObject):
     # сигналы для связи с GUI
@@ -45,8 +50,16 @@ class DeviceManager(QObject):
     device_connection_status = Signal(str, bool, bool)  # (serial_number, connected, crc_error)
 
 
-    # новый сигнал для обновления ПАЕД в DeviceInfo
-    update_device_paed = Signal(str, float)  # (serial_number, paed_value)
+    # # новый сигнал для обновления ПАЕД в DeviceInfo
+    # update_device_paed = Signal(str, float)  # (serial_number, paed_value)
+
+    # Второй параметр:
+    #
+    #     float -> получен актуальный валидный ПАЕД;
+    #     None  -> текущий результат ПАЕД недостоверен,
+    #              поэтому прежнее значение нельзя использовать
+    #              для принятия решения о запуске спектра.
+    update_device_paed = Signal(str, object)
 
     system_event = Signal(str, str, str)  # (serial_number или None, event_type, description)
 
@@ -1945,31 +1958,147 @@ class DeviceManager(QObject):
         )
 
         return serial_number
+    
 
 
     def _temp_data(self, data: bytearray, b1: int = 0) -> str | None:
-        """       
-            Возвращает строку с значением температуры
         """
-        
-        # Проверка валидности
-        if data[6+b1] & 0x80:
+        Декодирует температуру из ответа БДБГ-09.
+
+        Возвращает:
+            строку температуры с точностью до 0.1 °C,
+            например:
+                "23.5"
+                "-10.0"
+
+            None:
+                если пакет недостаточной длины
+                или термодатчик сообщил об отказе.
+
+        Формат температурных данных БДБГ-09:
+
+            младший байт:
+                D7..D4 -> 2^3 .. 2^0
+                D3..D0 -> 2^-1 .. 2^-4
+
+            старший байт:
+                D2..D0 -> 2^6 .. 2^4
+                D4      -> S:
+                        0 - положительная температура
+                        1 - отрицательная температура
+
+                D7      -> состояние термодатчика:
+                        0 - норма
+                        1 - отказ
+
+        ВАЖНО:
+            знак температуры передаётся отдельным битом S.
+            Температура НЕ представлена в дополнительном коде.
+        """
+
+        # ============================================================
+        # 1. ПРОВЕРЯЕМ СМЕЩЕНИЕ
+        # ============================================================
+
+        if b1 < 0:
             return None
 
-        # Собираем слово из двух байтов
-        temp_w = (data[5+b1]) | (data[6+b1] << 8)
+        # ============================================================
+        # 2. ПРОВЕРЯЕМ, ЧТО НУЖНЫЕ БАЙТЫ СУЩЕСТВУЮТ
+        # ============================================================
+        #
+        # Для декодирования температуры используются:
+        #
+        #     data[5 + b1]
+        #     data[6 + b1]
+        #
+        # Поэтому последний необходимый индекс обязан существовать.
 
-        # Проверка знака
-        if data[6+b1] & 0x10:
-            temp_w = (~temp_w) & 0xFFF
-            temp_w += 1
-            sign = "-"
-        else:
-            sign = ""
+        required_index = 6 + b1
 
-        # Берём младшие 12 бит и делим на 16
-        temp_r = (temp_w & 0xFFF) / 16.0
-        return f"{sign}{temp_r:.1f}"
+        if data is None or len(data) <= required_index:
+            return None
+
+        # ============================================================
+        # 3. ПОЛУЧАЕМ БАЙТЫ ТЕМПЕРАТУРЫ
+        # ============================================================
+
+        temp_low = data[5 + b1]
+        temp_high = data[6 + b1]
+
+        # ============================================================
+        # 4. ПРОВЕРЯЕМ СОСТОЯНИЕ ТЕРМОДАТЧИКА
+        # ============================================================
+        #
+        # D7 старшего байта:
+        #
+        #     0 - термодатчик исправен
+        #     1 - отказ термодатчика
+
+        if temp_high & 0x80:
+            return None
+
+        # ============================================================
+        # 5. ОПРЕДЕЛЯЕМ ЗНАК
+        # ============================================================
+        #
+        # D4 является отдельным битом знака S:
+        #
+        #     S = 0 -> температура положительная
+        #     S = 1 -> температура отрицательная
+        #
+        # Это НЕ дополнительный код.
+
+        is_negative = bool(
+            temp_high & 0x10
+        )
+
+        # ============================================================
+        # 6. СОБИРАЕМ МОДУЛЬ ТЕМПЕРАТУРЫ
+        # ============================================================
+        #
+        # В старшем байте для значения температуры используются
+        # только D2..D0.
+        #
+        # D7 - отказ датчика.
+        # D4 - знак.
+        #
+        # Поэтому служебные биты необходимо исключить.
+
+        temperature_raw = (
+            ((temp_high & 0x07) << 8)
+            | temp_low
+        )
+
+        # ============================================================
+        # 7. ПЕРЕВОДИМ В ГРАДУСЫ ЦЕЛЬСИЯ
+        # ============================================================
+        #
+        # Четыре младших разряда являются дробной частью:
+        #
+        #     2^-1
+        #     2^-2
+        #     2^-3
+        #     2^-4
+        #
+        # Поэтому цена младшего разряда = 1 / 16 °C.
+
+        temperature = (
+            temperature_raw / 16.0
+        )
+
+        # ============================================================
+        # 8. ПРИМЕНЯЕМ ЗНАК
+        # ============================================================
+
+        if is_negative:
+            temperature = -temperature
+
+        # ============================================================
+        # 9. ВОЗВРАЩАЕМ ЗНАЧЕНИЕ
+        # ============================================================
+
+        return f"{temperature:.1f}"    
     
 
     def _rad_intens_data(self, data: bytearray) -> int:
@@ -2073,238 +2202,715 @@ class DeviceManager(QObject):
 
     @Slot(object)
     def set_cistern_states(self, states: dict):
-        """Обновляет состояние цистерн в объектах DeviceInfo — выполняется в потоке DeviceManager."""
+        """
+        Обновляет состояния заполненности ZB
+        внутри объектов DeviceInfo.
+
+        Метод выполняется в потоке DeviceManager.
+
+        При переходе:
+
+            empty -> full
+
+        начинается новый технологический цикл цистерны.
+
+        При переходе:
+
+            full -> empty
+
+        предыдущий цикл заканчивается.
+
+        В обоих случаях спектральные данные предыдущего цикла
+        больше нельзя использовать, поэтому необходимо сбросить:
+
+            spectrum_buffer
+            spectrum_counter
+            spectrum_active
+            start_spectre_retries
+        """
+
+        # ============================================================
+        # 1. ПРОВЕРЯЕМ ВХОДНЫЕ ДАННЫЕ
+        # ============================================================
+
+        if not isinstance(
+            states,
+            dict
+        ):
+            return
+
+        # ============================================================
+        # 2. ПРОХОДИМ ПО DeviceInfo
+        # ============================================================
+
         for dev in self.devices:
+
             try:
-                posit = getattr(dev, "posit_number", None)
-                if posit is not None and int(posit) in states:
-                    dev.set_full(bool(states[int(posit)]))
-            except Exception:
+                # --------------------------------------------------------
+                # Fullness относится только к приборам цистерн
+                # --------------------------------------------------------
+
+                if dev.location_type != "cistern":
+                    continue
+
+                # --------------------------------------------------------
+                # Получаем физическую позицию ZB
+                # --------------------------------------------------------
+
+                posit = getattr(
+                    dev,
+                    "posit_number",
+                    None
+                )
+
+                if posit is None:
+                    continue
+
+                try:
+                    posit = int(
+                        posit
+                    )
+
+                except (
+                    TypeError,
+                    ValueError
+                ):
+                    continue
+
+                # --------------------------------------------------------
+                # Допустимы только ZB1...ZB9
+                # --------------------------------------------------------
+
+                if posit < 1 or posit > 9:
+                    continue
+
+                # --------------------------------------------------------
+                # Если эта ZB отсутствует во входном снимке —
+                # старое состояние не изменяем.
+                # --------------------------------------------------------
+
+                if posit not in states:
+                    continue
+
+                # ========================================================
+                # 3. СРАВНИВАЕМ СТАРОЕ И НОВОЕ СОСТОЯНИЕ
+                # ========================================================
+
+                old_full = dev.get_full()
+
+                new_full = bool(
+                    states[
+                        posit
+                    ]
+                )
+
+                # Если состояние не изменилось —
+                # повторно сбрасывать спектр нельзя.
+                if old_full == new_full:
+                    continue
+
+                # ========================================================
+                # 4. УСТАНАВЛИВАЕМ НОВОЕ СОСТОЯНИЕ
+                # ========================================================
+
+                dev.set_full(
+                    new_full
+                )
+
+                # ========================================================
+                # 5. СБРАСЫВАЕМ СПЕКТР ПРЕДЫДУЩЕГО ЦИКЛА
+                # ========================================================
+                #
+                # DeviceInfo.reset_spectrum() очищает:
+                #
+                #     spectrum_buffer
+                #     spectrum_counter
+
+                dev.reset_spectrum()
+
+                # --------------------------------------------------------
+                # При смене технологического цикла старый режим
+                # спектрального набора недействителен.
+                # --------------------------------------------------------
+
+                dev.spectrum_active = False
+
+                # --------------------------------------------------------
+                # Попытки запуска спектра предыдущего цикла
+                # также больше не имеют смысла.
+                # --------------------------------------------------------
+
+                dev.start_spectre_retries = 0
+
+                # ========================================================
+                # 6. ЛОГИРУЕМ ПЕРЕХОД
+                # ========================================================
+
+                state_text = (
+                    "full"
+                    if new_full
+                    else "empty"
+                )
+
+                self.device_info.emit(
+                    (
+                        f"ZB{posit}: стан цистерни "
+                        f"змінено на '{state_text}'. "
+                        "Спектральний цикл скинуто."
+                    )
+                )
+
+            except Exception as e:
+
+                # Ошибка одной ZB не должна прервать
+                # синхронизацию остальных DeviceInfo.
+
+                self.device_error.emit(
+                    getattr(
+                        dev,
+                        "port",
+                        "unknown"
+                    ),
+                    (
+                        "Помилка синхронізації стану "
+                        f"цистерни для SN "
+                        f"{getattr(dev, 'serial_number', 'unknown')}: "
+                        f"{e}"
+                    )
+                )
+
                 continue
 
-################################################ БЛОК ЦИКЛИЧЕСКОГО ОПРОСА ПРИБОРОВ ######################################################      
-    
+################################################ БЛОК ЦИКЛИЧЕСКОГО ОПРОСА ПРИБОРОВ ######################################################  
+
 
     def make_request(self, request_type: str = None) -> bytearray:
         """
-            Формирует запрос к текущему прибору на основе его состояния.
-            Если указан request_type — выбираем команду по нему.
+        Формирует запрос к текущему прибору.
+
+        Основной алгоритм для приборов цистерн:
+
+            ZB empty
+                -> RadDose
+
+            ZB full, spectrum_active == False,
+            актуального валидного ПАЕД нет
+                -> RadDose
+
+            ZB full, PAED > 50
+                -> RadDose
+
+            ZB full, актуальный валидный PAED <= 50
+                -> StartSpectre
+
+            ZB full, spectrum_active == True
+                -> GetSpectre
+
+        Для приборов помещения всегда выполняется RadDose,
+        кроме периодического отдельного запроса Temperature.
         """
-        device: DeviceInfo = self.devices[self.current_index]
+
+        # ============================================================
+        # 1. ПРОВЕРЯЕМ ТЕКУЩИЙ ПРИБОР
+        # ============================================================
+
+        if (
+            self.current_index < 0
+            or self.current_index >= len(self.devices)
+        ):
+            raise IndexError(
+                f"Некоректний current_index: {self.current_index}"
+            )
+
+        device: DeviceInfo = self.devices[
+            self.current_index
+        ]
 
         base_cmd = None
 
-        # Стандартный режим работы - ПАЕД или спектр
-        if request_type is None:
+        # ============================================================
+        # 2. ПРИНУДИТЕЛЬНЫЙ ЗАПРОС ТЕМПЕРАТУРЫ
+        # ============================================================
+
+        if request_type == "temperature":
+
+            base_cmd = COMMAND_TEMP
+
+        # ============================================================
+        # 3. ОСНОВНОЙ РЕЖИМ ОПРОСА
+        # ============================================================
+
+        elif request_type is None:
+
+            # --------------------------------------------------------
+            # ДАТЧИК В ПОМЕЩЕНИИ
+            # --------------------------------------------------------
+
             if device.location_type == "room":
-                base_cmd = COMMAND_RAD_DOSE   
+
+                base_cmd = COMMAND_RAD_DOSE
+
+            # --------------------------------------------------------
+            # ДАТЧИК ЦИСТЕРНЫ
+            # --------------------------------------------------------
 
             elif device.location_type == "cistern":
+
+                # ----------------------------------------------------
+                # G-сенсор работает только в режиме ПАЕД
+                # ----------------------------------------------------
+
                 if device.real_sensor == "G":
+
                     base_cmd = COMMAND_RAD_DOSE
+
+                # ----------------------------------------------------
+                # S-сенсор участвует в спектральном цикле
+                # ----------------------------------------------------
+
                 elif device.real_sensor == "S":
+
+                    # =================================================
+                    # ЦИСТЕРНА ПУСТАЯ
+                    # =================================================
+
                     if not device.get_full():
-                        # Цистерна не полная
+
                         base_cmd = COMMAND_RAD_DOSE
+
+                        # При пустой цистерне спектральный режим
+                        # не должен продолжаться.
                         device.spectrum_active = False
+
+                    # =================================================
+                    # ЦИСТЕРНА ЗАПОЛНЕНА
+                    # =================================================
+
                     else:
-                        # Цистерна полная
+
+                        # ---------------------------------------------
+                        # Спектр ещё не запущен
+                        # ---------------------------------------------
+
                         if not device.spectrum_active:
-                            # Проверяем порог ПАЕД перед запуском спектра
-                            if device.get_last_paed() <= PAED_THRESHOLD_FOR_SPECTRUM:
-                                base_cmd = COMMAND_START_SIMPLE_SPECTRE
-                                device.spectrum_active = True
+
+                            last_paed = (
+                                device.get_last_paed()
+                            )
+
+                            # =========================================
+                            # Нет актуального достоверного ПАЕД
+                            # =========================================
+                            #
+                            # Например:
+                            #
+                            # - приложение только запущено;
+                            # - цистерна только что изменила fullness;
+                            # - последнее измерение оказалось invalid.
+                            #
+                            # В любом из этих случаев сначала обязан
+                            # быть получен новый RadDose.
+
+                            if last_paed is None:
+
+                                base_cmd = (
+                                    COMMAND_RAD_DOSE
+                                )
+
+                            # =========================================
+                            # ПАЕД ЕЩЁ ВЫШЕ ПОРОГА
+                            # =========================================
+
+                            elif (
+                                last_paed
+                                > PAED_THRESHOLD_FOR_SPECTRUM
+                            ):
+
+                                base_cmd = (
+                                    COMMAND_RAD_DOSE
+                                )
+
+                            # =========================================
+                            # ПАЕД ДОСТИГ РАЗРЕШЁННОГО ПОРОГА
+                            # =========================================
+
                             else:
-                                # ПАЕД слишком высокая, продолжаем запрашивать ПАЕД
-                                base_cmd = COMMAND_RAD_DOSE
+
+                                base_cmd = (
+                                    COMMAND_START_SIMPLE_SPECTRE
+                                )
+
+                                # Флаг выставляется перед отправкой.
+                                #
+                                # Если команда не будет подтверждена
+                                # прибором, обработчики timeout/CRC/
+                                # StartSpectre сбросят его обратно.
+                                device.spectrum_active = True
+
+                        # ---------------------------------------------
+                        # Спектр уже успешно запущен
+                        # ---------------------------------------------
+
                         else:
-                            # Спектр уже запущен
-                            base_cmd = COMMAND_GET_SIMPLE_SPECTRE
+
+                            base_cmd = (
+                                COMMAND_GET_SIMPLE_SPECTRE
+                            )
+
                 else:
-                    raise ValueError(f"Unknown real_sensor: {device.real_sensor}")
+
+                    raise ValueError(
+                        (
+                            "Unknown real_sensor: "
+                            f"{device.real_sensor}"
+                        )
+                    )
+
             else:
-                raise ValueError(f"Unknown location_type: {device.location_type}")
-            
-        # Запрашиваем температуру
-        elif request_type == "temperature":
-            base_cmd = COMMAND_TEMP
+
+                raise ValueError(
+                    (
+                        "Unknown location_type: "
+                        f"{device.location_type}"
+                    )
+                )
+
+        # ============================================================
+        # 4. НЕИЗВЕСТНЫЙ request_type
+        # ============================================================
+
+        else:
+
+            raise ValueError(
+                (
+                    "Unknown request_type: "
+                    f"{request_type}"
+                )
+            )
+
+        # ============================================================
+        # 5. ДОПОЛНИТЕЛЬНАЯ ЗАЩИТА
+        # ============================================================
+
+        if base_cmd is None:
+
+            raise RuntimeError(
+                (
+                    "Не вдалося визначити команду "
+                    f"для приладу {device.serial_number}."
+                )
+            )
+
+        # ============================================================
+        # 6. ЗАПОМИНАЕМ ОЖИДАЕМУЮ КОМАНДУ
+        # ============================================================
 
         self.last_command = base_cmd
 
-        command = bytearray(base_cmd.data)
+        # ============================================================
+        # 7. ФОРМИРУЕМ ПАКЕТ
+        # ============================================================
+
+        command = bytearray(
+            base_cmd.data
+        )
+
+        # Подставляем фактический адрес прибора.
         command[3] = device.address
-        crc = self.calc_crc(command)
-        command.append(crc)
+
+        # Рассчитываем CRC.
+        crc = self.calc_crc(
+            command
+        )
+
+        command.append(
+            crc
+        )
 
         return command
 
-    
-    # @Slot()
-    # def dispatch_poll_step(self):
-    #     """
-    #         Основной метод опроса приборов
-    #     """
-    #     if not self.devices:
-    #         # Нет приборов для опроса - останавливаем таймер и выходим
-    #         self.poll_timer.stop()
-    #         self.device_info.emit("Немає приладів для опитування. Виконайте пошук приладів.")
-    #         return
-        
-    #     # 1. Инкрементируем глобальный индекс текущего прибора
-    #     self.current_index += 1
 
-    #     num_dev = len(self.devices)
-
-    #     # 2. Проверяем конец списка
-    #     if self.current_index >= num_dev:
-    #         # цикл завершён, все приборы опрошены → длинная пауза
-    #         self.current_index = -1
-    #         self.poll_timer.start(self.long_interval_ms)
-    #         return
-
-    #     # 3. Берём объект DeviceInfo - очередной прибор
-    #     device: DeviceInfo = self.devices[self.current_index]
-
-    #     self.temperature_index += 1
-
-     
-    #     # # Каждый 10 запрос - отправляем запрос температуры   
-    #     if ((self.temperature_index // num_dev) % 10 == 0) and self.temperature_index > num_dev:
-    #         request = self.make_request("temperature")
-    #         if self.temperature_index == num_dev * 10 + (num_dev - 1):
-    #             self.temperature_index = 0
-    #     else:
-    #         request = self.make_request() 
-            
-          
-    #     # 5. Отправляем запрос через RTII порт, указанный в DeviceInfo
-    #     try:            
-    #         # 5. Настраиваем глобальный QSerialPort на нужный COM
-    #         self.serial_port.setPortName(device.port)          
-
-    #         if not self.serial_port.isOpen():
-    #             # Проверяем, не занят ли порт другим процессом
-    #             if not self.serial_port.open(QIODevice.ReadWrite):
-    #                 self.device_error.emit(device.port, f"Не вдалося відкрити порт {device.port}. Можливо, порт зайнятий іншим процесом.")
-    #                 # Сбрасываем состояние порта
-    #                 self.serial_port.clearError()
-    #                 self.poll_timer.start(self.short_interval_ms)
-    #                 return
-                
-    #         # 6. Отправляем запрос
-    #         written = self.serial_port.write(request)
-    #         if written != len(request):
-    #             self.device_error.emit(
-    #                 self.devices[self.current_index].port,
-    #                 f"Ошибка записи: записано {written} байт из {len(request)}"
-    #             )
-    #         else:
-    #             hex_str = " ".join(f"0x{b:02X}" for b in request)
-    #             self.device_info.emit(f"Записан пакет: {hex_str}")
-
-            
-
-    #     except serial.SerialException as e:
-    #         # Если порт не открылся или ошибка при записи
-    #         self.device_error.emit(device.port, f"Ошибка работы с портом: {e}")
-    #         self.poll_timer.start(self.short_interval_ms) 
-    #         self.serial_port.clearError()
-    #         self.serial_port.close()      
-    #         return    
-
-    #     # Очищаем приемный буфер перед новым запросом
-    #     self.rx_buffer.clear()
-
-    #     # 6. Запускаем аварийный таймер ожидания ответа ТОЛЬКО если запись прошла успешно
-    #     # Если была ошибка записи - таймер не запускаем, переходим к следующему прибору
-    #     if written == len(request):
-    #         self.error_timer.start(self.timeout_interval_ms)
-    #     else:
-    #         # Ошибка записи - порт закрываем и переходим к следующему прибору без запуска таймера
-    #         if self.serial_port.isOpen():
-    #             self.serial_port.close()
-    #         self.poll_timer.start(self.short_interval_ms)
-    #         return     
 
     @Slot()
     def dispatch_poll_step(self):
         """
-            Основной метод опроса приборов
+        Выполняет один шаг циклического опроса приборов.
+
+        Один вызов метода обслуживает один DeviceInfo.
+
+        После завершения шага:
+            - либо запускается short_interval_ms;
+            - либо, после последнего прибора, long_interval_ms.
+
+        Ошибка одного прибора не должна останавливать
+        весь циклический опрос системы.
         """
+
+        # ============================================================
+        # 1. ПРОВЕРЯЕМ НАЛИЧИЕ ПРИБОРОВ
+        # ============================================================
+
         if not self.devices:
-            # Нет приборов для опроса - останавливаем таймер и выходим
+
             self.poll_timer.stop()
-            self.device_info.emit("Немає приладів для опитування. Виконайте пошук приладів.")
+
+            if self.error_timer.isActive():
+                self.error_timer.stop()
+
+            if self.serial_port.isOpen():
+                self.serial_port.close()
+
+            self.rx_buffer.clear()
+
+            self.current_index = -1
+
+            self.device_info.emit(
+                "Немає приладів для опитування. "
+                "Виконайте пошук приладів."
+            )
+
             return
-        
-        # 1. Инкрементируем глобальный индекс текущего прибора
+
+        # ============================================================
+        # 2. ПЕРЕХОДИМ К СЛЕДУЮЩЕМУ ПРИБОРУ
+        # ============================================================
+
         self.current_index += 1
 
-        num_dev = len(self.devices)
+        num_dev = len(
+            self.devices
+        )
 
-        # 2. Проверяем конец списка
+        # ============================================================
+        # 3. ЗАВЕРШЁН ПОЛНЫЙ ЦИКЛ
+        # ============================================================
+
         if self.current_index >= num_dev:
-            # цикл завершён, все приборы опрошены → длинная пауза
+
             self.current_index = -1
-            self.poll_timer.start(self.long_interval_ms)
+
+            # Между полными циклами используется длинная пауза.
+            self.poll_timer.start(
+                self.long_interval_ms
+            )
+
             return
 
-        # 3. Берём объект DeviceInfo - очередной прибор
-        device: DeviceInfo = self.devices[self.current_index]
-        
-        # 4. Пропускаем неактивные приборы
-        if not device.is_active or not device.is_online:
+        # ============================================================
+        # 4. ПОЛУЧАЕМ ТЕКУЩИЙ DeviceInfo
+        # ============================================================
+
+        device: DeviceInfo = self.devices[
+            self.current_index
+        ]
+
+        # ============================================================
+        # 5. ПРОПУСКАЕМ ПРИБОР, КОТОРЫЙ НЕ УЧАСТВУЕТ В ОПРОСЕ
+        # ============================================================
+        #
+        # Вопрос автоматического возврата is_online=False
+        # рассматриваем отдельно в цепочке восстановления связи.
+
+        if (
+            not device.is_active
+            or not device.is_online
+        ):
+
             self._finish_current_poll()
             return
 
-        self.temperature_index += 1
+        # ============================================================
+        # 6. ВСЯ ЛОГИКА ТЕКУЩЕГО ПРИБОРА ДОЛЖНА БЫТЬ ЗАЩИЩЕНА
+        # ============================================================
 
-        # Каждый 10 запрос - отправляем запрос температуры   
-        if ((self.temperature_index // num_dev) % 10 == 0) and self.temperature_index > num_dev:
-            request = self.make_request("temperature")
-            if self.temperature_index == num_dev * 10 + (num_dev - 1):
-                self.temperature_index = 0
-        else:
-            request = self.make_request() 
-            
-        # 5. Отправляем запрос через RTII порт, указанный в DeviceInfo
-        try:            
-            self.serial_port.setPortName(device.port)          
+        try:
+
+            # --------------------------------------------------------
+            # Счётчик запросов для периодического чтения температуры.
+            # --------------------------------------------------------
+
+            self.temperature_index += 1
+
+            # --------------------------------------------------------
+            # Каждый десятый полный цикл приборов используется
+            # для запроса температуры.
+            # --------------------------------------------------------
+
+            if (
+                (
+                    (
+                        self.temperature_index
+                        // num_dev
+                    )
+                    % 10
+                    == 0
+                )
+                and self.temperature_index > num_dev
+            ):
+
+                request = self.make_request(
+                    "temperature"
+                )
+
+                if (
+                    self.temperature_index
+                    == num_dev * 10
+                    + (num_dev - 1)
+                ):
+
+                    self.temperature_index = 0
+
+            else:
+
+                request = self.make_request()
+
+            # --------------------------------------------------------
+            # make_request() находится ВНУТРИ try.
+            #
+            # Это важно, поскольку ошибка location_type,
+            # real_sensor или другого состояния одного DeviceInfo
+            # не должна полностью остановить polling loop.
+            # --------------------------------------------------------
+
+            if not request:
+
+                raise RuntimeError(
+                    "Сформовано порожній запит."
+                )
+
+            # ========================================================
+            # 7. НАСТРАИВАЕМ COM-ПОРТ
+            # ========================================================
+
+            # Перед использованием нового прибора порт предыдущего
+            # запроса не должен оставаться открытым.
+            if self.serial_port.isOpen():
+
+                if (
+                    self.serial_port.portName()
+                    != device.port
+                ):
+
+                    self.serial_port.close()
+
+            self.serial_port.setPortName(
+                device.port
+            )
+
+            # ========================================================
+            # 8. ОТКРЫВАЕМ COM-ПОРТ
+            # ========================================================
 
             if not self.serial_port.isOpen():
-                if not self.serial_port.open(QIODevice.ReadWrite):
-                    self.device_error.emit(device.port, f"Не вдалося відкрити порт {device.port}. Можливо, порт зайнятий іншим процесом.")
+
+                if not self.serial_port.open(
+                    QIODevice.ReadWrite
+                ):
+
+                    self.device_error.emit(
+                        device.port,
+                        (
+                            f"Не вдалося відкрити порт {device.port}. "
+                            "Можливо, порт зайнятий іншим процесом."
+                        )
+                    )
+
                     self.serial_port.clearError()
-                    self.poll_timer.start(self.short_interval_ms)
+
+                    self._finish_current_poll()
+
                     return
-                
-            written = self.serial_port.write(request)
+
+            # ========================================================
+            # 9. ПЕРЕД НОВЫМ ЗАПРОСОМ ОЧИЩАЕМ RX-СОСТОЯНИЕ
+            # ========================================================
+
+            self.rx_buffer.clear()
+
+            # Очищаем уже находящиеся в QSerialPort входные данные,
+            # чтобы остаток предыдущего обмена не стал ответом
+            # текущего прибора.
+            self.serial_port.clear(
+                QSerialPort.Input
+            )
+
+            # ========================================================
+            # 10. ОТПРАВЛЯЕМ ЗАПРОС
+            # ========================================================
+
+            written = self.serial_port.write(
+                request
+            )
+
+            # ========================================================
+            # 11. ПРОВЕРЯЕМ, ЧТО ПАКЕТ ПРИНЯТ QSerialPort ПОЛНОСТЬЮ
+            # ========================================================
+
             if written != len(request):
+
                 self.device_error.emit(
-                    self.devices[self.current_index].port,
-                    f"Ошибка записи: записано {written} байт из {len(request)}"
+                    device.port,
+                    (
+                        "Помилка запису: "
+                        f"передано {written} байт "
+                        f"із {len(request)} "
+                        f"(SN: {device.serial_number})."
+                    )
                 )
-            else:
-                pass
-                # hex_str = " ".join(f"0x{b:02X}" for b in request)
-                # self.device_info.emit(f"Записан пакет: {hex_str}")
 
-        except serial.SerialException as e:
-            self.device_error.emit(device.port, f"Ошибка работы с портом: {e}")
-            self.poll_timer.start(self.short_interval_ms) 
-            self.serial_port.clearError()
-            self.serial_port.close()      
-            return    
+                self._finish_current_poll()
 
-        self.rx_buffer.clear()
+                return
 
-        if written == len(request):
-            self.error_timer.start(self.timeout_interval_ms)
-        else:
-            if self.serial_port.isOpen():
-                self.serial_port.close()
-            self.poll_timer.start(self.short_interval_ms)
-            return
+            # ========================================================
+            # 12. ЗАПУСКАЕМ TIMEOUT ТОЛЬКО ПОСЛЕ УСПЕШНОЙ ЗАПИСИ
+            # ========================================================
+
+            self.error_timer.start(
+                self.timeout_interval_ms
+            )
+
+        # ============================================================
+        # 13. ЛЮБАЯ ОШИБКА ОДНОГО ПРИБОРА
+        #     НЕ ДОЛЖНА ОСТАНОВИТЬ ВЕСЬ ЦИКЛ
+        # ============================================================
+
+        except Exception as e:
+
+            self.device_error.emit(
+                getattr(
+                    device,
+                    "port",
+                    "unknown"
+                ),
+                (
+                    "Помилка виконання циклу опитування "
+                    f"SN {getattr(device, 'serial_number', 'unknown')}: "
+                    f"{e}"
+                )
+            )
+
+            self.system_event.emit(
+                getattr(
+                    device,
+                    "serial_number",
+                    None
+                ),
+                "polling_error",
+                (
+                    "Помилка виконання кроку опитування: "
+                    f"{e}"
+                )
+            )
+
+            # Главное:
+            # ошибка текущего DeviceInfo не должна остановить
+            # остальные приборы.
+            self._finish_current_poll()
+
+            return  
+
+
 
     def select_mode(self) -> str:
         """
@@ -2329,222 +2935,768 @@ class DeviceManager(QObject):
             return "GetSpectre"
         
         else:
-            return "UnknownMode"        
+            return "UnknownMode"  
+
+              
   
     
     def handle_timeout_error(self):
-        device: DeviceInfo = self.devices[self.current_index]
-        
-        # Увеличиваем счётчик неответов
-        device.no_answer_count += 1
-        
-        # Отправляем сигнал о потере связи
-        self.device_connection_status.emit(
-            device.serial_number,
-            False,  # connected = False
-            False   # crc_error = False
-        )
-        
-        # Если прибор не отвечает 5 раз подряд — сигналим о пропаже
-        if device.no_answer_count >= 5:
-            device.is_online = False
-            device.spectrum_active = False
-            device.start_spectre_retries = 0
-            self.device_missing.emit(device.serial_number)
-            self.system_event.emit(device.serial_number, "connection_error", "Прибор не відповів")
-        
-        self.device_error.emit(device.port, "Прибор не ответил\n")
-
-        if self.serial_port.isOpen():
-            self.serial_port.close()
-
-        self.poll_timer.start(self.short_interval_ms)
-    
-        
-    def handle_ready_read(self):
         """
-            Обработка входящих данных от прибора.
+        Обрабатывает таймаут ожидания ответа от текущего прибора.
+
+        Метод вызывается только error_timer.
+
+        Основная задача:
+            - зарегистрировать отсутствие ответа;
+            - обновить состояние связи;
+            - при достижении лимита отметить прибор offline;
+            - безопасно продолжить общий цикл опроса.
         """
-        try:
-            # Добавляем новые байты в глобальный буфер
-            self.rx_buffer.extend(bytes(self.serial_port.readAll()))
 
-            # Защита от переполнения буфера мусором
-            max_buffer_size = self.last_command.length * 5 if self.last_command else 1024
-            if len(self.rx_buffer) > max_buffer_size:
-                self.device_error.emit(
-                    self.devices[self.current_index].port,
-                    f"Буфер переповнений ({len(self.rx_buffer)} байт). Очищення."
-                )
-                self.rx_buffer.clear()
-                self._finish_current_poll()
-                return
+        # ============================================================
+        # 1. ПРОВЕРЯЕМ, ЧТО СПИСОК ПРИБОРОВ ЕЩЁ СУЩЕСТВУЕТ
+        # ============================================================
 
-            # Ищем заголовок пакета
-            start_index = self.rx_buffer.find(b'\x55\xAA')
-            
-            if start_index == -1:
-                return
+        if not self.devices:
 
-            # Проверяем, достаточно ли байт для полного пакета
-            required_bytes = self.last_command.length
-            available_bytes_from_start = len(self.rx_buffer) - start_index
+            # На всякий случай закрываем порт и очищаем состояние.
+            if self.serial_port.isOpen():
+                self.serial_port.close()
 
-            if available_bytes_from_start < required_bytes:
-                return
-
-            # Отбрасываем мусор до заголовка
-            if start_index > 0:
-                self.rx_buffer = self.rx_buffer[start_index:]
-            
-            # Извлекаем пакет
-            packet_data = self.rx_buffer[:required_bytes]
-            
-            # Очищаем буфер
             self.rx_buffer.clear()
 
-            # Останавливаем таймер ожидания
-            self.error_timer.stop()
+            return
 
-            # Проверка CRC
-            crc_calc = self.calc_crc(packet_data[:-1])
-            crc_recv = packet_data[-1]
-            if crc_calc != crc_recv:
-                self.device_connection_status.emit(
-                    self.devices[self.current_index].serial_number,
-                    True,   # connected = True
-                    True    # crc_error = True
+        # ============================================================
+        # 2. ПРОВЕРЯЕМ current_index
+        # ============================================================
+        #
+        # Таймер является асинхронным объектом.
+        #
+        # Поэтому нельзя безусловно выполнять:
+        #
+        #     self.devices[self.current_index]
+        #
+        # если состояние цикла уже могло измениться.
+
+        if (
+            self.current_index < 0
+            or self.current_index >= len(self.devices)
+        ):
+
+            self.device_error.emit(
+                "unknown",
+                (
+                    "Внутрішня помилка опитування: "
+                    "таймаут отримано без коректного поточного приладу."
                 )
-                self.device_error.emit(
-                    self.devices[self.current_index].port,
-                    f"Помилка CRC: отримано {crc_recv}, обчислено {crc_calc}"
+            )
+
+            if self.serial_port.isOpen():
+                self.serial_port.close()
+
+            self.rx_buffer.clear()
+
+            return
+
+        # ============================================================
+        # 3. ПОЛУЧАЕМ ТЕКУЩИЙ ПРИБОР
+        # ============================================================
+
+        device: DeviceInfo = self.devices[
+            self.current_index
+        ]
+
+        # ============================================================
+        # 4. УВЕЛИЧИВАЕМ СЧЁТЧИК НЕОТВЕТОВ
+        # ============================================================
+
+        device.no_answer_count += 1
+
+        # ============================================================
+        # 5. ОБНОВЛЯЕМ СОСТОЯНИЕ СВЯЗИ В GUI
+        # ============================================================
+
+        self.device_connection_status.emit(
+            device.serial_number,
+            False,      # connected
+            False       # crc_error
+        )
+
+        # ============================================================
+        # 6. КОНТРОЛИРУЕМ ЧИСЛО ПОСЛЕДОВАТЕЛЬНЫХ НЕОТВЕТОВ
+        # ============================================================
+        #
+        # Согласно существующей логике проекта прибор считается
+        # потерянным после пяти последовательных неответов.
+
+        if device.no_answer_count >= 5:
+
+            # Не даём повторно генерировать событие исчезновения
+            # на каждом следующем проходе.
+            if device.is_online:
+
+                device.is_online = False
+
+                # При потере связи текущий набор спектра
+                # больше нельзя считать продолжающимся.
+                device.spectrum_active = False
+
+                device.start_spectre_retries = 0
+
+                self.device_missing.emit(
+                    device.serial_number
                 )
+
                 self.system_event.emit(
-                    self.devices[self.current_index].serial_number,
-                    "crc_error",
-                    f"Помилка CRC: отримано {crc_recv}, обчислено {crc_calc}"
+                    device.serial_number,
+                    "connection_error",
+                    "Прилад не відповів 5 разів поспіль."
                 )
-                mode = self.select_mode()
-                if mode in ["StartSpectre", "GetSpectre"]:
-                    self.devices[self.current_index].spectrum_active = False
+
+        # ============================================================
+        # 7. СООБЩАЕМ ОБ ОШИБКЕ
+        # ============================================================
+
+        self.device_error.emit(
+            device.port,
+            (
+                "Прилад не відповів "
+                f"(SN: {device.serial_number}, "
+                f"кількість неответів: {device.no_answer_count})."
+            )
+        )
+
+        # ============================================================
+        # 8. ЗАВЕРШАЕМ ТЕКУЩИЙ ОПРОС
+        # ============================================================
+
+        self._finish_current_poll()
+
+
+
+    def handle_ready_read(self):
+        """
+        Обрабатывает данные, поступившие от прибора через QSerialPort.
+
+        Основные задачи метода:
+
+            1. Накопить фрагментированный ответ в rx_buffer.
+            2. Найти начало пакета 0x55 0xAA.
+            3. Дождаться полного пакета ожидаемой длины.
+            4. Проверить CRC.
+            5. Проверить, что ответ относится именно к текущему прибору.
+            6. Проверить соответствие ответа отправленной команде.
+            7. Обработать специальные режимы StartSpectre/GetSpectre.
+            8. Передать корректный DevicePacket в основной поток.
+
+        Любая ошибка текущего пакета должна завершить только текущий
+        запрос и не должна останавливать общий цикл опроса.
+        """
+
+        try:
+            # ============================================================
+            # 1. ПРОВЕРЯЕМ СОСТОЯНИЕ ТЕКУЩЕГО ЗАПРОСА
+            # ============================================================
+
+            if not self.devices:
+                self.device_error.emit(
+                    "unknown",
+                    "Отримано дані, але список приладів порожній."
+                )
                 self._finish_current_poll()
                 return
 
-            # Отправляем сигнал о нормальной связи
-            self.device_connection_status.emit(
-                self.devices[self.current_index].serial_number,
-                True,   # connected = True
-                False   # crc_error = False
+            if (
+                self.current_index < 0
+                or self.current_index >= len(self.devices)
+            ):
+                self.device_error.emit(
+                    "unknown",
+                    "Отримано дані без коректного поточного приладу."
+                )
+                self._finish_current_poll()
+                return
+
+            if self.last_command is None:
+                self.device_error.emit(
+                    "unknown",
+                    "Отримано дані без визначеної поточної команди."
+                )
+                self._finish_current_poll()
+                return
+
+            device: DeviceInfo = self.devices[self.current_index]
+
+            # ============================================================
+            # 2. ДОБАВЛЯЕМ НОВЫЕ БАЙТЫ
+            # ============================================================
+
+            new_data = bytes(
+                self.serial_port.readAll()
             )
 
-            # Сбрасываем счётчик неответов при успешном ответе
-            self.devices[self.current_index].no_answer_count = 0
+            if not new_data:
+                return
 
-            # Автоматическая активация прибора, если он был неактивен
-            device = self.devices[self.current_index]
-            if not device.is_active:
-                # Проверяем в БД is_active через потокобезопасный метод
-                is_active_in_db = self.db_manager.get_device_active_status(device.serial_number)
-                if not is_active_in_db:
-                    # Активируем в БД через отдельный метод
-                    self.db_manager.activate_device(device.serial_number)
-                    self.system_event.emit(device.serial_number, "device_activated", 
-                                        f"Прилад {device.serial_number} автоматично активовано після відновлення зв'язку")
-                    device.is_active = True
-                    self.device_info.emit(f"Прилад {device.serial_number} автоматично активовано")
+            self.rx_buffer.extend(
+                new_data
+            )
 
-            # Прибор участвует в опросе
-            self.devices[self.current_index].is_online = True
+            # ============================================================
+            # 3. ЗАЩИТА ОТ НЕОГРАНИЧЕННОГО РОСТА БУФЕРА
+            # ============================================================
 
-            # Определяем режим команды
+            max_buffer_size = max(
+                self.last_command.length * 5,
+                1024
+            )
+
+            if len(self.rx_buffer) > max_buffer_size:
+
+                self.device_error.emit(
+                    device.port,
+                    (
+                        "Буфер приймання переповнений "
+                        f"({len(self.rx_buffer)} байт)."
+                    )
+                )
+
+                self.system_event.emit(
+                    device.serial_number,
+                    "rx_buffer_overflow",
+                    (
+                        "Переповнення буфера приймання: "
+                        f"{len(self.rx_buffer)} байт."
+                    )
+                )
+
+                self._finish_current_poll()
+                return
+
+            # ============================================================
+            # 4. ИЩЕМ НАЧАЛО ПАКЕТА 55 AA
+            # ============================================================
+
+            start_index = self.rx_buffer.find(
+                b'\x55\xAA'
+            )
+
+            if start_index == -1:
+                # --------------------------------------------------------
+                # Полного заголовка пока нет.
+                #
+                # Весь мусор хранить нельзя.
+                #
+                # Но если последний байт равен 0x55, сохраняем его:
+                # следующий фрагмент может начаться с 0xAA.
+                # --------------------------------------------------------
+
+                if (
+                    self.rx_buffer
+                    and self.rx_buffer[-1] == 0x55
+                ):
+                    self.rx_buffer[:] = b'\x55'
+
+                else:
+                    self.rx_buffer.clear()
+
+                return
+
+            # ============================================================
+            # 5. УДАЛЯЕМ МУСОР ПЕРЕД ЗАГОЛОВКОМ
+            # ============================================================
+
+            if start_index > 0:
+                del self.rx_buffer[:start_index]
+
+            # ============================================================
+            # 6. ЖДЁМ ПОЛНЫЙ ПАКЕТ
+            # ============================================================
+
+            required_bytes = self.last_command.length
+
+            if len(self.rx_buffer) < required_bytes:
+                return
+
+            # ============================================================
+            # 7. ИЗВЛЕКАЕМ РОВНО ОДИН ОЖИДАЕМЫЙ ПАКЕТ
+            # ============================================================
+
+            packet_data = bytearray(
+                self.rx_buffer[:required_bytes]
+            )
+
+            # После получения ожидаемого ответа остаток текущего обмена
+            # нам не нужен. Следующий запрос начнётся с чистого RX.
+            self.rx_buffer.clear()
+
+            # ============================================================
+            # 8. ОСТАНАВЛИВАЕМ TIMEOUT
+            # ============================================================
+
+            if self.error_timer.isActive():
+                self.error_timer.stop()
+
+            # ============================================================
+            # 9. ПРОВЕРЯЕМ CRC
+            # ============================================================
+
+            if not self.verify_crc(packet_data):
+
+                crc_recv = packet_data[-1]
+
+                crc_calc = self.calc_crc(
+                    packet_data[:-1]
+                )
+
+                self.device_connection_status.emit(
+                    device.serial_number,
+                    True,
+                    True
+                )
+
+                self.device_error.emit(
+                    device.port,
+                    (
+                        "Помилка CRC: "
+                        f"отримано {crc_recv}, "
+                        f"обчислено {crc_calc}."
+                    )
+                )
+
+                self.system_event.emit(
+                    device.serial_number,
+                    "crc_error",
+                    (
+                        "Помилка CRC: "
+                        f"отримано {crc_recv}, "
+                        f"обчислено {crc_calc}."
+                    )
+                )
+
+                mode = self.select_mode()
+
+                if mode in (
+                    "StartSpectre",
+                    "GetSpectre"
+                ):
+                    device.spectrum_active = False
+
+                self._finish_current_poll()
+                return
+
+            # ============================================================
+            # 10. ПРОВЕРЯЕМ АДРЕС ПРИБОРА
+            # ============================================================
+            #
+            # В запросах ECOTEST адрес находится в байте [3].
+            #
+            # Эту же структуру мы уже используем при поиске приборов.
+            # Корректный CRC сам по себе не доказывает, что ответ
+            # принадлежит текущему DeviceInfo.
+
+            if packet_data[3] != device.address:
+
+                self.device_error.emit(
+                    device.port,
+                    (
+                        "Отримано відповідь від іншої адреси: "
+                        f"очікувалась {device.address}, "
+                        f"отримано {packet_data[3]} "
+                        f"(SN: {device.serial_number})."
+                    )
+                )
+
+                self.system_event.emit(
+                    device.serial_number,
+                    "response_address_mismatch",
+                    (
+                        f"Очікувана адреса {device.address}, "
+                        f"отримана {packet_data[3]}."
+                    )
+                )
+
+                self._finish_current_poll()
+                return
+
+            # ============================================================
+            # 11. ПРОВЕРЯЕМ КОД КОМАНДЫ
+            # ============================================================
+            #
+            # Для коротких команд сравниваем байт команды напрямую.
+            #
+            # Для спектральных команд обе операции используют основной
+            # код 0x8B. Более глубокую структуру спектрального протокола
+            # сейчас не придумываем без документации прибора.
+
+            expected_command_code = (
+                self.last_command.data[4]
+            )
+
+            received_command_code = (
+                packet_data[4]
+            )
+
+            if received_command_code != expected_command_code:
+
+                self.device_error.emit(
+                    device.port,
+                    (
+                        "Отримано відповідь на іншу команду: "
+                        f"очікувалось 0x{expected_command_code:02X}, "
+                        f"отримано 0x{received_command_code:02X} "
+                        f"(SN: {device.serial_number})."
+                    )
+                )
+
+                self.system_event.emit(
+                    device.serial_number,
+                    "response_command_mismatch",
+                    (
+                        "Невідповідність команди відповіді: "
+                        f"очікувалось 0x{expected_command_code:02X}, "
+                        f"отримано 0x{received_command_code:02X}."
+                    )
+                )
+
+                self._finish_current_poll()
+                return
+
+            # ============================================================
+            # 12. ОТВЕТ ПРОШЁЛ ТРАНСПОРТНУЮ ПРОВЕРКУ
+            # ============================================================
+
+            self.device_connection_status.emit(
+                device.serial_number,
+                True,
+                False
+            )
+
+            # Успешный корректный ответ разрывает цепочку
+            # последовательных timeout.
+            device.no_answer_count = 0
+
+            # Прибор физически отвечает.
+            device.is_online = True
+
+            # ============================================================
+            # 13. ОПРЕДЕЛЯЕМ РЕЖИМ
+            # ============================================================
+
             mode = self.select_mode()
 
-            # Если это запуск спектра - проверяем байт 7
+            if mode == "UnknownMode":
+
+                self.device_error.emit(
+                    device.port,
+                    (
+                        "Не вдалося визначити режим "
+                        f"отриманої відповіді для SN "
+                        f"{device.serial_number}."
+                    )
+                )
+
+                self._finish_current_poll()
+                return
+
+            # ============================================================
+            # 14. START SPECTRE
+            # ============================================================
+
             if mode == "StartSpectre":
+
+                # Текущая реализация протокола проекта использует
+                # байт [7] как результат запуска.
+                #
+                # Само значение этого поля без документации ECOTEST
+                # сейчас не изменяем.
+
+                if len(packet_data) <= 7:
+
+                    self.device_error.emit(
+                        device.port,
+                        (
+                            "Відповідь StartSpectre "
+                            "занадто коротка."
+                        )
+                    )
+
+                    device.spectrum_active = False
+
+                    self._finish_current_poll()
+                    return
+
                 res_byte = packet_data[7]
-                
+
                 if res_byte == 0:
-                    device = self.devices[self.current_index]
+
                     device.start_spectre_retries += 1
-                    
+
+                    device.spectrum_active = False
+
                     if device.start_spectre_retries >= 3:
-                        device.spectrum_active = False
+
                         device.start_spectre_retries = 0
+
                         self.device_error.emit(
                             device.port,
-                            f"Не вдалося запустити набір спектру після 3 спроб (SN: {device.serial_number})"
+                            (
+                                "Не вдалося запустити набір спектру "
+                                "після 3 спроб "
+                                f"(SN: {device.serial_number})."
+                            )
                         )
+
                         self.system_event.emit(
                             device.serial_number,
                             "start_spectre_failed",
-                            f"Не вдалося запустити набір спектру після 3 спроб"
+                            (
+                                "Не вдалося запустити набір "
+                                "спектру після 3 спроб."
+                            )
                         )
+
                     else:
-                        device.spectrum_active = False
-                        self.device_info.emit(f"Повторна спроба запуску спектру для {device.serial_number} (спроба {device.start_spectre_retries})")
-                    
+
+                        self.device_info.emit(
+                            (
+                                "Повторна спроба запуску спектру "
+                                f"для {device.serial_number} "
+                                f"(спроба "
+                                f"{device.start_spectre_retries})."
+                            )
+                        )
+
                     self._finish_current_poll()
                     return
-                else:
-                    self.devices[self.current_index].start_spectre_retries = 0
 
-            # Если это получение спектра - парсим данные
+                # Запуск подтверждён.
+                device.start_spectre_retries = 0
+
+            # ============================================================
+            # 15. GET SPECTRE
+            # ============================================================
+
             if mode == "GetSpectre":
+
                 try:
-                    spectre_data = self._parse_spectrum_data(packet_data[:-1])
+
+                    spectre_data = (
+                        self._parse_spectrum_data(
+                            packet_data[:-1]
+                        )
+                    )
+
                     packet = DevicePacket(
-                        self.devices[self.current_index].serial_number,
+                        device.serial_number,
                         spectre_data,
                         mode
                     )
+
                 except Exception as e:
+
                     self.device_error.emit(
-                        self.devices[self.current_index].port,
-                        f"Помилка парсингу спектру: {e}"
+                        device.port,
+                        (
+                            "Помилка парсингу спектру: "
+                            f"{e}"
+                        )
                     )
-                    self.devices[self.current_index].spectrum_active = False
+
+                    device.spectrum_active = False
+
                     self._finish_current_poll()
                     return
+
+            # ============================================================
+            # 16. ОСТАЛЬНЫЕ КОМАНДЫ
+            # ============================================================
+
             else:
+
                 packet = DevicePacket(
-                    self.devices[self.current_index].serial_number,
+                    device.serial_number,
                     packet_data[:-1],
                     mode
                 )
-            
-            self.device_response.emit(packet)
+
+            # ============================================================
+            # 17. ПЕРЕДАЁМ ТОЛЬКО ПОЛНОСТЬЮ ПРОВЕРЕННЫЙ ПАКЕТ
+            # ============================================================
+
+            self.device_response.emit(
+                packet
+            )
+
             self._finish_current_poll()
 
+        # ================================================================
+        # 18. НЕПРЕДВИДЕННАЯ ПРОГРАММНАЯ ОШИБКА
+        # ================================================================
+
         except Exception as e:
+
+            if (
+                self.devices
+                and 0 <= self.current_index < len(self.devices)
+            ):
+
+                device = self.devices[
+                    self.current_index
+                ]
+
+                port = device.port
+                serial_number = device.serial_number
+
+            else:
+
+                port = "unknown"
+                serial_number = "unknown"
+
             self.device_error.emit(
-                self.devices[self.current_index].port if self.current_index < len(self.devices) else "unknown",
-                f"Помилка при обробці відповіді: {e}"
+                port,
+                (
+                    "Помилка при обробці відповіді "
+                    f"SN {serial_number}: {e}"
+                )
             )
-            self.rx_buffer.clear()
-            if self.serial_port.isOpen():
-                self.serial_port.close()
-            self.poll_timer.start(self.short_interval_ms)
-            
+
+            # Используем единую точку завершения, исправленную в №5.
+            self._finish_current_poll()
+
 
     def _finish_current_poll(self):
         """
-            Завершает опрос текущего прибора:
-            - Закрывает порт (если требуется)
-            - Запускает таймер для перехода к следующему прибору
+        Корректно завершает опрос текущего прибора.
+
+        Метод является ЕДИНОЙ точкой завершения текущего запроса.
+
+        Он должен гарантировать, что после завершения запроса
+        не останется активного error_timer, который позже может
+        ошибочно сработать уже для другого прибора.
         """
-        # Закрываем порт, если он открыт
+
+        # ============================================================
+        # 1. ОСТАНАВЛИВАЕМ ТАЙМЕР ОЖИДАНИЯ ОТВЕТА
+        # ============================================================
+        #
+        # Это принципиально важно.
+        #
+        # Если текущий запрос завершился не обычным ответом,
+        # а, например:
+        #
+        #   - ошибкой обработки;
+        #   - переполнением RX-буфера;
+        #   - ошибкой CRC;
+        #   - ошибкой парсинга;
+        #
+        # старый error_timer не должен продолжать работать.
+        #
+        # Иначе после перехода к следующему прибору старый timeout
+        # может быть ошибочно отнесён уже к следующему DeviceInfo.
+
+        if self.error_timer.isActive():
+            self.error_timer.stop()
+
+        # ============================================================
+        # 2. ЗАКРЫВАЕМ COM-ПОРТ
+        # ============================================================
+
         if self.serial_port.isOpen():
             self.serial_port.close()
-        
-        # Запускаем переход к следующему прибору
-        self.poll_timer.start(self.short_interval_ms)
 
-    @Slot(str, float)
-    def set_device_paed(self, serial_number: str, paed_value: float):
-        """Обновляет значение ПАЕД в объекте DeviceInfo"""
+        # ============================================================
+        # 3. ОЧИЩАЕМ БУФЕР ТЕКУЩЕГО ЗАПРОСА
+        # ============================================================
+
+        self.rx_buffer.clear()
+
+        # ============================================================
+        # 4. ПЛАНИРУЕМ ПЕРЕХОД К СЛЕДУЮЩЕМУ ПРИБОРУ
+        # ============================================================
+
+        self.poll_timer.start(
+            self.short_interval_ms
+        )
+
+
+    @Slot(str, object)
+    def set_device_paed(self, serial_number: str, paed_value):
+        """
+        Обновляет последнее значение ПАЕД в DeviceInfo.
+
+        paed_value:
+            float -> актуальное валидное измерение;
+            None  -> текущий ПАЕД недостоверен и не может
+                    использоваться для разрешения StartSpectre.
+
+        Важно:
+            None означает не "ПАЕД равен нулю", а
+            "нет актуального достоверного ПАЕД".
+        """
+
         for device in self.devices:
-            if device.serial_number == serial_number:
-                device.set_last_paed(paed_value)
-                break
-    
-    
+
+            if device.serial_number != serial_number:
+                continue
+
+            # ============================================================
+            # НЕВАЛИДНЫЙ / ОТСУТСТВУЮЩИЙ ПАЕД
+            # ============================================================
+
+            if paed_value is None:
+
+                device.set_last_paed(
+                    None
+                )
+
+                return
+
+            # ============================================================
+            # ВАЛИДНЫЙ ПАЕД
+            # ============================================================
+
+            try:
+
+                value = float(
+                    paed_value
+                )
+
+            except (TypeError, ValueError):
+
+                # Некорректное значение также нельзя оставлять
+                # как прежний разрешающий ПАЕД.
+                device.set_last_paed(
+                    None
+                )
+
+                return
+
+            # NaN не является допустимым управляющим значением.
+            if value != value:
+
+                device.set_last_paed(
+                    None
+                )
+
+                return
+
+            # +/- infinity также недопустимы.
+            if value in (
+                float("inf"),
+                float("-inf")
+            ):
+
+                device.set_last_paed(
+                    None
+                )
+
+                return
+
+            device.set_last_paed(
+                value
+            )
+
+            return
+        

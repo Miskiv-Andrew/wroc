@@ -1664,76 +1664,462 @@ class App(QObject):
         self.update_plc_indicators(plc_connected=False, bridge_connected=False)
 
 
+
+
     def on_bridge_data_received(self, data):
         """
-        Обробник сигналу dataReceived — отримано JSON від Bridge.
-        
-        Вхід:
-            data - dict, розпарсений JSON від C++ диспетчера
-        """
-        try:
-            msg_type = data.get("type", "unknown")
-            
-            if msg_type == "read":
-                # --------------------------------------------------------------------
-                # Отримано дані про стан цистерн (fullness) від C++ диспетчера
-                # Формат: {"type": "read", "data": {"zb": [{"number": 1, "fullness": 0}, ...]}}
-                # --------------------------------------------------------------------
-                zb_list = data.get("data", {}).get("zb", [])
-                
-                if not zb_list:
-                    # Якщо список порожній — ігноруємо
-                    return
-                
-                updated = False
-                for zb in zb_list:
-                    number = zb.get("number")
-                    fullness = zb.get("fullness")
-                    
-                    # --------------------------------------------------------------------
-                    # Перевірка коректності даних
-                    # --------------------------------------------------------------------
-                    if number is None or fullness is None:
-                        self.ui.textEdit.append(
-                            f"[Bridge] Помилка: неповні дані для цистерни: {zb}"
-                        )
-                        continue
-                    
-                    if number < 1 or number > 9:
-                        self.ui.textEdit.append(
-                            f"[Bridge] Помилка: невірний номер цистерни {number}"
-                        )
-                        continue
-                    
-                    if fullness not in (0, 1):
-                        self.ui.textEdit.append(
-                            f"[Bridge] Помилка: невірне значення fullness={fullness} для ZB{number}"
-                        )
-                        continue
-                    
-                    # --------------------------------------------------------------------
-                    # Оновлюємо стан цистерни в словнику
-                    # --------------------------------------------------------------------
-                    new_fullness = bool(fullness)  # 1 -> True, 0 -> False
-                    if self.cistern_dict.get(number) != new_fullness:
-                        self.cistern_dict[number] = new_fullness
-                        updated = True
-                
-                # --------------------------------------------------------------------
-                # Якщо були зміни — синхронізуємо з GUI та DeviceManager
-                # --------------------------------------------------------------------
-                if updated:
-                    self.sync_devices_with_cisterns()
-                    self.sync_cisterns_to_manager.emit(self.cistern_dict)
-                    
-            else:
-                # Для інших типів повідомлень — виводимо в лог (тільки якщо увімкнено детальний режим)
-                if self.bridge_debug_mode:
-                    self.ui.textEdit.append(f"[Bridge] Отримано повідомлення типу '{msg_type}'")
-                    
-        except Exception as e:
-            self.ui.textEdit.append(f"[Bridge] Помилка при обробці даних: {e}")
+        Обрабатывает JSON-сообщения, полученные от C++ ModBusBridgeService.
 
+        Для сообщений type == "read" принимается состояние заполненности
+        цистерн ZB1...ZB9:
+
+            {
+                "type": "read",
+                "data": {
+                    "zb": [
+                        {"number": 1, "fullness": 0},
+                        {"number": 2, "fullness": 1}
+                    ]
+                }
+            }
+
+        Основные задачи:
+
+            1. Проверить структуру входящего сообщения.
+            2. Проверить номер ZB и fullness.
+            3. Обновить только действительно изменившиеся состояния.
+            4. Атомарно сохранить новое состояние в cistern.json.
+            5. Синхронизировать GUI.
+            6. Передать снимок состояния в DeviceManager.
+
+        Ошибка одной записи ZB не должна прерывать обработку остальных.
+        """
+
+        try:
+            # ============================================================
+            # 1. ПРОВЕРЯЕМ КОРНЕВОЙ ОБЪЕКТ
+            # ============================================================
+
+            if not isinstance(data, dict):
+
+                self.ui.textEdit.append(
+                    "[Bridge] Помилка: отримано повідомлення "
+                    "некоректного формату."
+                )
+
+                return
+
+            # ============================================================
+            # 2. ОПРЕДЕЛЯЕМ ТИП СООБЩЕНИЯ
+            # ============================================================
+
+            msg_type = data.get(
+                "type",
+                "unknown"
+            )
+
+            # ============================================================
+            # 3. ДЛЯ П.9 НАС ИНТЕРЕСУЕТ ТОЛЬКО READ
+            # ============================================================
+
+            if msg_type != "read":
+
+                if self.bridge_debug_mode:
+
+                    self.ui.textEdit.append(
+                        (
+                            "[Bridge] Отримано повідомлення "
+                            f"типу '{msg_type}'"
+                        )
+                    )
+
+                return
+
+            # ============================================================
+            # 4. ПРОВЕРЯЕМ DATA
+            # ============================================================
+
+            message_data = data.get(
+                "data"
+            )
+
+            if not isinstance(
+                message_data,
+                dict
+            ):
+
+                self.ui.textEdit.append(
+                    "[Bridge] Помилка: поле 'data' "
+                    "має некоректний формат."
+                )
+
+                return
+
+            # ============================================================
+            # 5. ПОЛУЧАЕМ СПИСОК СОСТОЯНИЙ ZB
+            # ============================================================
+
+            zb_list = message_data.get(
+                "zb"
+            )
+
+            if zb_list is None:
+
+                # В сообщении read может не быть данных ZB.
+                # Это не обязательно является ошибкой самого Bridge.
+                return
+
+            if not isinstance(
+                zb_list,
+                list
+            ):
+
+                self.ui.textEdit.append(
+                    "[Bridge] Помилка: поле 'zb' "
+                    "не є списком."
+                )
+
+                return
+
+            if not zb_list:
+                return
+
+            # ============================================================
+            # 6. СОБИРАЕМ КОРРЕКТНЫЕ ОБНОВЛЕНИЯ
+            # ============================================================
+            #
+            # Сначала полностью проверяем входной список.
+            # Только после этого меняем self.cistern_dict.
+
+            validated_states = {}
+
+            # Запоминаем номера, которые уже встретились.
+            # Это защищает от неоднозначного сообщения:
+            #
+            #     ZB1 = 0
+            #     ZB1 = 1
+
+            duplicate_numbers = set()
+
+            for zb in zb_list:
+
+                # --------------------------------------------------------
+                # Каждый элемент обязан быть объектом
+                # --------------------------------------------------------
+
+                if not isinstance(
+                    zb,
+                    dict
+                ):
+
+                    self.ui.textEdit.append(
+                        (
+                            "[Bridge] Помилка: некоректний "
+                            f"елемент ZB: {zb}"
+                        )
+                    )
+
+                    continue
+
+                number = zb.get(
+                    "number"
+                )
+
+                fullness = zb.get(
+                    "fullness"
+                )
+
+                # --------------------------------------------------------
+                # Проверяем наличие обязательных полей
+                # --------------------------------------------------------
+
+                if (
+                    number is None
+                    or fullness is None
+                ):
+
+                    self.ui.textEdit.append(
+                        (
+                            "[Bridge] Помилка: неповні дані "
+                            f"для цистерни: {zb}"
+                        )
+                    )
+
+                    continue
+
+                # --------------------------------------------------------
+                # Номер ZB должен быть именно целым числом
+                # --------------------------------------------------------
+                #
+                # Используем type(...) is int специально:
+                # bool в Python является подклассом int,
+                # но True/False не должны считаться номерами цистерн.
+
+                if type(number) is not int:
+
+                    self.ui.textEdit.append(
+                        (
+                            "[Bridge] Помилка: некоректний "
+                            f"номер цистерни '{number}'."
+                        )
+                    )
+
+                    continue
+
+                # --------------------------------------------------------
+                # Допустимы только ZB1...ZB9
+                # --------------------------------------------------------
+
+                if number < 1 or number > 9:
+
+                    self.ui.textEdit.append(
+                        (
+                            "[Bridge] Помилка: невірний "
+                            f"номер цистерни {number}."
+                        )
+                    )
+
+                    continue
+
+                # --------------------------------------------------------
+                # Fullness по протоколу должен быть 0 или 1
+                # --------------------------------------------------------
+
+                if (
+                    type(fullness) is not int
+                    or fullness not in (0, 1)
+                ):
+
+                    self.ui.textEdit.append(
+                        (
+                            "[Bridge] Помилка: невірне "
+                            f"значення fullness={fullness} "
+                            f"для ZB{number}."
+                        )
+                    )
+
+                    continue
+
+                # --------------------------------------------------------
+                # Проверяем дубли одной ZB в одном сообщении
+                # --------------------------------------------------------
+
+                if number in validated_states:
+
+                    duplicate_numbers.add(
+                        number
+                    )
+
+                    continue
+
+                validated_states[
+                    number
+                ] = bool(
+                    fullness
+                )
+
+            # ============================================================
+            # 7. ИСКЛЮЧАЕМ НЕОДНОЗНАЧНЫЕ ДУБЛИ
+            # ============================================================
+
+            for number in duplicate_numbers:
+
+                validated_states.pop(
+                    number,
+                    None
+                )
+
+                self.ui.textEdit.append(
+                    (
+                        "[Bridge] Помилка: ZB"
+                        f"{number} повторюється "
+                        "в одному повідомленні. "
+                        "Стан проігноровано."
+                    )
+                )
+
+            # Если корректных данных нет — менять состояние нельзя.
+            if not validated_states:
+                return
+
+            # ============================================================
+            # 8. ОБНОВЛЯЕМ ТОЛЬКО ИЗМЕНИВШИЕСЯ ZB
+            # ============================================================
+
+            updated = False
+
+            for number, new_fullness in validated_states.items():
+
+                old_fullness = bool(
+                    self.cistern_dict.get(
+                        number,
+                        False
+                    )
+                )
+
+                if old_fullness == new_fullness:
+                    continue
+
+                self.cistern_dict[
+                    number
+                ] = new_fullness
+
+                updated = True
+
+            # ============================================================
+            # 9. ЕСЛИ НИЧЕГО НЕ ИЗМЕНИЛОСЬ
+            # ============================================================
+
+            if not updated:
+                return
+
+            # ============================================================
+            # 10. АТОМАРНО СОХРАНЯЕМ cistern.json
+            # ============================================================
+            #
+            # Fullness является состоянием технологического процесса.
+            #
+            # После перезапуска приложения нельзя возвращаться
+            # к старому значению только потому, что последнее изменение
+            # существовало исключительно в оперативной памяти.
+            #
+            # Используем:
+            #
+            #     write -> flush -> fsync -> os.replace
+            #
+            # чтобы не получить частично записанный JSON при сбое.
+
+            cistern_path = os.path.abspath(
+                os.path.join(
+                    "config",
+                    "cistern.json"
+                )
+            )
+
+            temp_path = (
+                cistern_path
+                + ".tmp"
+            )
+
+            try:
+                export_data = {}
+
+                for position in range(
+                    1,
+                    10
+                ):
+
+                    export_data[
+                        str(position)
+                    ] = {
+                        "full": bool(
+                            self.cistern_dict.get(
+                                position,
+                                False
+                            )
+                        ),
+
+                        "isotopes": list(
+                            self.cistern_isotopes.get(
+                                position,
+                                []
+                            )
+                        ),
+
+                        "group": self.cistern_groups.get(
+                            position,
+                            (
+                                "A"
+                                if position in (1, 2)
+                                else
+                                "reserve"
+                                if position == 3
+                                else
+                                "B"
+                            )
+                        )
+                    }
+
+                with open(
+                    temp_path,
+                    "w",
+                    encoding="utf-8"
+                ) as file:
+
+                    json.dump(
+                        export_data,
+                        file,
+                        ensure_ascii=False,
+                        indent=4
+                    )
+
+                    file.flush()
+
+                    os.fsync(
+                        file.fileno()
+                    )
+
+                os.replace(
+                    temp_path,
+                    cistern_path
+                )
+
+            except OSError as e:
+
+                self.ui.textEdit.append(
+                    (
+                        "[Bridge] Помилка збереження "
+                        f"стану цистерн: {e}"
+                    )
+                )
+
+                # Не откатываем self.cistern_dict.
+                #
+                # PLC сообщил актуальное физическое состояние,
+                # поэтому оперативная работа должна продолжаться
+                # с ним даже при ошибке сохранения файла.
+
+                try:
+                    if os.path.exists(
+                        temp_path
+                    ):
+                        os.remove(
+                            temp_path
+                        )
+
+                except OSError:
+                    pass
+
+            # ============================================================
+            # 11. ОБНОВЛЯЕМ GUI
+            # ============================================================
+
+            self.sync_devices_with_cisterns()
+
+            # ============================================================
+            # 12. ПЕРЕДАЁМ СОСТОЯНИЕ В DeviceManager
+            # ============================================================
+            #
+            # Передаём отдельный снимок словаря.
+            # GUI-поток не должен изменять объект после отправки
+            # queued-сигнала в поток DeviceManager.
+
+            self.sync_cisterns_to_manager.emit(
+                self.cistern_dict.copy()
+            )
+
+        # ================================================================
+        # 13. ЗАЩИТА ОБРАБОТЧИКА BRIDGE
+        # ================================================================
+
+        except Exception as e:
+
+            self.ui.textEdit.append(
+                (
+                    "[Bridge] Помилка при обробці "
+                    f"даних: {e}"
+                )
+            )
 
 
 
@@ -2041,75 +2427,388 @@ class App(QObject):
                     else:
                         w.setParent(None)  
 
+
+
+
+
     def on_devices_updated(self, devices):
         """
-            Слот выведения найденных приборов 
-        """
-        if not devices:
-            self.ui.textEdit.append("Прилади не знайдено. Перевірте підключення та спробуйте ще раз.")
-            self.cards_by_sn.clear()
-            self.clear_layout()
-            return
+        Обрабатывает актуальный список найденных приборов
+        и создаёт GUI-карточки ZB / CZ.
 
-        self.ui.textEdit.append("Знайдено прилади:")
+        Логика:
+
+            1. Удаляем карточки предыдущего поиска.
+            2. Разделяем приборы на цистерны и настенные.
+            3. Сортируем их по физической позиции:
+                ZB1 ... ZB9
+                CZ1 ... CZ3
+            4. Создаём новые карточки.
+            5. Формируем cards_by_sn.
+            6. Синхронизируем ZB с состоянием цистерн.
+            7. Передаём состояние цистерн в DeviceManager.
+            8. Устанавливаем корректное состояние кнопок.
+
+        ВАЖНО:
+            GUI должен отображать только результат
+            ТЕКУЩЕГО поиска приборов.
+        """
+
+        # ============================================================
+        # 1. ОЧИЩАЕМ РЕЗУЛЬТАТ ПРЕДЫДУЩЕГО ПОИСКА
+        # ============================================================
+
         self.cards_by_sn.clear()
         self.clear_layout()
 
-        barrel_devices = [i for i in devices if i.get("location_type") == "cistern"]
-        wall_devices = [i for i in devices if i.get("location_type") == "room"]
+        # ============================================================
+        # 2. ТЕКУЩИЙ ПОИСК НЕ ДАЛ НИ ОДНОГО ПРИБОРА
+        # ============================================================
 
-        columns = max(1, math.ceil(math.sqrt(len(barrel_devices)))) if barrel_devices else 1
+        if not devices:
+
+            self.ui.textEdit.append(
+                "Прилади не знайдено. "
+                "Перевірте підключення та спробуйте ще раз."
+            )
+
+            # Поиск завершён — кнопку поиска снова разрешаем.
+            self.butt_search_dev.setEnabled(True)
+
+            # Запуск системы невозможен.
+            if self.butt_system_start:
+                self.butt_system_start.setEnabled(False)
+
+            if self.butt_system_stop:
+                self.butt_system_stop.setEnabled(False)
+
+            return
+
+        self.ui.textEdit.append(
+            "Знайдено прилади:"
+        )
+
+        # ============================================================
+        # 3. РАЗДЕЛЯЕМ ZB И CZ
+        # ============================================================
+
+        barrel_devices = [
+            device
+            for device in devices
+            if device.get("location_type") == "cistern"
+        ]
+
+        wall_devices = [
+            device
+            for device in devices
+            if device.get("location_type") == "room"
+        ]
+
+        # ============================================================
+        # 4. СОРТИРУЕМ КАРТОЧКИ ПО ФИЗИЧЕСКОЙ ПОЗИЦИИ
+        # ============================================================
+        #
+        # Порядок обнаружения приборов зависит от COM-порта
+        # и адресов RS-485.
+        #
+        # Интерфейс оператора не должен от этого зависеть.
+        #
+        # Поэтому всегда получаем:
+        #
+        #     ZB1, ZB2, ... ZB9
+        #
+        # и:
+        #
+        #     CZ1, CZ2, CZ3
+
+        barrel_devices.sort(
+            key=lambda device: int(
+                device.get("posit_number", 0)
+            )
+        )
+
+        wall_devices.sort(
+            key=lambda device: int(
+                device.get("posit_number", 0)
+            )
+        )
+
+        # ============================================================
+        # 5. РАССЧИТЫВАЕМ СЕТКУ ДЛЯ ЦИСТЕРН
+        # ============================================================
+
+        if barrel_devices:
+
+            columns = max(
+                1,
+                math.ceil(
+                    math.sqrt(
+                        len(barrel_devices)
+                    )
+                )
+            )
+
+        else:
+
+            columns = 1
 
         barrel_index = 0
-        for device in barrel_devices + wall_devices:
-            card = self.create_device_card(device)
+
+        # Считаем реально созданные карточки.
+        created_cards = 0
+
+        # ============================================================
+        # 6. СОЗДАЁМ КАРТОЧКИ
+        # ============================================================
+
+        for device in (
+            barrel_devices
+            + wall_devices
+        ):
+
+            try:
+
+                card = self.create_device_card(
+                    device
+                )
+
+            except Exception as e:
+
+                # Ошибка одной карточки не должна приводить
+                # к падению всей процедуры поиска.
+                self.ui.textEdit.append(
+                    (
+                        "Помилка створення картки "
+                        f"SN {device.get('serial_number')}: {e}"
+                    )
+                )
+
+                continue
+
             if card is None:
                 continue
 
-            if isinstance(card, DeviceCardBarrel):
-                card.set_barrel_image(bool(self.cistern_dict.get(device.get("posit_number"), False)))
+            # --------------------------------------------------------
+            # Запоминаем основные параметры карточки
+            # --------------------------------------------------------
 
-            card.posit_number = device.get("posit_number")
-            card.serial_number = device.get("serial_number")
-            self.cards_by_sn[card.serial_number] = card
+            card.posit_number = (
+                device.get(
+                    "posit_number"
+                )
+            )
 
-            card.set_serial(device.get("serial_number"))
-            card.set_position(device.get("posit_number"))
-            card.setMinimumSize(0, 0)
-            card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            card.serial_number = (
+                device.get(
+                    "serial_number"
+                )
+            )
 
-            if isinstance(card, DeviceCardBarrel):
-                row = barrel_index // columns
-                col = barrel_index % columns
-                self.barrel_grid.addWidget(card, row, col)
+            card.location_type = (
+                device.get(
+                    "location_type"
+                )
+            )
+
+            # --------------------------------------------------------
+            # Начальное состояние ZB
+            # --------------------------------------------------------
+            #
+            # Это делаем здесь до общей синхронизации,
+            # чтобы начальная загрузка существующего состояния
+            # cistern.json не воспринималась как новое событие
+            # "цистерна заполнилась".
+
+            if isinstance(
+                card,
+                DeviceCardBarrel
+            ):
+
+                position = (
+                    card.posit_number
+                )
+
+                full = bool(
+                    self.cistern_dict.get(
+                        int(position),
+                        False
+                    )
+                )
+
+                card.set_barrel_image(
+                    full
+                )
+
+            # --------------------------------------------------------
+            # Добавляем карточку в индекс по SN
+            # --------------------------------------------------------
+
+            self.cards_by_sn[
+                card.serial_number
+            ] = card
+
+            # --------------------------------------------------------
+            # Заполняем подписи
+            # --------------------------------------------------------
+
+            card.set_serial(
+                card.serial_number
+            )
+
+            card.set_position(
+                card.posit_number
+            )
+
+            card.setMinimumSize(
+                0,
+                0
+            )
+
+            card.setSizePolicy(
+                QSizePolicy.Expanding,
+                QSizePolicy.Expanding
+            )
+
+            # ========================================================
+            # 7. РАЗМЕЩАЕМ КАРТОЧКУ В НУЖНОМ КОНТЕЙНЕРЕ
+            # ========================================================
+
+            if isinstance(
+                card,
+                DeviceCardBarrel
+            ):
+
+                row = (
+                    barrel_index
+                    // columns
+                )
+
+                col = (
+                    barrel_index
+                    % columns
+                )
+
+                self.barrel_grid.addWidget(
+                    card,
+                    row,
+                    col
+                )
+
                 barrel_index += 1
+
             else:
-                self.wall_layout.addWidget(card)
+
+                self.wall_layout.addWidget(
+                    card
+                )
+
+            created_cards += 1
+
+            # --------------------------------------------------------
+            # Информация оператору
+            # --------------------------------------------------------
 
             self.ui.textEdit.append(
-                f"Порт: {device.get('port')}, Адреса: {device.get('address')}, SN: {device.get('serial_number')}"
+                (
+                    f"Порт: {device.get('port')}, "
+                    f"Адреса: {device.get('address')}, "
+                    f"SN: {device.get('serial_number')}"
+                )
             )
-        
-        #опціонально, щоб картка не розширювалась на весь контейнер
-        spacerB = QSpacerItem(1, 1, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
-        spacerW = QSpacerItem(1, 1, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Preferred)
-        self.barrel_grid.addItem(spacerB)
-        self.wall_layout.addItem(spacerW)
 
-        # Вносим в приборы данные про цистерны
+        # ============================================================
+        # 8. ДОБАВЛЯЕМ SPACER
+        # ============================================================
+
+        spacerB = QSpacerItem(
+            1,
+            1,
+            QSizePolicy.Policy.Minimum,
+            QSizePolicy.Policy.Expanding
+        )
+
+        spacerW = QSpacerItem(
+            1,
+            1,
+            QSizePolicy.Policy.Minimum,
+            QSizePolicy.Policy.Preferred
+        )
+
+        self.barrel_grid.addItem(
+            spacerB
+        )
+
+        self.wall_layout.addItem(
+            spacerW
+        )
+
+        # ============================================================
+        # 9. НИ ОДНА КАРТОЧКА НЕ СОЗДАЛАСЬ
+        # ============================================================
+
+        if created_cards == 0:
+
+            self.ui.textEdit.append(
+                (
+                    "Помилка: прилади знайдено, "
+                    "але жодну GUI-картку створити не вдалося."
+                )
+            )
+
+            self.butt_search_dev.setEnabled(
+                True
+            )
+
+            if self.butt_system_start:
+                self.butt_system_start.setEnabled(
+                    False
+                )
+
+            if self.butt_system_stop:
+                self.butt_system_stop.setEnabled(
+                    False
+                )
+
+            return
+
+        # ============================================================
+        # 10. СИНХРОНИЗИРУЕМ СОСТОЯНИЕ ЦИСТЕРН
+        # ============================================================
+
         self.sync_devices_with_cisterns()
 
-        # Отправляем начальное состояние цистерн в DeviceManager
-        self.sync_cisterns_to_manager.emit(self.cistern_dict)
+        # ============================================================
+        # 11. ПЕРЕДАЁМ НАЧАЛЬНОЕ СОСТОЯНИЕ ZB
+        #     В DeviceManager
+        # ============================================================
 
-        # Разблокируем кнопку поиска
-        self.butt_search_dev.setEnabled(True)
+        self.sync_cisterns_to_manager.emit(
+            self.cistern_dict.copy()
+        )
 
-         # Устанавливаем состояние кнопок после завершения поиска
+        # ============================================================
+        # 12. ПОИСК ЗАВЕРШЁН
+        # ============================================================
+
+        self.butt_search_dev.setEnabled(
+            True
+        )
+
+        # Есть хотя бы одна корректная рабочая карточка —
+        # разрешаем запуск опроса.
         if self.butt_system_start:
-            self.butt_system_start.setEnabled(True)
+
+            self.butt_system_start.setEnabled(
+                True
+            )
+
         if self.butt_system_stop:
-            self.butt_system_stop.setEnabled(False)
+
+            self.butt_system_stop.setEnabled(
+                False
+            )
+
+
 
     
 
@@ -2493,48 +3192,233 @@ class App(QObject):
                     pass
 
 
+
     
     def sync_devices_with_cisterns(self):
         """
-            Синхронизируем только GUI-карточки с self.cistern_dict.
-            НИКОГДА не вызываем методы объектов DeviceManager из GUI-потока.
+        Синхронизирует GUI-карточки цистерн ZB
+        с текущим состоянием self.cistern_dict.
+
+        ВАЖНО:
+
+            1. Метод работает ТОЛЬКО с DeviceCardBarrel.
+            Настенные приборы CZ не имеют состояния fullness.
+
+            2. Никакие методы DeviceManager отсюда напрямую
+            не вызываются — GUI и DeviceManager находятся
+            в разных потоках.
+
+            3. Ошибки синхронизации не скрываются.
+            Они выводятся оператору в textEdit.
+
+            4. При изменении состояния цистерны:
+                empty -> full
+                full  -> empty
+
+            спектральные данные и история предыдущего
+            цикла сбрасываются.
         """
+
+        # ============================================================
+        # 1. УБЕЖДАЕМСЯ, ЧТО ДАННЫЕ ЦИСТЕРН ЗАГРУЖЕНЫ
+        # ============================================================
+
         if not self.cistern_dict:
-            self.load_cistern_data("config/cistern.json")
-        
-        for sn, card in self.cards_by_sn.items():
-            try:
-                posit = getattr(card, "posit_number", None) or getattr(card, "posit", None)
-                if posit is None:
-                    continue
-                
-                old_full = getattr(card, "is_full", False)
-                new_full = bool(self.cistern_dict.get(int(posit), False))
-                
-                # Сохраняем новое состояние
-                card.is_full = new_full
-                card.set_barrel_image(new_full)
-                
-                # Если цистерна стала пустой - сбрасываем спектральные данные и историю
-                if old_full != new_full and not new_full:
-                    # Цистерна опустошена - сброс спектра и истории
-                    if hasattr(card, 'reset_spectrum'):
-                        card.reset_spectrum()
-                    if hasattr(card, 'clear_history'):
-                        card.clear_history()
-                    # Выводим информацию в лог
-                    self.ui.textEdit.append(f"Цистерна №{posit} спорожнена. Спектр та історію скинуто.")
-                
-                # Если цистерна стала полной - сбрасываем спектральные данные и историю (начало нового цикла)
-                if old_full != new_full and new_full:
-                    if hasattr(card, 'reset_spectrum'):
-                        card.reset_spectrum()
-                    if hasattr(card, 'clear_history'):
-                        card.clear_history()
-                    self.ui.textEdit.append(f"Цистерна №{posit} заповнена. Спектр та історію скинуто.")
-                        
-            except Exception as e:
+
+            self.load_cistern_data(
+                "config/cistern.json"
+            )
+
+        # ============================================================
+        # 2. ПЕРЕБИРАЕМ GUI-КАРТОЧКИ
+        # ============================================================
+
+        for serial_number, card in self.cards_by_sn.items():
+
+            # --------------------------------------------------------
+            # CZ НЕ ИМЕЕТ СОСТОЯНИЯ ЗАПОЛНЕННОСТИ
+            # --------------------------------------------------------
+            #
+            # Раньше код пытался вызвать:
+            #
+            #     card.set_barrel_image(...)
+            #
+            # также для DeviceCardWall.
+            #
+            # У настенной карточки такого метода нет,
+            # поэтому каждый CZ создавал AttributeError,
+            # который затем молча проглатывался.
+
+            if not isinstance(
+                card,
+                DeviceCardBarrel
+            ):
                 continue
+
+            try:
+
+                # ====================================================
+                # 3. ПОЛУЧАЕМ ПОЗИЦИЮ ZB
+                # ====================================================
+
+                posit = getattr(
+                    card,
+                    "posit_number",
+                    None
+                )
+
+                if posit is None:
+
+                    self.ui.textEdit.append(
+                        (
+                            "Помилка синхронізації цистерни: "
+                            f"для SN {serial_number} "
+                            "не визначено posit_number."
+                        )
+                    )
+
+                    continue
+
+                try:
+
+                    posit = int(
+                        posit
+                    )
+
+                except (
+                    TypeError,
+                    ValueError
+                ):
+
+                    self.ui.textEdit.append(
+                        (
+                            "Помилка синхронізації цистерни: "
+                            f"некоректна позиція '{posit}' "
+                            f"для SN {serial_number}."
+                        )
+                    )
+
+                    continue
+
+                # ====================================================
+                # 4. ПРОВЕРЯЕМ ДИАПАЗОН ZB1-ZB9
+                # ====================================================
+
+                if posit < 1 or posit > 9:
+
+                    self.ui.textEdit.append(
+                        (
+                            "Помилка синхронізації цистерни: "
+                            f"позиція ZB{posit} "
+                            f"для SN {serial_number} "
+                            "поза допустимим діапазоном 1..9."
+                        )
+                    )
+
+                    continue
+
+                # ====================================================
+                # 5. ПОЛУЧАЕМ СТАРОЕ И НОВОЕ СОСТОЯНИЕ
+                # ====================================================
+
+                old_full = bool(
+                    getattr(
+                        card,
+                        "is_full",
+                        False
+                    )
+                )
+
+                new_full = bool(
+                    self.cistern_dict.get(
+                        posit,
+                        False
+                    )
+                )
+
+                # ====================================================
+                # 6. ЕСЛИ СОСТОЯНИЕ НЕ ИЗМЕНИЛОСЬ
+                # ====================================================
+                #
+                # Нет необходимости повторно менять картинку
+                # и выполнять дополнительную работу.
+
+                if old_full == new_full:
+
+                    continue
+
+                # ====================================================
+                # 7. СОСТОЯНИЕ ЦИСТЕРНЫ ИЗМЕНИЛОСЬ
+                # ====================================================
+
+                card.set_barrel_image(
+                    new_full
+                )
+
+                # ====================================================
+                # 8. НАЧАЛСЯ НОВЫЙ ЦИКЛ ЦИСТЕРНЫ
+                # ====================================================
+                #
+                # Как при заполнении, так и при опорожнении
+                # накопленный спектр предыдущего цикла
+                # больше нельзя использовать.
+
+                if hasattr(
+                    card,
+                    "reset_spectrum"
+                ):
+
+                    card.reset_spectrum()
+
+                if hasattr(
+                    card,
+                    "clear_history"
+                ):
+
+                    card.clear_history()
+
+                # ====================================================
+                # 9. СООБЩАЕМ ОПЕРАТОРУ
+                # ====================================================
+
+                if new_full:
+
+                    self.ui.textEdit.append(
+                        (
+                            f"Цистерна №{posit} заповнена. "
+                            "Спектр та історію скинуто."
+                        )
+                    )
+
+                else:
+
+                    self.ui.textEdit.append(
+                        (
+                            f"Цистерна №{posit} спорожнена. "
+                            "Спектр та історію скинуто."
+                        )
+                    )
+
+            # ========================================================
+            # 10. НЕПРЕДВИДЕННАЯ ОШИБКА
+            # ========================================================
+            #
+            # Для 24/7 приложения нельзя молча терять ошибку GUI.
+            # При этом ошибка одной карточки не должна ломать
+            # синхронизацию остальных ZB.
+
+            except Exception as e:
+
+                self.ui.textEdit.append(
+                    (
+                        "Помилка синхронізації "
+                        f"ZB для SN {serial_number}: {e}"
+                    )
+                )
+
+                continue
+
+
 
     
     def cleanup(self):
