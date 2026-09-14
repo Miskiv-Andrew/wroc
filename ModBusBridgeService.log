@@ -1,0 +1,220 @@
+2026-09-14 17:50:21 [SYSTEM] Starting ModBusBridgeService
+2026-09-14 17:50:21 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-09-14 17:50:21 [LOG] Attempting to connect to PLC...
+2026-09-14 17:50:21 Server is running on port 12345
+2026-09-14 17:50:21 [SYSTEM] Starting event loop
+2026-09-14 17:50:22 Client connected: 127.0.0.1:61621
+2026-09-14 17:50:25 [ERROR] Socket error: Connection refused
+2026-09-14 17:50:25 [LOG] Socket error: Connection refused
+2026-09-14 17:50:25 [LOG] PLC reconnect will be attempted every 3000 ms
+2026-09-14 17:50:28 [LOG] Trying to reconnect to PLC...
+2026-09-14 17:50:32 [ERROR] Socket error: Connection refused
+2026-09-14 17:50:32 [LOG] Socket error: Connection refused
+2026-09-14 17:50:34 [LOG] Trying to reconnect to PLC...
+2026-09-14 17:50:37 Client disconnected
+2026-09-14 17:50:37 [LOG] Disconnected from PLC
+2026-09-14 17:50:37 Server stopped
+2026-09-14 17:50:37 [SYSTEM] Application stopped
+2026-09-14 17:51:17 [SYSTEM] Starting ModBusBridgeService
+2026-09-14 17:51:17 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-09-14 17:51:17 [LOG] Attempting to connect to PLC...
+2026-09-14 17:51:17 Server is running on port 12345
+2026-09-14 17:51:17 [SYSTEM] Starting event loop
+2026-09-14 17:51:17 Client connected: 127.0.0.1:61637
+2026-09-14 17:51:21 [ERROR] Socket error: Connection refused
+2026-09-14 17:51:21 [LOG] Socket error: Connection refused
+2026-09-14 17:51:21 [LOG] PLC reconnect will be attempted every 3000 ms
+2026-09-14 17:51:24 [LOG] Trying to reconnect to PLC...
+2026-09-14 17:51:28 [ERROR] Socket error: Connection refused
+2026-09-14 17:51:28 [LOG] Socket error: Connection refused
+2026-09-14 17:51:30 [LOG] Trying to reconnect to PLC...
+2026-09-14 17:51:34 [ERROR] Socket error: Connection refused
+2026-09-14 17:51:34 [LOG] Socket error: Connection refused
+2026-09-14 17:51:36 [LOG] Trying to reconnect to PLC...
+2026-09-14 17:51:40 [ERROR] Socket error: Connection refused
+2026-09-14 17:51:40 [LOG] Socket error: Connection refused
+2026-09-14 17:51:42 [LOG] Trying to reconnect to PLC...
+2026-09-14 17:51:46 [ERROR] Socket error: Connection refused
+2026-09-14 17:51:46 [LOG] Socket error: Connection refused
+2026-09-14 17:51:48 [LOG] Trying to reconnect to PLC...
+2026-09-14 17:51:52 [ERROR] Socket error: Connection refused
+2026-09-14 17:51:52 [LOG] Socket error: Connection refused
+2026-09-14 17:51:54 [LOG] Trying to reconnect to PLC...
+2026-09-14 17:51:58 [ERROR] Socket error: Connection refused
+2026-09-14 17:51:58 [LOG] Socket error: Connection refused
+2026-09-14 17:52:00 [LOG] Trying to reconnect to PLC...
+2026-09-14 17:52:04 [ERROR] Socket error: Connection refused
+2026-09-14 17:52:04 [LOG] Socket error: Connection refused
+2026-09-14 17:52:06 [LOG] Trying to reconnect to PLC...
+2026-09-14 17:52:10 [ERROR] Socket error: Connection refused
+2026-09-14 17:52:10 [LOG] Socket error: Connection refused
+2026-09-14 17:52:12 [LOG] Trying to reconnect to PLC...
+2026-09-14 17:52:16 [ERROR] Socket error: Connection refused
+2026-09-14 17:52:16 [LOG] Socket error: Connection refused
+2026-09-14 17:52:18 [LOG] Trying to reconnect to PLC...
+2026-09-14 17:52:22 [ERROR] Socket error: Connection refused
+2026-09-14 17:52:22 [LOG] Socket error: Connection refused
+2026-09-14 17:52:24 [LOG] Trying to reconnect to PLC...
+2026-09-14 17:52:28 [ERROR] Socket error: Connection refused
+2026-09-14 17:52:28 [LOG] Socket error: Connection refused
+2026-09-14 17:52:30 [LOG] Trying to reconnect to PLC...
+2026-09-14 17:52:34 [ERROR] Socket error: Connection refused
+2026-09-14 17:52:34 [LOG] Socket error: Connection refused
+2026-09-14 17:52:36 [LOG] Trying to reconnect to PLC...
+2026-09-14 17:52:40 [ERROR] Socket error: Connection refused
+2026-09-14 17:52:40 [LOG] Socket error: Connection refused
+2026-09-14 17:52:42 [LOG] Trying to reconnect to PLC...
+2026-09-14 17:52:46 [ERROR] Socket error: Connection refused
+2026-09-14 17:52:46 [LOG] Socket error: Connection refused
+2026-09-14 17:52:48 [LOG] Trying to reconnect to PLC...
+2026-09-14 17:52:52 [ERROR] Socket error: Connection refused
+2026-09-14 17:52:52 [LOG] Socket error: Connection refused
+2026-09-14 17:52:54 Client disconnected
+2026-09-14 17:52:54 [LOG] Disconnected from PLC
+2026-09-14 17:52:54 Server stopped
+2026-09-14 17:52:54 [SYSTEM] Application stopped
+2026-09-14 18:00:53 [SYSTEM] Starting ModBusBridgeService
+2026-09-14 18:00:53 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-09-14 18:00:53 [LOG] Attempting to connect to PLC...
+2026-09-14 18:00:53 Server is running on port 12345
+2026-09-14 18:00:53 [SYSTEM] Starting event loop
+2026-09-14 18:00:54 Client connected: 127.0.0.1:61937
+2026-09-14 18:00:57 [ERROR] Socket error: Connection refused
+2026-09-14 18:00:57 [LOG] Socket error: Connection refused
+2026-09-14 18:00:57 [LOG] PLC reconnect will be attempted every 3000 ms
+2026-09-14 18:00:58 Client disconnected
+2026-09-14 18:00:58 [LOG] Disconnected from PLC
+2026-09-14 18:00:58 Server stopped
+2026-09-14 18:00:58 [SYSTEM] Application stopped
+2026-09-14 18:10:22 [SYSTEM] Starting ModBusBridgeService
+2026-09-14 18:10:22 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-09-14 18:10:22 [LOG] Attempting to connect to PLC...
+2026-09-14 18:10:22 Server is running on port 12345
+2026-09-14 18:10:22 [SYSTEM] Starting event loop
+2026-09-14 18:10:23 Client connected: 127.0.0.1:62121
+2026-09-14 18:10:26 [ERROR] Socket error: Connection refused
+2026-09-14 18:10:26 [LOG] Socket error: Connection refused
+2026-09-14 18:10:26 [LOG] PLC reconnect will be attempted every 3000 ms
+2026-09-14 18:10:29 Client disconnected
+2026-09-14 18:10:29 [LOG] Disconnected from PLC
+2026-09-14 18:10:29 Server stopped
+2026-09-14 18:10:29 [SYSTEM] Application stopped
+2026-09-14 18:10:33 [SYSTEM] Starting ModBusBridgeService
+2026-09-14 18:10:33 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-09-14 18:10:33 [LOG] Attempting to connect to PLC...
+2026-09-14 18:10:33 Server is running on port 12345
+2026-09-14 18:10:33 [SYSTEM] Starting event loop
+2026-09-14 18:10:33 Client connected: 127.0.0.1:62126
+2026-09-14 18:10:37 [ERROR] Socket error: Connection refused
+2026-09-14 18:10:37 [LOG] Socket error: Connection refused
+2026-09-14 18:10:37 [LOG] PLC reconnect will be attempted every 3000 ms
+2026-09-14 18:10:40 [LOG] Trying to reconnect to PLC...
+2026-09-14 18:10:44 [ERROR] Socket error: Connection refused
+2026-09-14 18:10:44 [LOG] Socket error: Connection refused
+2026-09-14 18:10:46 [LOG] Trying to reconnect to PLC...
+2026-09-14 18:10:50 [ERROR] Socket error: Connection refused
+2026-09-14 18:10:50 [LOG] Socket error: Connection refused
+2026-09-14 18:10:52 [LOG] Trying to reconnect to PLC...
+2026-09-14 18:10:56 [ERROR] Socket error: Connection refused
+2026-09-14 18:10:56 [LOG] Socket error: Connection refused
+2026-09-14 18:10:58 [LOG] Trying to reconnect to PLC...
+2026-09-14 18:11:02 [ERROR] Socket error: Connection refused
+2026-09-14 18:11:02 [LOG] Socket error: Connection refused
+2026-09-14 18:11:04 [LOG] Trying to reconnect to PLC...
+2026-09-14 18:11:08 [ERROR] Socket error: Connection refused
+2026-09-14 18:11:08 [LOG] Socket error: Connection refused
+2026-09-14 18:11:10 [LOG] Trying to reconnect to PLC...
+2026-09-14 18:11:11 Client disconnected
+2026-09-14 18:11:11 [LOG] Disconnected from PLC
+2026-09-14 18:11:11 Server stopped
+2026-09-14 18:11:11 [SYSTEM] Application stopped
+2026-09-14 18:15:34 [SYSTEM] Starting ModBusBridgeService
+2026-09-14 18:15:34 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-09-14 18:15:34 [LOG] Attempting to connect to PLC...
+2026-09-14 18:15:34 Server is running on port 12345
+2026-09-14 18:15:34 [SYSTEM] Starting event loop
+2026-09-14 18:15:35 Client connected: 127.0.0.1:62278
+2026-09-14 18:15:38 Client disconnected
+2026-09-14 18:15:38 [LOG] Disconnected from PLC
+2026-09-14 18:15:38 Server stopped
+2026-09-14 18:15:38 [SYSTEM] Application stopped
+2026-09-14 18:15:43 [SYSTEM] Starting ModBusBridgeService
+2026-09-14 18:15:43 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-09-14 18:15:43 [LOG] Attempting to connect to PLC...
+2026-09-14 18:15:43 Server is running on port 12345
+2026-09-14 18:15:43 [SYSTEM] Starting event loop
+2026-09-14 18:15:43 Client connected: 127.0.0.1:62282
+2026-09-14 18:15:45 Client disconnected
+2026-09-14 18:15:45 [LOG] Disconnected from PLC
+2026-09-14 18:15:45 Server stopped
+2026-09-14 18:15:45 [SYSTEM] Application stopped
+2026-09-14 18:28:52 [SYSTEM] Starting ModBusBridgeService
+2026-09-14 18:28:52 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-09-14 18:28:52 [LOG] Attempting to connect to PLC...
+2026-09-14 18:28:52 Server is running on port 12345
+2026-09-14 18:28:52 [SYSTEM] Starting event loop
+2026-09-14 18:28:52 Client connected: 127.0.0.1:62666
+2026-09-14 18:28:54 Client disconnected
+2026-09-14 18:28:54 [LOG] Disconnected from PLC
+2026-09-14 18:28:54 Server stopped
+2026-09-14 18:28:54 [SYSTEM] Application stopped
+2026-09-14 18:28:57 [SYSTEM] Starting ModBusBridgeService
+2026-09-14 18:28:57 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-09-14 18:28:57 [LOG] Attempting to connect to PLC...
+2026-09-14 18:28:57 Server is running on port 12345
+2026-09-14 18:28:57 [SYSTEM] Starting event loop
+2026-09-14 18:28:58 Client connected: 127.0.0.1:62670
+2026-09-14 18:28:59 Client disconnected
+2026-09-14 18:28:59 [LOG] Disconnected from PLC
+2026-09-14 18:28:59 Server stopped
+2026-09-14 18:28:59 [SYSTEM] Application stopped
+2026-09-14 18:35:55 [SYSTEM] Starting ModBusBridgeService
+2026-09-14 18:35:55 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-09-14 18:35:55 [LOG] Attempting to connect to PLC...
+2026-09-14 18:35:55 Server is running on port 12345
+2026-09-14 18:35:55 [SYSTEM] Starting event loop
+2026-09-14 18:35:56 Client connected: 127.0.0.1:62880
+2026-09-14 18:35:57 Client disconnected
+2026-09-14 18:35:57 [LOG] Disconnected from PLC
+2026-09-14 18:35:57 Server stopped
+2026-09-14 18:35:57 [SYSTEM] Application stopped
+2026-09-14 18:38:04 [SYSTEM] Starting ModBusBridgeService
+2026-09-14 18:38:04 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-09-14 18:38:04 [LOG] Attempting to connect to PLC...
+2026-09-14 18:38:04 Server is running on port 12345
+2026-09-14 18:38:04 [SYSTEM] Starting event loop
+2026-09-14 18:38:05 Client connected: 127.0.0.1:62908
+2026-09-14 18:38:06 Client disconnected
+2026-09-14 18:38:06 [LOG] Disconnected from PLC
+2026-09-14 18:38:06 Server stopped
+2026-09-14 18:38:06 [SYSTEM] Application stopped
+2026-09-14 18:51:56 [SYSTEM] Starting ModBusBridgeService
+2026-09-14 18:51:56 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-09-14 18:51:56 [LOG] Attempting to connect to PLC...
+2026-09-14 18:51:56 Server is running on port 12345
+2026-09-14 18:51:56 [SYSTEM] Starting event loop
+2026-09-14 18:51:57 Client connected: 127.0.0.1:63239
+2026-09-14 18:51:57 Client disconnected
+2026-09-14 18:51:57 [LOG] Disconnected from PLC
+2026-09-14 18:51:57 Server stopped
+2026-09-14 18:51:57 [SYSTEM] Application stopped
+2026-09-14 18:56:54 [SYSTEM] Starting ModBusBridgeService
+2026-09-14 18:56:54 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-09-14 18:56:54 [LOG] Attempting to connect to PLC...
+2026-09-14 18:56:54 Server is running on port 12345
+2026-09-14 18:56:54 [SYSTEM] Starting event loop
+2026-09-14 18:56:54 Client connected: 127.0.0.1:63365
+2026-09-14 18:56:55 Client disconnected
+2026-09-14 18:56:55 [LOG] Disconnected from PLC
+2026-09-14 18:56:55 Server stopped
+2026-09-14 18:56:55 [SYSTEM] Application stopped
+2026-09-14 19:00:02 [SYSTEM] Starting ModBusBridgeService
+2026-09-14 19:00:02 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-09-14 19:00:02 [LOG] Attempting to connect to PLC...
+2026-09-14 19:00:02 Server is running on port 12345
+2026-09-14 19:00:02 [SYSTEM] Starting event loop
+2026-09-14 19:00:03 Client connected: 127.0.0.1:63406
+2026-09-14 19:00:04 Client disconnected
+2026-09-14 19:00:04 [LOG] Disconnected from PLC
+2026-09-14 19:00:04 Server stopped
+2026-09-14 19:00:04 [SYSTEM] Application stopped

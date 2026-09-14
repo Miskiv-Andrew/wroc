@@ -275,83 +275,192 @@ class ModBusBridgeClient(QObject):
         ):
             reconnect_thread.join(timeout=2.0)
 
-    # =========================================================================
-    # ModBusBridgeClient.send_data
-    #
-    # Sends one arbitrary JSON object to ModBusBridgeService.
-    #
-    # The method preserves the protocol already tested in the previous Python
-    # application:
-    #
-    #     JSON + newline
-    #
-    # sendall() is used instead of send() so Python continues writing until the
-    # entire encoded message has been accepted by the socket or an error occurs.
-    #
-    # Returns:
-    #     True  - complete message was accepted for transmission;
-    #     False - connection is unavailable or communication failed.
-    # =========================================================================
+
+
+
+
     def send_data(self, data):
+        """
+        Отправляет один JSON-объект в ModBusBridgeService.
+
+        Протокол:
+
+            UTF-8 JSON + '\\n'
+
+        Возвращает:
+
+            True
+                Полностью сформированное корректное сообщение
+                было передано в TCP socket через sendall().
+
+            False
+                Сообщение некорректно, Bridge не подключён
+                либо произошла ошибка передачи.
+
+        ВАЖНО:
+
+        JSON формируется с allow_nan=False.
+
+        Благодаря этому значения:
+
+            NaN
+            +Infinity
+            -Infinity
+
+        не могут незаметно попасть в протокол Python -> C++.
+
+        Такие значения не являются допустимыми числами стандартного JSON
+        и должны быть остановлены ещё до передачи в Bridge.
+        """
+
+        # ============================================================
+        # 1. ПРОВЕРЯЕМ КОРНЕВОЙ ОБЪЕКТ
+        # ============================================================
+
         if not isinstance(data, dict):
+
             self._report_error(
                 "Cannot send data: top-level message must be a dictionary"
             )
+
             return False
 
+        # ============================================================
+        # 2. СЕРИАЛИЗУЕМ JSON
+        # ============================================================
+        #
+        # allow_nan=False принципиально важен.
+        #
+        # Без него Python допускает:
+        #
+        #     NaN
+        #     Infinity
+        #     -Infinity
+        #
+        # и создаёт формально невалидный JSON для строгих парсеров.
+        # ============================================================
+
         try:
+
             message = (
                 json.dumps(
                     data,
                     ensure_ascii=False,
-                    separators=(",", ":")
+                    separators=(",", ":"),
+                    allow_nan=False
                 )
                 + "\n"
             )
 
-            encoded_message = message.encode("utf-8")
+            encoded_message = message.encode(
+                "utf-8"
+            )
 
         except (TypeError, ValueError) as exc:
+
             self._report_error(
                 f"Cannot serialize JSON message: {exc}"
             )
+
             return False
 
+        # ============================================================
+        # 3. ПРОВЕРЯЕМ РАЗМЕР СООБЩЕНИЯ
+        # ============================================================
+
         if len(encoded_message) > self.max_message_size:
+
             self._report_error(
                 "Cannot send data: JSON message exceeds maximum allowed size"
             )
+
             return False
+
+        # ============================================================
+        # 4. ЗАЩИЩАЕМ ОТПРАВКУ ОТ ПАРАЛЛЕЛЬНЫХ sendall()
+        # ============================================================
+        #
+        # Если разные части приложения одновременно отправят ZB,
+        # CZ или replacement, их байты не должны смешаться
+        # в одном TCP-потоке.
+        # ============================================================
 
         with self._send_lock:
 
+            # ========================================================
+            # 5. ПОЛУЧАЕМ ТЕКУЩИЙ SOCKET
+            # ========================================================
+
             with self._socket_lock:
+
                 current_socket = self._socket
 
-            if current_socket is None or not self.is_connected():
+            # ========================================================
+            # 6. ПРОВЕРЯЕМ СОСТОЯНИЕ СОЕДИНЕНИЯ
+            # ========================================================
+
+            if (
+                current_socket is None
+                or
+                not self.is_connected()
+            ):
+
                 self._report_error(
                     "Cannot send data: ModBusBridgeService is not connected"
                 )
 
+                # Если отключение не было ручным,
+                # запускаем существующий механизм reconnect.
                 self._request_reconnect()
+
                 return False
 
+            # ========================================================
+            # 7. ОТПРАВЛЯЕМ ВСЁ СООБЩЕНИЕ
+            # ========================================================
+            #
+            # Используется sendall(), а не send().
+            #
+            # sendall() либо передаст весь буфер в TCP-стек,
+            # либо завершится исключением.
+            # ========================================================
+
             try:
-                current_socket.sendall(encoded_message)
+
+                current_socket.sendall(
+                    encoded_message
+                )
 
                 self.logMessage.emit(
-                    f"Sent {len(encoded_message)} bytes to ModBusBridgeService"
+                    (
+                        f"Sent {len(encoded_message)} bytes "
+                        "to ModBusBridgeService"
+                    )
                 )
 
                 return True
 
             except (OSError, socket.error) as exc:
+
+                # ----------------------------------------------------
+                # Ошибка отправки означает, что текущее соединение
+                # больше нельзя считать рабочим.
+                #
+                # Центральный обработчик:
+                #
+                #   - закроет именно этот socket;
+                #   - снимет connected;
+                #   - сформирует disconnected;
+                #   - запустит reconnect.
+                # ----------------------------------------------------
+
                 self._handle_connection_failure(
                     f"Send error: {exc}",
                     failed_socket=current_socket
                 )
 
                 return False
+
 
     # =========================================================================
     # ModBusBridgeClient.send_zb
