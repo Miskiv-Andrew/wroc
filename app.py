@@ -1936,30 +1936,137 @@ class DeviceCardWall(QWidget):
     """
         Клас настінного детектору(у кімнаті)
     """
+
+
     def __init__(self, parent_app=None):
+        """
+        Инициализация карточки настенного детектора.
+
+        Для температуры хранятся три независимых состояния:
+
+            last_temperature
+                Последнее успешно полученное числовое значение.
+
+            temperature_valid
+                True  -> последнее температурное измерение успешно;
+                False -> актуальная температура сейчас не подтверждена.
+
+            last_temperature_timestamp
+                Время последнего УСПЕШНОГО получения температуры.
+
+        ВАЖНО:
+
+        Ошибка очередного температурного измерения в дальнейшем
+        будет устанавливать:
+
+            temperature_valid = False
+
+        но НЕ будет уничтожать last_temperature и
+        last_temperature_timestamp.
+
+        Благодаря этому в БД можно отличить:
+
+            "температура действительно равна 0"
+
+        от:
+
+            "температура ещё ни разу не была получена"
+
+        и от:
+
+            "имеется старое известное значение, но новое измерение
+            температуры завершилось ошибкой".
+        """
+
+        # ============================================================
+        # 1. БАЗОВАЯ ИНИЦИАЛИЗАЦИЯ QWidget
+        # ============================================================
+
         super().__init__()
+
         self.parent_app = parent_app
 
-        loader = QUiLoader()
-        ui_file = QFile("_UI/dashboardwall.ui")
-        ui_file.open(QFile.ReadOnly)
+        # ============================================================
+        # 2. ЗАГРУЗКА UI
+        # ============================================================
 
-        self.ui = loader.load(ui_file)
+        loader = QUiLoader()
+
+        ui_file = QFile(
+            "_UI/dashboardwall.ui"
+        )
+
+        ui_file.open(
+            QFile.ReadOnly
+        )
+
+        self.ui = loader.load(
+            ui_file
+        )
+
         ui_file.close()
 
         if self.ui is None:
-            raise RuntimeError("Не удалось загрузить dashboardwall.ui")
+            raise RuntimeError(
+                "Не удалось загрузить dashboardwall.ui"
+            )
 
-        self.setLayout(QVBoxLayout())
-        self.layout().setContentsMargins(5, 5, 5, 5)
-        self.layout().addWidget(self.ui)
+        # ============================================================
+        # 3. РАЗМЕЩЕНИЕ UI В КАРТОЧКЕ
+        # ============================================================
+
+        self.setLayout(
+            QVBoxLayout()
+        )
+
+        self.layout().setContentsMargins(
+            5,
+            5,
+            5,
+            5
+        )
+
+        self.layout().addWidget(
+            self.ui
+        )
+
+        # ============================================================
+        # 4. ИКОНКИ
+        # ============================================================
+
         self.set_wall_icon()
         self.set_dose_icon()
         self.set_temp_icon()
-        #self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        #self.ui.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+        # ============================================================
+        # 5. СОСТОЯНИЕ ТЕМПЕРАТУРЫ
+        # ============================================================
+        #
+        # 0.0 здесь остаётся только техническим начальным числовым
+        # значением для совместимости существующего кода.
+        #
+        # Оно НЕ означает, что прибор действительно измерил 0 °C.
+        #
+        # Истинный смысл определяется temperature_valid.
+        # ============================================================
 
         self.last_temperature = 0.0
+
+        # ------------------------------------------------------------
+        # До первого успешного температурного ответа актуальной
+        # температуры у нас нет.
+        # ------------------------------------------------------------
+
+        self.temperature_valid = False
+
+        # ------------------------------------------------------------
+        # До первого успешного измерения отсутствует и время,
+        # когда температура была реально получена.
+        # ------------------------------------------------------------
+
+        self.last_temperature_timestamp = None
+
+
  
     def set_serial(self, serial):
         label = self.ui.findChild(QLabel, "serialValue")
@@ -3525,7 +3632,6 @@ class App(QObject):
                 self.butt_search_dev.setEnabled(True)
 
 
-
     def on_device_packet(self, packet):
         """
         Обрабатывает пакет, уже принятый и проверенный DeviceManager.
@@ -3547,12 +3653,26 @@ class App(QObject):
             - передачу данных в ModBus Bridge.
 
         ВАЖНО:
+
             Для управляющей логики спектра используется только
             актуальный ВАЛИДНЫЙ PAED.
 
             Если очередной PAED невалиден, в DeviceManager
             передаётся None, чтобы старое значение PAED не могло
             ошибочно разрешить новый StartSpectre.
+
+        Для настенных детекторов CZ дополнительно отслеживается
+        актуальность температуры:
+
+            temperature_valid = True
+                последнее температурное измерение успешно;
+
+            temperature_valid = False
+                последнее температурное измерение завершилось ошибкой
+                либо температура ещё ни разу не была получена.
+
+        При ошибке температуры последнее успешно полученное
+        числовое значение и его timestamp не уничтожаются.
         """
 
         # ============================================================
@@ -3599,6 +3719,7 @@ class App(QObject):
                     # Если пакет по какой-либо причине не удалось
                     # разобрать, прежний PAED нельзя оставлять
                     # разрешающим значением для StartSpectre.
+
                     self.device_manager.update_device_paed.emit(
                         sn,
                         None
@@ -3642,14 +3763,6 @@ class App(QObject):
                 # ----------------------------------------------------
                 # УПРАВЛЯЮЩИЙ PAED
                 # ----------------------------------------------------
-                #
-                # Только валидный PAED может использоваться
-                # DeviceManager для принятия решения:
-                #
-                #     PAED <= 50 -> StartSpectre
-                #
-                # Невалидное измерение уничтожает актуальность
-                # предыдущего PAED.
 
                 self.device_manager.update_device_paed.emit(
                     sn,
@@ -3674,12 +3787,8 @@ class App(QObject):
                     return
 
                 # ----------------------------------------------------
-                # Последняя известная температура
+                # ПОСЛЕДНЯЯ ИЗВЕСТНАЯ ТЕМПЕРАТУРА
                 # ----------------------------------------------------
-                #
-                # Вопрос хранения температуры до первого реального
-                # измерения будет отдельно проверяться в цепочках
-                # сохранения БД (#17/#18).
 
                 temp_value = getattr(
                     card,
@@ -3693,18 +3802,47 @@ class App(QObject):
 
                 if card.location_type == "room":
 
+                    # ------------------------------------------------
+                    # Для БД дополнительно передаём информацию
+                    # о достоверности температуры.
+                    # ------------------------------------------------
+
+                    temperature_valid = getattr(
+                        card,
+                        "temperature_valid",
+                        False
+                    )
+
+                    temperature_timestamp = getattr(
+                        card,
+                        "last_temperature_timestamp",
+                        None
+                    )
+
                     self.db_manager.buffer_wall_measurement(
                         device_id=device_id,
                         paed=dose,
                         temperature=temp_value,
-                        low_status=1 if low_failure else 0,
-                        high_status=1 if high_failure else 0,
-                        valid=1 if result_valid else 0
+                        low_status=(
+                            1 if low_failure else 0
+                        ),
+                        high_status=(
+                            1 if high_failure else 0
+                        ),
+                        valid=(
+                            1 if result_valid else 0
+                        ),
+                        temperature_valid=temperature_valid,
+                        temperature_timestamp=temperature_timestamp
                     )
 
                     cz_object = {
                         "number": card.posit_number,
-                        "sn": int(sn) if sn.isdigit() else 0,
+                        "sn": (
+                            int(sn)
+                            if sn.isdigit()
+                            else 0
+                        ),
                         "temperature": temp_value,
                         "paed": dose,
                         "high_sensitivity": (
@@ -3748,9 +3886,15 @@ class App(QObject):
                         device_id=device_id,
                         paed=dose,
                         temperature=temp_value,
-                        low_status=1 if low_failure else 0,
-                        high_status=1 if high_failure else 0,
-                        valid=1 if result_valid else 0,
+                        low_status=(
+                            1 if low_failure else 0
+                        ),
+                        high_status=(
+                            1 if high_failure else 0
+                        ),
+                        valid=(
+                            1 if result_valid else 0
+                        ),
                         fullness_status=fullness_status,
                         group=group,
                         activity_json="{}",
@@ -3834,10 +3978,22 @@ class App(QObject):
                 # - некорректные данные;
                 # - либо прибор сообщил об отказе термодатчика.
                 #
-                # Старую температуру не выдаём за новое измерение.
+                # Для CZ последнее известное значение НЕ уничтожаем.
+                #
+                # Но обязательно снимаем признак актуальности,
+                # чтобы при следующем RadDose запись в БД содержала:
+                #
+                #     temperature_valid = 0
+                #
+                # timestamp последнего успешного измерения при этом
+                # остаётся неизменным.
                 # ----------------------------------------------------
 
                 if temperature is None:
+
+                    if card.location_type == "room":
+
+                        card.temperature_valid = False
 
                     self.ui.textEdit.append(
                         (
@@ -3851,24 +4007,26 @@ class App(QObject):
                     return
 
                 # ----------------------------------------------------
-                # Обновляем GUI
-                # ----------------------------------------------------
-
-                card.set_temp_value(
-                    temperature
-                )
-
-                # ----------------------------------------------------
-                # Сохраняем последнее реально полученное значение
+                # Сначала преобразуем значение.
+                #
+                # Пока преобразование не прошло успешно, значение
+                # нельзя считать новым корректным измерением.
                 # ----------------------------------------------------
 
                 try:
 
-                    card.last_temperature = float(
+                    temperature_value = float(
                         temperature
                     )
 
                 except (TypeError, ValueError):
+
+                    # Для CZ не уничтожаем последнее известное
+                    # значение температуры, но актуальность снимаем.
+
+                    if card.location_type == "room":
+
+                        card.temperature_valid = False
 
                     self.ui.textEdit.append(
                         (
@@ -3879,6 +4037,42 @@ class App(QObject):
                     )
 
                     return
+
+                # ----------------------------------------------------
+                # Обновляем GUI только после успешного преобразования.
+                # ----------------------------------------------------
+
+                card.set_temp_value(
+                    temperature
+                )
+
+                # ----------------------------------------------------
+                # Сохраняем последнее реально полученное значение.
+                # ----------------------------------------------------
+
+                card.last_temperature = (
+                    temperature_value
+                )
+
+                # ----------------------------------------------------
+                # Для CZ фиксируем:
+                #
+                # - успешность текущего температурного измерения;
+                # - реальное время его получения.
+                #
+                # Используем системное локальное время ПК в том же
+                # строковом формате, который применяется в БД.
+                # ----------------------------------------------------
+
+                if card.location_type == "room":
+
+                    card.temperature_valid = True
+
+                    card.last_temperature_timestamp = (
+                        time.strftime(
+                            "%Y-%m-%d %H:%M:%S"
+                        )
+                    )
 
             # ========================================================
             # START SPECTRE
@@ -3895,15 +4089,19 @@ class App(QObject):
                 # Время отправки команды не используется, потому что
                 # StartSpectre мог завершиться таймаутом или ошибкой.
 
-                card.spectrum_start_monotonic = time.monotonic()
+                card.spectrum_start_monotonic = (
+                    time.monotonic()
+                )
 
                 # Фактическое время завершённого цикла будет записано
                 # только при получении первого успешного GetSpectre
                 # после достижения заданного времени накопления.
+
                 card.spectrum_elapsed_time = 0.0
 
                 # Локальный флаг карточки синхронизируем с фактом
                 # успешного запуска спектрального накопления.
+
                 card.spectrum_active = True
 
                 self.ui.textEdit.append(
@@ -3971,6 +4169,7 @@ class App(QObject):
                 #     acquisition_time
                 #
                 # Итого 1024 элемента.
+                # ----------------------------------------------------
 
                 if (
                     not isinstance(
@@ -4031,6 +4230,7 @@ class App(QObject):
                 #
                 # Названия переменных исторически неудачны,
                 # но здесь сохраняем существующую семантику.
+                # ----------------------------------------------------
 
                 high_failure = not bool(
                     test_byte & 0b00000001
@@ -4053,16 +4253,12 @@ class App(QObject):
                 # add_spectrum_data():
                 #
                 #     S_total += S_i
-                #     T_device_total += T_device_i   (диагностика)
-                #     spectrum_counter += 1          (диагностика)
+                #     T_device_total += T_device_i
+                #     spectrum_counter += 1
                 #
-                # После добавления ТЕКУЩЕГО пакета метод проверяет
-                # фактически прошедшее время ПК от подтверждённого
-                # StartSpectre до текущего успешного GetSpectre.
-                #
-                # Поэтому первый успешный GetSpectre после достижения
-                # spectrum_accumulation_time обязательно включается
-                # в итоговый накопленный спектр и завершает цикл.
+                # После добавления текущего пакета метод проверяет
+                # фактически прошедшее время ПК.
+                # ----------------------------------------------------
 
                 spectrum_ready = (
                     card.add_spectrum_data(
@@ -4136,23 +4332,6 @@ class App(QObject):
                 # ----------------------------------------------------
                 # ПОЛНЫЙ СПЕКТРАЛЬНЫЙ ЦИКЛ ЗАВЕРШЁН
                 # ----------------------------------------------------
-                #
-                # Порядок здесь принципиален:
-                #
-                # 1. Текущий GetSpectre уже проверен и добавлен
-                #    в spectrum_buffer внутри add_spectrum_data().
-                #
-                # 2. Если заданное время накопления уже достигнуто,
-                #    фиксируем ФАКТИЧЕСКУЮ длительность полного цикла
-                #    по монотонным часам ПК.
-                #
-                # 3. calculate_activity() использует именно это время
-                #    как расчётное T. Время, сообщённое прибором,
-                #    остаётся только диагностическим.
-                #
-                # 4. После расчёта сообщаем DeviceManager, что текущий
-                #    спектральный цикл закончен. Следующий цикл сможет
-                #    снова начаться через отдельный StartSpectre.
 
                 if spectrum_ready:
 
@@ -4218,6 +4397,7 @@ class App(QObject):
             #
             # Ошибка обработки одного пакета не должна приводить
             # к падению всего приложения.
+            # ========================================================
 
             self.ui.textEdit.append(
                 (
@@ -4226,22 +4406,6 @@ class App(QObject):
                     "-------------------"
                 )
             )
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
   
 
 
