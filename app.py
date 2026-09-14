@@ -10,7 +10,7 @@ from PySide6.QtNetwork import QHostAddress
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 import json, numpy as np
-import os, math
+import os, math, time
 
 
 from PySide6.QtCore import QRegularExpression
@@ -21,6 +21,8 @@ from dialogs.device_replace_dialog import DeviceReplaceDialog
 import json
 
 from modbus_bridge_client import ModBusBridgeClient
+
+
 
 
 # ============================================================
@@ -134,7 +136,7 @@ class DeviceCardBarrel(QWidget):
 
         super().__init__()
         self.parent_app = parent_app
-        self.repeat_counter = 100
+        # self.repeat_counter = 100
 
         loader = QUiLoader()
         ui_file = QFile("_UI/dashboardbarrel.ui")
@@ -158,7 +160,7 @@ class DeviceCardBarrel(QWidget):
         self.set_spectrum_ui_enabled(False)
 
         # Инициализация спектральных данных
-        self.spectrum_buffer = [0] * 1024   # массив для накопления спектра (1024 канала)
+        self.spectrum_buffer = [0] * 1023   # массив для накопления спектра (1024 канала)
         self.spectrum_counter = 0           # счётчик полученных спектров (0..600)
         
         # История активности
@@ -179,13 +181,54 @@ class DeviceCardBarrel(QWidget):
         self.last_valid = 0        # по умолчанию невалидный
         self.is_full = False  
 
-        self.last_acquisition_time = 0.0    
-        self.total_acquisition_time = 0.0 
+        # # ------------------------------------------------------------
+        # # НОВЫЙ АТРИБУТ: активен ли режим накопления спектра
+        # # ------------------------------------------------------------
+        # self.spectrum_active = False
 
-        self.algorithm_history = {}  # для зберігання динаміки Tc (група A та reserve)
+                # ------------------------------------------------------------
+        # ДИАГНОСТИЧЕСКОЕ ВРЕМЯ, ПОЛУЧЕННОЕ ОТ ПРИБОРА
+        # ------------------------------------------------------------
+        #
+        # Эти значения сохраняются только для диагностики.
+        #
+        # Они НЕ определяют длительность полного спектрального цикла
+        # и НЕ используются как расчётное время T.
+        #
+        # Управляющее и расчётное время цикла измеряется компьютером
+        # через time.monotonic().
+        self.last_acquisition_time = 0.0
+        self.total_acquisition_time = 0.0
 
         # ------------------------------------------------------------
-        # НОВЫЙ АТРИБУТ: активен ли режим накопления спектра
+        # МОНОТОННОЕ ВРЕМЯ НАЧАЛА ПОЛНОГО СПЕКТРАЛЬНОГО ЦИКЛА
+        # ------------------------------------------------------------
+        #
+        # Значение устанавливается только после получения успешного
+        # ответа StartSpectre.
+        #
+        # None означает, что подтверждённый спектральный цикл
+        # в данный момент не запущен.
+        self.spectrum_start_monotonic = None
+
+        # ------------------------------------------------------------
+        # ФАКТИЧЕСКАЯ ДЛИТЕЛЬНОСТЬ ЗАВЕРШЁННОГО ЦИКЛА
+        # ------------------------------------------------------------
+        #
+        # Сюда перед calculate_activity() записывается фактическое
+        # время от успешного StartSpectre до последнего GetSpectre.
+        #
+        # Именно это значение используется алгоритмом как T.
+        self.spectrum_elapsed_time = 0.0
+
+        # История алгоритма Tc.
+        #
+        # Она сохраняется между последовательными спектральными
+        # циклами одной и той же заполненной цистерны.
+        self.algorithm_history = {}
+
+        # ------------------------------------------------------------
+        # Активен ли локальный спектральный цикл
         # ------------------------------------------------------------
         self.spectrum_active = False
 
@@ -404,55 +447,297 @@ class DeviceCardBarrel(QWidget):
                 status_label.setText("Норма")
                 status_label.setStyleSheet("color: green; font: 600 11pt 'Segoe UI';")
 
-   
-    def add_spectrum_data(self, channels):
+
+
+
+    def add_spectrum_data(self, channels) -> bool:
         """
-        Додає отриманий масив спектра до накопиченого буфера.
-        channels: list[int] - 1024 елементи (1023 спектра + час набора)
+        Добавляет очередной успешно полученный участок GetSpectre
+        к общему спектру текущего цикла.
+
+        Формат channels:
+
+            channels[0:1023] -> 1023 спектральных канала;
+            channels[1023]   -> время участка, сообщённое прибором.
+
+        ВАЖНО:
+
+            время прибора сохраняется только для диагностики.
+
+            Завершение полного спектрального цикла определяется
+            исключительно по времени компьютера:
+
+                time.monotonic() - spectrum_start_monotonic
+
+            После добавления ТЕКУЩЕГО пакета вызывается
+            is_spectrum_ready().
+
+            Поэтому GetSpectre, на котором был достигнут заданный
+            интервал накопления, обязательно входит в итоговый
+            накопленный спектр.
+
+        Возвращает:
+
+            True  - текущий GetSpectre является последним пакетом
+                    полного цикла;
+
+            False - накопление необходимо продолжать.
         """
+
+        # ============================================================
+        # 1. ПРОВЕРЯЕМ ТИП ПОЛУЧЕННЫХ ДАННЫХ
+        # ============================================================
+
+        if not isinstance(channels, (list, tuple)):
+            return False
+
+        # ============================================================
+        # 2. ПРОВЕРЯЕМ СТРУКТУРУ
+        # ============================================================
+        #
+        # Текущая структура, которую формирует DeviceManager:
+        #
+        #     1023 спектральных канала
+        #     +
+        #     1 значение времени прибора.
+        #
+        # Итого 1024 элемента.
+
         if len(channels) != 1024:
-            return
-        
-        # Перший отриманий спектр — включаємо режим накопичення
-        if self.spectrum_counter == 0:
-            self.spectrum_active = True
-        
-        # Отримуємо і сумуємо час набора спектра (останній елемент)
-        self.last_acquisition_time = channels[-1]
-        self.total_acquisition_time += self.last_acquisition_time
-        
-        # Сумуємо тільки спектр (перші 1023 елементи)
+            return False
+
+        # ============================================================
+        # 3. ЧИТАЕМ ДИАГНОСТИЧЕСКОЕ ВРЕМЯ ПРИБОРА
+        # ============================================================
+
+        try:
+            acquisition_time = float(channels[1023])
+
+        except (TypeError, ValueError):
+            return False
+
+        if (
+            not math.isfinite(acquisition_time)
+            or acquisition_time < 0.0
+        ):
+            return False
+
+        # ============================================================
+        # 4. ПРОВЕРЯЕМ 1023 СПЕКТРАЛЬНЫХ КАНАЛА
+        # ============================================================
+
+        spectrum_part = []
+
         for i in range(1023):
-            self.spectrum_buffer[i] += channels[i]
-        
+
+            try:
+                value = int(channels[i])
+
+            except (TypeError, ValueError):
+                return False
+
+            # Количество зарегистрированных импульсов не может
+            # быть отрицательным.
+            if value < 0:
+                return False
+
+            spectrum_part.append(value)
+
+        # ============================================================
+        # 5. ПРОВЕРЯЕМ, ЧТО StartSpectre БЫЛ ПОДТВЕРЖДЁН
+        # ============================================================
+        #
+        # Нормальный цикл обязан иметь время начала, установленное
+        # после успешного ответа StartSpectre.
+        #
+        # Если его нет, пакет не должен случайно сформировать
+        # самостоятельный полный спектральный цикл.
+
+        if self.spectrum_start_monotonic is None:
+
+            if (
+                self.parent_app is not None
+                and getattr(self.parent_app, "ui", None) is not None
+            ):
+                self.parent_app.ui.textEdit.append(
+                    (
+                        "Помилка: отримано GetSpectre без "
+                        "підтвердженого StartSpectre для "
+                        f"SN {self.serial_number}."
+                    )
+                )
+
+            return False
+
+        # ============================================================
+        # 6. АДДИТИВНО НАКАПЛИВАЕМ СПЕКТР
+        # ============================================================
+
+        for i in range(1023):
+            self.spectrum_buffer[i] += spectrum_part[i]
+
+        # ============================================================
+        # 7. СОХРАНЯЕМ ВРЕМЯ, СООБЩЁННОЕ ПРИБОРОМ
+        # ============================================================
+        #
+        # Эти два поля оставляем для будущей проверки на реальном
+        # оборудовании.
+        #
+        # В алгоритме идентификации они как T не используются.
+
+        self.last_acquisition_time = acquisition_time
+        self.total_acquisition_time += acquisition_time
+
+        # ============================================================
+        # 8. СЧЁТЧИК УСПЕШНО ПОЛУЧЕННЫХ GetSpectre
+        # ============================================================
+        #
+        # Теперь это только диагностический счётчик.
+        # Он НЕ является условием окончания цикла.
+
         self.spectrum_counter += 1
-        
+
+        # ============================================================
+        # 9. ОБНОВЛЯЕМ ОТОБРАЖЕНИЕ НАКОПЛЕННОГО СПЕКТРА
+        # ============================================================
+
         self.update_spectrum_display()
-        
-        if self.spectrum_counter >= self.repeat_counter:
-            self.calculate_activity()
+
+        # ============================================================
+        # 10. ПРОВЕРЯЕМ ВРЕМЯ ПОЛНОГО ЦИКЛА
+        # ============================================================
+        #
+        # Проверка выполняется ПОСЛЕ суммирования текущего пакета.
+        #
+        # Следовательно, первый успешно полученный GetSpectre после
+        # достижения заданного времени становится последним пакетом
+        # текущего полного цикла.
+
+        return self.is_spectrum_ready()
+
 
 
     def is_spectrum_ready(self) -> bool:
-        """Проверяет, накоплено ли 600 спектров"""
-        return self.spectrum_counter >= 600
+        """
+        Проверяет окончание текущего полного спектрального цикла
+        по фактически прошедшему компьютерному времени.
+
+        Цикл считается готовым, когда:
+
+            time.monotonic() - spectrum_start_monotonic
+                >=
+            parent_app.spectrum_accumulation_time
+
+        ВАЖНО:
+
+            spectrum_accumulation_time читается при каждой проверке.
+
+        Поэтому если оператор изменил длительность накопления во
+        время уже работающего цикла, новое значение начинает
+        действовать сразу.
+        """
+
+        # Без подтверждённого StartSpectre цикл не существует.
+        if self.spectrum_start_monotonic is None:
+            return False
+
+        # Карточка должна принадлежать основному приложению,
+        # поскольку именно App хранит текущую настройку времени.
+        if self.parent_app is None:
+            return False
+
+        try:
+            target_time = float(
+                self.parent_app.spectrum_accumulation_time
+            )
+
+        except (AttributeError, TypeError, ValueError):
+            return False
+
+        # Нулевой, отрицательный, NaN или бесконечный интервал
+        # не должен приводить к мгновенному ложному завершению.
+        if (
+            not math.isfinite(target_time)
+            or target_time <= 0.0
+        ):
+            return False
+
+        elapsed = (
+            time.monotonic()
+            - self.spectrum_start_monotonic
+        )
+
+        return elapsed >= target_time
+
+    
 
     
     def reset_spectrum(self):
         """
-        Сбрасывает накопленный спектр и счётчик.
+        Полностью сбрасывает данные текущего спектрального цикла.
+
+        Сбрасываются:
+
+            - накопленные 1023 канала;
+            - диагностический счётчик GetSpectre;
+            - диагностическое время прибора;
+            - компьютерное время начала цикла;
+            - фактическая длительность завершённого цикла;
+            - локальный флаг spectrum_active.
+
+        algorithm_history здесь НЕ сбрасывается.
+
+        История Tc должна сохраняться между последовательными
+        спектральными циклами одной и той же заполненной цистерны.
+        Она очищается отдельно при изменении состояния цистерны.
         """
-        self.spectrum_buffer = [0] * 1024
+
+        # Накопленный спектр текущего цикла.
+        self.spectrum_buffer = [0] * 1023
+
+        # Диагностическое количество успешно принятых GetSpectre.
         self.spectrum_counter = 0
+
+        # Диагностическое время, сообщённое прибором.
+        self.last_acquisition_time = 0.0
         self.total_acquisition_time = 0.0
+
+        # Новый цикл ещё не был подтверждён StartSpectre.
+        self.spectrum_start_monotonic = None
+
+        # Фактическое время предыдущего цикла больше не относится
+        # к новому накоплению.
+        self.spectrum_elapsed_time = 0.0
+
+        # Локальный GUI-флаг спектрального режима.
         self.spectrum_active = False
+
+        # Очищаем отображение накопленного спектра.
         self.update_spectrum_display()
-        
-        # Сохраняем событие
-        if hasattr(self, 'parent_app') and self.parent_app:
-            device_id = self.parent_app.db_manager.get_device_id(self.serial_number)
+
+        # ============================================================
+        # СОХРАНЕНИЕ СОБЫТИЯ
+        # ============================================================
+
+        if (
+            hasattr(self, "parent_app")
+            and self.parent_app is not None
+        ):
+
+            device_id = (
+                self.parent_app.db_manager.get_device_id(
+                    self.serial_number
+                )
+            )
+
             if device_id:
-                self.parent_app.db_manager.save_system_event(device_id, "spectrum_reset", "Спектр скинуто")
+
+                self.parent_app.db_manager.save_system_event(
+                    device_id,
+                    "spectrum_reset",
+                    "Спектр скинуто"
+                )
+
 
     def get_spectrum_buffer(self):
         """Возвращает накопленный буфер спектра"""
@@ -469,57 +754,272 @@ class DeviceCardBarrel(QWidget):
         # Проверяем, есть ли виджет спектра
         if hasattr(self, 'spectrum') and self.spectrum:
             # Передаём данные в SpectrumWidget для отрисовки
-            self.spectrum.update_data(self.spectrum_buffer) 
+            self.spectrum.update_data(self.spectrum_buffer)
 
 
 
     def calculate_activity(self):
         """
-        Розрахунок активності та ідентифікація ізотопів.
-        Використовує новий алгоритм ALIM (identify_isotopes_alim).
+        Расчёт активности и идентификация изотопов.
+
+        ================================================================
+        READY_TO_DRAIN
+        ================================================================
+
+        Для решения о сливе используются ВЕРХНИЕ статистические границы:
+
+            activity_upper
+            conc_upper
+
+        Центральные:
+
+            activity
+            concentration
+
+        по-прежнему:
+
+            - показываются оператору;
+            - записываются в БД;
+            - передаются в Bridge как результаты измерения.
+
+        Нормативное решение ready_to_drain принимается
+        консервативно — по верхним статистическим границам.
+
+        ================================================================
+        БАЗА ДАННЫХ
+        ================================================================
+
+        Для завершённого спектрального результата сохраняются:
+
+            activity
+            concentration
+            activity_upper
+            concentration_upper
+            result_meta
+            ready_to_drain
+            measurement_valid
+
+        Для резервной цистерны ZB3 в result_meta сохраняется
+        дополнительная информация о результате 99mTc.
         """
-        if not hasattr(self, 'parent_app') or not self.parent_app:
+
+        # ============================================================
+        # 1. ПРОВЕРЯЕМ ДОСТУП К APP
+        # ============================================================
+
+        if (
+            not hasattr(self, "parent_app")
+            or
+            not self.parent_app
+        ):
             return
 
-        # ------------------------------------------------------------
-        # 1. Формуємо масив з часом набора
-        # ------------------------------------------------------------
-        spectrum_with_time = list(self.spectrum_buffer) + [self.total_acquisition_time]
-        
-        # ------------------------------------------------------------
-        # 2. Викликаємо алгоритм з історією
-        # ------------------------------------------------------------
-        result, updated_history = self.parent_app.identify_isotopes_alim(
-            spectrum_with_time,
-            self.posit_number,
-            self.algorithm_history
+        # ============================================================
+        # 2. ФАКТИЧЕСКОЕ ВРЕМЯ СПЕКТРАЛЬНОГО ЦИКЛА
+        # ============================================================
+
+        try:
+            real_cycle_time = float(
+                self.spectrum_elapsed_time
+            )
+
+        except (TypeError, ValueError):
+            real_cycle_time = 0.0
+
+        if (
+            not math.isfinite(real_cycle_time)
+            or
+            real_cycle_time <= 0.0
+        ):
+
+            self.parent_app.ui.textEdit.append(
+                f"Помилка: некоректний фактичний час "
+                f"накопичення спектру для SN "
+                f"{self.serial_number}: "
+                f"{self.spectrum_elapsed_time}"
+            )
+
+            self.reset_spectrum()
+            return
+
+        # ============================================================
+        # 3. ПРОВЕРЯЕМ ДЛИНУ СПЕКТРА
+        # ============================================================
+
+        if len(self.spectrum_buffer) != 1023:
+
+            self.parent_app.ui.textEdit.append(
+                f"Помилка: некоректна довжина "
+                f"накопиченого спектру для SN "
+                f"{self.serial_number}: "
+                f"{len(self.spectrum_buffer)}"
+            )
+
+            self.reset_spectrum()
+            return
+
+        # ============================================================
+        # 4. ФОРМИРУЕМ 1023 + ФАКТИЧЕСКОЕ ВРЕМЯ
+        # ============================================================
+
+        spectrum_with_time = (
+            list(self.spectrum_buffer)
+            + [real_cycle_time]
         )
-        
-        # Оновлюємо історію в картці
+
+        # ============================================================
+        # 5. ВЫЗЫВАЕМ ALIM
+        # ============================================================
+
+        result, updated_history = (
+            self.parent_app.identify_isotopes_alim(
+                spectrum_with_time,
+                self.posit_number,
+                self.algorithm_history
+            )
+        )
+
         self.algorithm_history = updated_history
-        
-        # ------------------------------------------------------------
-        # 3. Якщо результат порожній — виходимо
-        # ------------------------------------------------------------
+
         if not result:
             self.reset_spectrum()
             return
-        
-        # ------------------------------------------------------------
-        # 4. Розпаковуємо результат
-        # ------------------------------------------------------------
-        group = result.get("group", "A")
-        real_time = result.get("real_time", 1.0)
-        isotopes_list = result.get("isotopes", [])
-        
-        # ------------------------------------------------------------
-        # 5. Формуємо словники активностей та концентрацій для БД
-        # ------------------------------------------------------------
+
+        # ============================================================
+        # 6. ОСНОВНЫЕ ДАННЫЕ РЕЗУЛЬТАТА
+        # ============================================================
+
+        group = result.get(
+            "group",
+            "A"
+        )
+
+        real_time = result.get(
+            "real_time",
+            real_cycle_time
+        )
+
+        calculation_time = result.get(
+            "calculation_time",
+            real_time
+        )
+
+        isotopes_list = result.get(
+            "isotopes",
+            []
+        )
+
+        measurement_valid = (
+            result.get(
+                "measurement_valid",
+                True
+            )
+            is True
+        )
+
+        # ============================================================
+        # 7. СЛОВАРИ ЦЕНТРАЛЬНЫХ РЕЗУЛЬТАТОВ
+        # ============================================================
+
         activity_dict = {}
         concentration_dict = {}
-        output_lines = [f"Цистерна №{self.posit_number} (група {group}):", f"Час набора: {real_time:.1f} сек"]
-        
-        # Словник для відповідності назви ізотопу -> код name
+
+        # ============================================================
+        # 8. СЛОВАРИ ВЕРХНИХ СТАТИСТИЧЕСКИХ ГРАНИЦ
+        # ============================================================
+
+        activity_upper_dict = {}
+        concentration_upper_dict = {}
+
+        # ============================================================
+        # 9. МЕТАДАННЫЕ РЕЗУЛЬТАТА
+        # ============================================================
+        #
+        # Сейчас дополнительные метаданные требуются прежде всего
+        # для задержанного результата 99mTc резервной цистерны ZB3.
+        #
+        # Структура:
+        #
+        # {
+        #     "99mTc": {
+        #         "reference_timestamp": ...,
+        #         "reference_hour": ...,
+        #         "delay_hours": 6,
+        #         "algorithm": ...,
+        #         "extrapolated": ...,
+        #         "ratio": ...
+        #     }
+        # }
+        #
+        # Для групп, где таких данных нет, в БД будет сохранён
+        # пустой JSON-объект {}.
+        # ============================================================
+
+        result_meta = {}
+
+        # ============================================================
+        # 10. ТЕКСТОВЫЙ ВЫВОД
+        # ============================================================
+
+        output_lines = [
+            (
+                f"Цистерна №{self.posit_number} "
+                f"(група {group}):"
+            ),
+            (
+                f"Фактичний час набору: "
+                f"{real_time:.1f} сек"
+            )
+        ]
+
+        try:
+            calculation_time_f = float(
+                calculation_time
+            )
+
+            real_time_f = float(
+                real_time
+            )
+
+            if (
+                math.isfinite(calculation_time_f)
+                and
+                math.isfinite(real_time_f)
+                and
+                abs(
+                    calculation_time_f
+                    - real_time_f
+                ) > 1e-6
+            ):
+                output_lines.append(
+                    f"Розрахунковий T алгоритму: "
+                    f"{calculation_time_f:.1f} сек"
+                )
+
+        except (TypeError, ValueError):
+            pass
+
+        if not measurement_valid:
+
+            invalid_reason = result.get(
+                "invalid_reason"
+            )
+
+            output_lines.append(
+                "  Поточний спектральний цикл "
+                "невалідний."
+            )
+
+            if invalid_reason:
+                output_lines.append(
+                    f"  Причина: "
+                    f"{invalid_reason}"
+                )
+
+        # ============================================================
+        # 11. КОДЫ ИЗОТОПОВ ДЛЯ BRIDGE
+        # ============================================================
+
         isotope_code_map = {
             "18F": 3,
             "99mTc": 2,
@@ -527,84 +1027,690 @@ class DeviceCardBarrel(QWidget):
             "177Lu": 4,
             "90Y": 5
         }
-        
-        # Збираємо дані по ізотопах для відправки в Bridge
+
         isotopes_for_bridge = []
+
         id_counter = 1
-        
+
+        # ============================================================
+        # 12. ОБРАБАТЫВАЕМ ИЗОТОПЫ
+        # ============================================================
+
         for name in isotopes_list:
-            data = result.get(name, {})
+
+            data = result.get(
+                name,
+                {}
+            )
+
             if not data:
+                id_counter += 1
                 continue
-            
-            activity = data.get("activity", 0.0)
-            concentration = data.get("concentration", 0.0)
-            detected = data.get("detected", "НЕМАЄ")
-            sum_clean = data.get("sum_clean", 0.0)
-            
-            if activity > 0 or concentration > 0:
-                activity_dict[name] = activity
-                concentration_dict[name] = concentration
-            
-            if sum_clean > 0:
-                output_lines.append(
-                    f"  {name}: активність = {activity:.2f} Бк, "
-                    f"концентрація = {concentration:.2f} Бк/л, статус: {detected}"
+
+            # --------------------------------------------------------
+            # 12.1. РЕЗУЛЬТАТ ЕЩЁ НЕ ДОСТУПЕН
+            # --------------------------------------------------------
+
+            if data.get(
+                "available",
+                True
+            ) is False:
+
+                reason = data.get(
+                    "reason"
                 )
-            else:
-                output_lines.append(f"  {name}: не виявлено (сума = 0)")
-            
-            code = isotope_code_map.get(name, 0)
+
+                if (
+                    name == "99mTc"
+                    and
+                    group == "reserve"
+                ):
+
+                    output_lines.append(
+                        "  99mTc: результат "
+                        "ще не розрахований"
+                    )
+
+                    if reason:
+                        output_lines.append(
+                            f"    Причина: "
+                            f"{reason}"
+                        )
+
+                elif (
+                    name == "99mTc"
+                    and
+                    group == "A"
+                ):
+
+                    output_lines.append(
+                        "  99mTc: результат ще "
+                        "не розрахований "
+                        "(потрібен наступний "
+                        "спектральний цикл)"
+                    )
+
+                else:
+
+                    output_lines.append(
+                        f"  {name}: "
+                        f"результат недоступний"
+                    )
+
+                    if reason:
+                        output_lines.append(
+                            f"    Причина: "
+                            f"{reason}"
+                        )
+
+                id_counter += 1
+                continue
+
+            # ========================================================
+            # 12.2. ЦЕНТРАЛЬНЫЕ ЗНАЧЕНИЯ
+            # ========================================================
+
+            activity = data.get(
+                "activity"
+            )
+
+            concentration = data.get(
+                "concentration"
+            )
+
+            # ========================================================
+            # 12.3. ВЕРХНИЕ СТАТИСТИЧЕСКИЕ ГРАНИЦЫ
+            # ========================================================
+
+            activity_upper = data.get(
+                "activity_upper"
+            )
+
+            concentration_upper = data.get(
+                "conc_upper"
+            )
+
+            detected = data.get(
+                "detected",
+                "НЕМАЄ"
+            )
+
+            sum_clean = data.get(
+                "sum_clean"
+            )
+
+            # --------------------------------------------------------
+            # Центральный результат должен существовать.
+            # --------------------------------------------------------
+
+            if (
+                activity is None
+                or
+                concentration is None
+            ):
+
+                self.parent_app.ui.textEdit.append(
+                    f"Помилка: неповний результат "
+                    f"{name} для цистерни "
+                    f"№{self.posit_number}."
+                )
+
+                id_counter += 1
+                continue
+
+            # --------------------------------------------------------
+            # Верхние границы также обязательны.
+            #
+            # Без них нормативное решение ready_to_drain
+            # принимать нельзя.
+            # --------------------------------------------------------
+
+            if (
+                activity_upper is None
+                or
+                concentration_upper is None
+            ):
+
+                self.parent_app.ui.textEdit.append(
+                    f"Помилка: відсутні верхні "
+                    f"статистичні межі {name} "
+                    f"для цистерни "
+                    f"№{self.posit_number}."
+                )
+
+                id_counter += 1
+                continue
+
+            try:
+                activity = float(
+                    activity
+                )
+
+                concentration = float(
+                    concentration
+                )
+
+                activity_upper = float(
+                    activity_upper
+                )
+
+                concentration_upper = float(
+                    concentration_upper
+                )
+
+            except (TypeError, ValueError):
+
+                self.parent_app.ui.textEdit.append(
+                    f"Помилка: некоректний "
+                    f"числовий результат {name} "
+                    f"для цистерни "
+                    f"№{self.posit_number}."
+                )
+
+                id_counter += 1
+                continue
+
+            # --------------------------------------------------------
+            # Ни центральные значения, ни верхние границы
+            # не могут быть NaN / inf.
+            # --------------------------------------------------------
+
+            if (
+                not math.isfinite(activity)
+                or
+                not math.isfinite(concentration)
+                or
+                not math.isfinite(activity_upper)
+                or
+                not math.isfinite(
+                    concentration_upper
+                )
+            ):
+
+                self.parent_app.ui.textEdit.append(
+                    f"Помилка: NaN/inf у "
+                    f"результаті {name} "
+                    f"для цистерни "
+                    f"№{self.posit_number}."
+                )
+
+                id_counter += 1
+                continue
+
+            # ========================================================
+            # 12.4. ПЛОЩАДЬ — ТОЛЬКО ДИАГНОСТИКА
+            # ========================================================
+
+            if sum_clean is not None:
+
+                try:
+                    sum_clean = float(
+                        sum_clean
+                    )
+
+                except (TypeError, ValueError):
+
+                    self.parent_app.ui.textEdit.append(
+                        f"Помилка: некоректна "
+                        f"площа {name} "
+                        f"для цистерни "
+                        f"№{self.posit_number}."
+                    )
+
+                    id_counter += 1
+                    continue
+
+                if not math.isfinite(
+                    sum_clean
+                ):
+
+                    self.parent_app.ui.textEdit.append(
+                        f"Помилка: NaN/inf "
+                        f"у площі {name} "
+                        f"для цистерни "
+                        f"№{self.posit_number}."
+                    )
+
+                    id_counter += 1
+                    continue
+
+            # ========================================================
+            # 12.5. СОХРАНЯЕМ ЦЕНТРАЛЬНЫЕ РЕЗУЛЬТАТЫ
+            # ========================================================
+
+            activity_dict[name] = activity
+            concentration_dict[name] = concentration
+
+            # ========================================================
+            # 12.6. СОХРАНЯЕМ ВЕРХНИЕ ГРАНИЦЫ
+            # ========================================================
+
+            activity_upper_dict[name] = activity_upper
+            concentration_upper_dict[name] = concentration_upper
+
+            # ========================================================
+            # 12.7. ВЫВОД ОПЕРАТОРУ
+            # ========================================================
+
+            output_lines.append(
+                f"  {name}: "
+                f"активність = "
+                f"{activity:.2f} Бк, "
+                f"концентрація = "
+                f"{concentration:.2f} Бк/л, "
+                f"статус: {detected}"
+            )
+
+            output_lines.append(
+                f"    верхня межа: "
+                f"A={activity_upper:.2f} Бк, "
+                f"C={concentration_upper:.2f} Бк/л"
+            )
+
+            # ========================================================
+            # 12.8. RESERVE Tc:
+            #       ДИАГНОСТИКА + МЕТАДАННЫЕ ДЛЯ БД
+            # ========================================================
+
+            if (
+                name == "99mTc"
+                and
+                group == "reserve"
+            ):
+
+                reference_hour = data.get(
+                    "reference_hour"
+                )
+
+                reference_timestamp = data.get(
+                    "reference_timestamp"
+                )
+
+                ratio = data.get(
+                    "ratio"
+                )
+
+                algorithm_name = data.get(
+                    "algorithm"
+                )
+
+                extrapolated = bool(
+                    data.get(
+                        "extrapolated",
+                        False
+                    )
+                )
+
+                # ----------------------------------------------------
+                # Проверяем ratio перед сохранением в JSON.
+                #
+                # NaN/inf в JSON сохранять нельзя.
+                # ----------------------------------------------------
+
+                ratio_for_meta = None
+
+                if ratio is not None:
+
+                    try:
+                        ratio_f = float(
+                            ratio
+                        )
+
+                        if math.isfinite(
+                            ratio_f
+                        ):
+                            ratio_for_meta = ratio_f
+
+                    except (
+                        TypeError,
+                        ValueError
+                    ):
+                        pass
+
+                # ----------------------------------------------------
+                # reference_hour также приводим к обычному int,
+                # если алгоритм его предоставил.
+                # ----------------------------------------------------
+
+                reference_hour_for_meta = None
+
+                if reference_hour is not None:
+
+                    try:
+                        reference_hour_for_meta = int(
+                            reference_hour
+                        )
+
+                    except (
+                        TypeError,
+                        ValueError
+                    ):
+                        reference_hour_for_meta = None
+
+                # ----------------------------------------------------
+                # Для резервного Tc результат относится к измерению
+                # шестичасовой давности согласно алгоритму п.15.
+                # Поэтому delay_hours фиксируем явно.
+                # ----------------------------------------------------
+
+                result_meta["99mTc"] = {
+                    "reference_timestamp": (
+                        reference_timestamp
+                        if reference_timestamp
+                        else None
+                    ),
+                    "reference_hour": (
+                        reference_hour_for_meta
+                    ),
+                    "delay_hours": 6,
+                    "algorithm": (
+                        algorithm_name
+                        if algorithm_name
+                        else None
+                    ),
+                    "extrapolated": extrapolated,
+                    "ratio": ratio_for_meta
+                }
+
+                # ----------------------------------------------------
+                # Существующий диагностический вывод сохраняем.
+                # ----------------------------------------------------
+
+                if reference_hour is not None:
+
+                    output_lines.append(
+                        f"    Tc результат "
+                        f"відноситься до години "
+                        f"№{reference_hour}"
+                    )
+
+                if reference_timestamp:
+
+                    output_lines.append(
+                        f"    Час опорного "
+                        f"вимірювання: "
+                        f"{reference_timestamp}"
+                    )
+
+                if ratio_for_meta is not None:
+
+                    output_lines.append(
+                        f"    Tc ratio = "
+                        f"{ratio_for_meta:.6f}"
+                    )
+
+                if algorithm_name:
+
+                    output_lines.append(
+                        f"    Алгоритм Tc: "
+                        f"{algorithm_name}"
+                    )
+
+                if extrapolated:
+
+                    output_lines.append(
+                        "    Tc: використано "
+                        "екстраполяцію"
+                    )
+
+            # ========================================================
+            # 12.9. BRIDGE
+            # ========================================================
+
+            code = isotope_code_map.get(
+                name,
+                0
+            )
+
             if code != 0:
+
                 isotopes_for_bridge.append({
                     "id": id_counter,
                     "name": code,
                     "activity": activity,
                     "concentration": concentration
                 })
-                id_counter += 1
-        
+
+            id_counter += 1
+
+        # ============================================================
+        # 13. ВЫВОД РЕЗУЛЬТАТА
+        # ============================================================
+
         if "background" in result:
-            bg_data = result.get("background", {})
-            if bg_data.get("subtracted", False):
-                output_lines.append(f"  Фон: віднято")
-        
-        self.parent_app.ui.textEdit.append("\n".join(output_lines))
-        self.parent_app.ui.textEdit.append("---")
-        
-        # ------------------------------------------------------------
-        # 6. Експорт спектрів
-        # ------------------------------------------------------------
+
+            bg_data = result.get(
+                "background",
+                {}
+            )
+
+            if bg_data.get(
+                "subtracted",
+                False
+            ):
+
+                output_lines.append(
+                    "  Фон: віднято"
+                )
+
+        self.parent_app.ui.textEdit.append(
+            "\n".join(
+                output_lines
+            )
+        )
+
+        self.parent_app.ui.textEdit.append(
+            "---"
+        )
+
+        # ============================================================
+        # 14. ЭКСПОРТ СПЕКТРОВ
+        # ============================================================
+
         export_dir = "export"
-        os.makedirs(export_dir, exist_ok=True)
-        
-        export_total_spectrum = np.array(self.spectrum_buffer, dtype=float)
-        if len(export_total_spectrum) < 1024:
-            export_total_spectrum = np.pad(export_total_spectrum, (0, 1024 - len(export_total_spectrum)), mode='constant')
-        elif len(export_total_spectrum) > 1024:
-            export_total_spectrum = export_total_spectrum[:1024]
-        
-        with open(os.path.join(export_dir, "spectrum_total.txt"), "w") as f:
-            f.write("\n".join(str(int(x)) for x in export_total_spectrum))
-        
-        components = result.get("components", {})
-        for name, spectrum in components.items():
-            spectrum_with_time_export = list(spectrum) + [real_time]
-            filename = f"spectrum_{name}.txt"
-            with open(os.path.join(export_dir, filename), "w") as f:
-                f.write("\n".join(str(int(x)) for x in spectrum_with_time_export))
-        
+
+        os.makedirs(
+            export_dir,
+            exist_ok=True
+        )
+
+        export_total_spectrum = (
+            list(self.spectrum_buffer)
+            + [real_time]
+        )
+
+        with open(
+            os.path.join(
+                export_dir,
+                "spectrum_total.txt"
+            ),
+            "w"
+        ) as f:
+
+            f.write(
+                "\n".join(
+                    str(x)
+                    for x
+                    in export_total_spectrum
+                )
+            )
+
+        components = result.get(
+            "components",
+            {}
+        )
+
+        for name, component_spectrum in (
+            components.items()
+        ):
+
+            if not isinstance(
+                component_spectrum,
+                (list, tuple, np.ndarray)
+            ):
+                continue
+
+            spectrum_with_time_export = (
+                list(component_spectrum)
+                + [real_time]
+            )
+
+            filename = (
+                f"spectrum_{name}.txt"
+            )
+
+            with open(
+                os.path.join(
+                    export_dir,
+                    filename
+                ),
+                "w"
+            ) as f:
+
+                f.write(
+                    "\n".join(
+                        str(int(x))
+                        for x
+                        in spectrum_with_time_export
+                    )
+                )
+
+        # ============================================================
+        # 15. READY_TO_DRAIN
+        # ============================================================
+        #
+        # ВАЖНО:
+        # ready_to_drain теперь рассчитывается ДО записи результата
+        # в БД, потому что само решение также является частью
+        # исторического результата измерения.
+        # ============================================================
+
+        tc_available = True
+
+        if group in (
+            "A",
+            "reserve"
+        ):
+
+            tc_data = result.get(
+                "99mTc",
+                {}
+            )
+
+            tc_available = (
+                bool(tc_data)
+                and
+                tc_data.get(
+                    "available",
+                    True
+                )
+                is True
+            )
+
         # ------------------------------------------------------------
-        # 7. Збереження в БД
+        # Невалидный полный цикл:
+        # слив запрещён независимо от остальных результатов.
         # ------------------------------------------------------------
-        if activity_dict or concentration_dict:
-            activity_json = json.dumps(activity_dict) if activity_dict else "{}"
-            concentration_json = json.dumps(concentration_dict) if concentration_dict else "{}"
-            
-            device_id = self.parent_app.db_manager.get_device_id(self.serial_number)
+
+        if not measurement_valid:
+
+            ready_to_drain = 0
+
+        # ------------------------------------------------------------
+        # Для группы A и резервной группы окончательный Tc
+        # является обязательным.
+        # ------------------------------------------------------------
+
+        elif (
+            group in (
+                "A",
+                "reserve"
+            )
+            and
+            not tc_available
+        ):
+
+            ready_to_drain = 0
+
+        else:
+
+            # --------------------------------------------------------
+            # Решение принимается по ВЕРХНИМ статистическим границам.
+            # --------------------------------------------------------
+
+            ready_to_drain = (
+                self.parent_app._calculate_ready_to_drain(
+                    self.posit_number,
+                    activity_upper_dict,
+                    concentration_upper_dict
+                )
+            )
+
+        # ============================================================
+        # 16. СОХРАНЕНИЕ ПОЛНОГО СПЕКТРАЛЬНОГО РЕЗУЛЬТАТА В БД
+        # ============================================================
+        #
+        # Здесь сохраняем одновременно:
+        #
+        #   центральные значения;
+        #   верхние статистические границы;
+        #   метаданные;
+        #   ready_to_drain;
+        #   measurement_valid.
+        #
+        # Таким образом одна строка БД полностью описывает решение,
+        # принятое системой по завершённому спектральному циклу.
+        # ============================================================
+
+        if (
+            activity_dict
+            or
+            concentration_dict
+        ):
+
+            activity_json = json.dumps(
+                activity_dict,
+                ensure_ascii=False
+            )
+
+            concentration_json = json.dumps(
+                concentration_dict,
+                ensure_ascii=False
+            )
+
+            activity_upper_json = json.dumps(
+                activity_upper_dict,
+                ensure_ascii=False
+            )
+
+            concentration_upper_json = json.dumps(
+                concentration_upper_dict,
+                ensure_ascii=False
+            )
+
+            result_meta_json = json.dumps(
+                result_meta,
+                ensure_ascii=False
+            )
+
+            device_id = (
+                self.parent_app.db_manager.get_device_id(
+                    self.serial_number
+                )
+            )
+
             if device_id is not None:
-                fullness_status = "full" if getattr(self, 'is_full', False) else "empty"
-                
+
+                fullness_status = (
+                    "full"
+                    if getattr(
+                        self,
+                        "is_full",
+                        False
+                    )
+                    else "empty"
+                )
+
                 self.parent_app.db_manager.save_cistern_measurement(
                     device_id=device_id,
                     paed=self.last_paed_from_spectrum,
@@ -615,84 +1721,158 @@ class DeviceCardBarrel(QWidget):
                     high_status=self.last_high_status,
                     valid=self.last_valid,
                     fullness_status=fullness_status,
-                    group=group
+                    group=group,
+                    activity_upper_json=activity_upper_json,
+                    concentration_upper_json=concentration_upper_json,
+                    result_meta_json=result_meta_json,
+                    ready_to_drain=ready_to_drain,
+                    measurement_valid=(
+                        1
+                        if measurement_valid
+                        else 0
+                    )
                 )
-                
+
                 self.parent_app.ui.textEdit.append(
-                    f"Цистерна №{self.posit_number}: збережено в БД (активності: {activity_json}, концентрації: {concentration_json})"
+                    f"Цистерна "
+                    f"№{self.posit_number}: "
+                    f"збережено повний результат у БД "
+                    f"(ready_to_drain="
+                    f"{ready_to_drain}, "
+                    f"measurement_valid="
+                    f"{1 if measurement_valid else 0})"
                 )
-        
-        # ------------------------------------------------------------
-        # 8. Розрахунок ready_to_drain
-        # ------------------------------------------------------------
-        ready_to_drain = self.parent_app._calculate_ready_to_drain(
-            self.posit_number,
-            activity_dict,
-            concentration_dict
-        )
-        
-        # ------------------------------------------------------------
-        # 9. Відправка повних даних ZB до Bridge
-        # ------------------------------------------------------------
-        if self.posit_number in (1, 2):
+
+        # ============================================================
+        # 17. КОЛИЧЕСТВО ПОЗИЦИЙ BRIDGE
+        # ============================================================
+
+        if self.posit_number in (
+            1,
+            2
+        ):
+
             isotope_count = 2
+
         elif self.posit_number == 3:
+
             isotope_count = 5
+
         else:
+
             isotope_count = 3
-        
+
+        # ============================================================
+        # 18. СТАБИЛЬНЫЙ МАССИВ ИЗОТОПОВ ДЛЯ BRIDGE
+        # ============================================================
+
         isotopes_for_bridge_final = []
-        
-        if isotopes_for_bridge:
-            for i in range(1, isotope_count + 1):
-                found = False
-                for iso in isotopes_for_bridge:
-                    if iso["id"] == i:
-                        isotopes_for_bridge_final.append(iso)
-                        found = True
-                        break
-                if not found:
-                    isotopes_for_bridge_final.append({
-                        "id": i,
-                        "name": 0,
-                        "activity": 0.0,
-                        "concentration": 0.0
-                    })
-        else:
-            for i in range(1, isotope_count + 1):
+
+        isotope_by_id = {
+            item["id"]: item
+            for item
+            in isotopes_for_bridge
+        }
+
+        for i in range(
+            1,
+            isotope_count + 1
+        ):
+
+            if i in isotope_by_id:
+
+                isotopes_for_bridge_final.append(
+                    isotope_by_id[i]
+                )
+
+            else:
+
                 isotopes_for_bridge_final.append({
                     "id": i,
                     "name": 0,
                     "activity": 0.0,
                     "concentration": 0.0
                 })
-        
+
+        # ============================================================
+        # 19. ФОРМИРУЕМ ZB ДЛЯ BRIDGE
+        # ============================================================
+
         zb_object = {
             "number": self.posit_number,
-            "sn": int(self.serial_number) if self.serial_number.isdigit() else 0,
-            "temperature": self.last_temperature,
-            "paed": self.last_paed_from_spectrum,
-            "high_sensitivity": 1 if self.last_high_status == 1 else 0,
-            "low_sensitivity": 1 if self.last_low_status == 1 else 0,
-            "valid": 1 if self.last_valid == 1 else 0,
-            "device_connection": 1,
-            "ready_to_drain": ready_to_drain,
-            "isotopes": isotopes_for_bridge_final
-        }
-        
-        self.parent_app._send_zb_data([zb_object])
-        
-        # ------------------------------------------------------------
-        # 10. Скидаємо флаг спектральної активності
-        # ------------------------------------------------------------
-        self.spectrum_active = False
-        
-        # ------------------------------------------------------------
-        # 11. Скидання буферів
-        # ------------------------------------------------------------
-        self.parent_app.db_manager.flush_cistern_buffer()
-        self.reset_spectrum()
 
+            "sn": (
+                int(self.serial_number)
+                if self.serial_number.isdigit()
+                else 0
+            ),
+
+            "temperature": (
+                self.last_temperature
+            ),
+
+            "paed": (
+                self.last_paed_from_spectrum
+            ),
+
+            "high_sensitivity": (
+                1
+                if self.last_high_status == 1
+                else 0
+            ),
+
+            "low_sensitivity": (
+                1
+                if self.last_low_status == 1
+                else 0
+            ),
+
+            "valid": (
+                1
+                if self.last_valid == 1
+                else 0
+            ),
+
+            "device_connection": 1,
+
+            "ready_to_drain": (
+                ready_to_drain
+            ),
+
+            "isotopes": (
+                isotopes_for_bridge_final
+            )
+        }
+
+        # ============================================================
+        # 20. ОТПРАВЛЯЕМ В BRIDGE
+        # ============================================================
+
+        self.parent_app._send_zb_data(
+            [zb_object]
+        )
+
+        # ============================================================
+        # 21. ЗАВЕРШЕНИЕ ЦИКЛА
+        # ============================================================
+        #
+        # ВАЖНО:
+        # Старого общего вызова:
+        #
+        #     db_manager.flush_cistern_buffer()
+        #
+        # здесь больше НЕТ.
+        #
+        # save_cistern_measurement() после успешной записи полного
+        # результата самостоятельно удаляет из cistern_buffer только
+        # старую мониторинговую запись ЭТОЙ цистерны.
+        #
+        # Буферы остальных цистерн остаются нетронутыми.
+        # ============================================================
+
+        self.spectrum_active = False
+
+        self.reset_spectrum()
 
 
 
@@ -963,6 +2143,12 @@ class App(QObject):
     start_polling = Signal()
     sync_cisterns_to_manager = Signal(object)
 
+    # Сигнал завершения одного полного цикла накопления спектра.
+    #
+    # Необходим для сброса DeviceInfo.spectrum_active,
+    # который находится в потоке DeviceManager.
+    spectrum_cycle_finished = Signal(str)
+
 
     def __init__(self):
 
@@ -1017,6 +2203,18 @@ class App(QObject):
 
         # Загрузка эталонных спектров
         self.load_calibration_spectra()
+
+
+        # ------------------------------------------------------------
+        # ДЛИТЕЛЬНОСТЬ ОДНОГО ПОЛНОГО СПЕКТРАЛЬНОГО ЦИКЛА
+        # ------------------------------------------------------------
+        #
+        # Значение по умолчанию — 3600 секунд (1 час).
+        #
+        # Пользователь может изменить его через диалог интервалов.
+        # Новое значение применяется сразу, в том числе к уже
+        # выполняющемуся спектральному циклу.
+        self.spectrum_accumulation_time = 3600
 
         # ------------------------------------------------------------
         # НОВЫЕ АТРИБУТЫ ДЛЯ ИНТЕРВАЛОВ СОХРАНЕНИЯ В БД
@@ -1455,36 +2653,120 @@ class App(QObject):
     def on_open_intervals(self):
         """
         Відкриває діалог налаштування інтервалів.
+
+        Якщо оператор змінює тривалість спектрального циклу,
+        історія динамічного алгоритму Tc скидається.
+
+        Причина:
+        K_F та K_Tc за алгоритмом обчислюються за T першого циклу
+        і надалі є константними. Після зміни T стара історія
+        математично більше не відповідає новому циклу.
+
+        Після зміни інтервалу наступний завершений спектральний
+        результат для групи A буде розглядатися як нова
+        "перша година" Tc.
         """
+
         from dialogs.intervals_dialog import IntervalsDialog
+
         dialog = IntervalsDialog(self)
+
         if dialog.exec() == QDialog.Accepted:
-            # Отримуємо значення з діалогу
-            self.spectrum_accumulation_time = dialog.get_spectrum_time()
+
+            # ========================================================
+            # 1. ЗБЕРІГАЄМО СТАРЕ ЗНАЧЕННЯ ЧАСУ СПЕКТРА
+            # ========================================================
+
+            old_spectrum_time = getattr(
+                self,
+                "spectrum_accumulation_time",
+                3600
+            )
+
+            # ========================================================
+            # 2. ОТРИМУЄМО НОВІ ЗНАЧЕННЯ
+            # ========================================================
+
+            new_spectrum_time = dialog.get_spectrum_time()
+
+            self.spectrum_accumulation_time = new_spectrum_time
             self.db_write_interval = dialog.get_db_interval()
             self.zb_send_interval = dialog.get_zb_interval()
             self.cz_send_interval = dialog.get_cz_interval()
-            
-            # НОВЫЕ ИНТЕРВАЛЫ ДЛЯ БД
-            self.cistern_save_interval = dialog.get_cistern_save_interval()
-            self.wall_save_interval = dialog.get_wall_save_interval()
-            
-            # Применяем интервалы к DatabaseManager
-            if hasattr(self, 'db_manager'):
-                self.db_manager.set_cistern_save_interval(self.cistern_save_interval)
-                self.db_manager.set_wall_save_interval(self.wall_save_interval)
-            
+
+            self.cistern_save_interval = (
+                dialog.get_cistern_save_interval()
+            )
+
+            self.wall_save_interval = (
+                dialog.get_wall_save_interval()
+            )
+
+            # ========================================================
+            # 3. ЯКЩО T ЗМІНИВСЯ — СКИДАЄМО ІСТОРІЮ Tc
+            # ========================================================
+            #
+            # Сам поточний спектральний цикл тут НЕ скидаємо.
+            #
+            # За погодженою логікою новий spectrum_accumulation_time
+            # застосовується до поточного циклу одразу.
+            #
+            # Але його результат уже стане новим першим циклом
+            # для динамічної історії Tc.
+
+            spectrum_time_changed = (
+                new_spectrum_time != old_spectrum_time
+            )
+
+            if spectrum_time_changed:
+
+                reset_count = 0
+
+                for card in self.cards_by_sn.values():
+
+                    if not isinstance(
+                        card,
+                        DeviceCardBarrel
+                    ):
+                        continue
+
+                    card.clear_history()
+                    reset_count += 1
+
+                self.ui.textEdit.append(
+                    "Змінено час накопичення спектру: "
+                    "історію динамічного розрахунку Tc "
+                    f"скинуто для {reset_count} цистерн."
+                )
+
+            # ========================================================
+            # 4. ЗАСТОСОВУЄМО ІНТЕРВАЛИ ДО БД
+            # ========================================================
+
+            if hasattr(self, "db_manager"):
+                self.db_manager.set_cistern_save_interval(
+                    self.cistern_save_interval
+                )
+
+                self.db_manager.set_wall_save_interval(
+                    self.wall_save_interval
+                )
+
+            # ========================================================
+            # 5. ЛОГ
+            # ========================================================
+
             self.ui.textEdit.append(
                 f"Налаштування інтервалів збережено: "
                 f"спектр={self.spectrum_accumulation_time}с, "
                 f"ZB={self.zb_send_interval}с, "
                 f"CZ={self.cz_send_interval}с, "
                 f"БД={self.db_write_interval}хв, "
-                f"збереження цистерн={self.cistern_save_interval}с, "
-                f"збереження приміщення={self.wall_save_interval}с"
+                f"збереження цистерн="
+                f"{self.cistern_save_interval}с, "
+                f"збереження приміщення="
+                f"{self.wall_save_interval}с"
             )
-
-
 
 
     def db_window(self):
@@ -1580,6 +2862,9 @@ class App(QObject):
             self.modbus_client.logMessage.connect(self.on_bridge_log_message)
         else:
             self.ui.textEdit.append("Увага: ModBusBridgeClient не створено")
+
+
+        self.spectrum_cycle_finished.connect(self.device_manager.finish_spectrum_cycle, Qt.ConnectionType.QueuedConnection )
 
 
 
@@ -2146,33 +3431,64 @@ class App(QObject):
 
     def load_calibration_spectra(self):
         """
-        Загружает эталонные спектры из папки calibration/.
-        Каждый файл должен содержать 1024 числа (по одному на строку).
+        Завантажує еталонні спектри з папки calibration/.
+
+        Кожен calibration-файл повинен містити РІВНО 1024 числових
+        значення в одному стовпці. Перші 1023 значення є спектральними
+        даними, 1024-е значення зберігається як службове значення часу.
+
+        Пошкоджений або неповний файл НЕ доповнюється нулями і НЕ
+        обрізається. Такий файл не додається до calibration_spectra,
+        щоб алгоритм не виконувався з тихо спотвореною калібровкою.
         """
+
         self.calibration_spectra = {}
         calib_dir = "calibration"
-        
-        if not os.path.exists(calib_dir):
-            self.ui.textEdit.append("Папка calibration/ не найдена")
+
+        if not os.path.isdir(calib_dir):
+            self.ui.textEdit.append("Помилка: папка calibration/ не знайдена")
             return
-        
-        for filename in os.listdir(calib_dir):
-            if filename.endswith(".txt"):
-                filepath = os.path.join(calib_dir, filename)
-                try:
-                    data = np.loadtxt(filepath)
-                    # Приводим к 1024
-                    if len(data) < 1024:
-                        data = np.pad(data, (0, 1024 - len(data)), 'constant')
-                    elif len(data) > 1024:
-                        data = data[:1024]
-                    
-                    name = os.path.splitext(filename)[0]  # имя файла без расширения
-                    self.calibration_spectra[name] = data
-                    # self.ui.textEdit.append(f"Загружен эталон: {name}")
-                    self.ui.textEdit.append(f"Загружен эталон: {name}, время набора: {data[1023]} сек")
-                except Exception as e:
-                    self.ui.textEdit.append(f"Ошибка загрузки {filename}: {e}")
+
+        # Сортування робить порядок повідомлень відтворюваним.
+        for filename in sorted(os.listdir(calib_dir)):
+            if not filename.lower().endswith(".txt"):
+                continue
+
+            filepath = os.path.join(calib_dir, filename)
+
+            try:
+                data = np.loadtxt(filepath, dtype=float)
+
+                # За вимогами файл повинен бути одним стовпцем із
+                # рівно 1024 значень. Багатовимірну структуру також
+                # вважаємо помилкою формату.
+                if data.ndim != 1:
+                    raise ValueError(
+                        f"очікується один стовпець, отримано ndim={data.ndim}"
+                    )
+
+                if data.size != 1024:
+                    raise ValueError(
+                        f"очікується 1024 значення, отримано {data.size}"
+                    )
+
+                # NaN/inf не повинні потрапляти в спектральні формули.
+                if not np.all(np.isfinite(data)):
+                    raise ValueError("файл містить NaN або нескінченні значення")
+
+                name = os.path.splitext(filename)[0]
+                self.calibration_spectra[name] = data.copy()
+
+                self.ui.textEdit.append(
+                    f"Завантажено еталон: {name}, "
+                    f"час набору: {data[1023]} сек"
+                )
+
+            except (OSError, ValueError, TypeError) as e:
+                self.ui.textEdit.append(
+                    f"Помилка завантаження калібрування {filename}: {e}"
+                )
+
 
 
     def on_system_event(self, serial_number, event_type, description):
@@ -2212,177 +3528,721 @@ class App(QObject):
 
     def on_device_packet(self, packet):
         """
-        Обробка пакетів від приладів.
-        Отримує пакет від DeviceManager через сигнал device_response.
-        В залежності від режиму (RadDose, Temperature, StartSpectre, GetSpectre)
-        виконує відповідну обробку та оновлює інтерфейс.
+        Обрабатывает пакет, уже принятый и проверенный DeviceManager.
+
+        Основные режимы:
+
+            RadDose
+            Temperature
+            StartSpectre
+            GetSpectre
+
+        Метод отвечает за:
+
+            - обновление GUI;
+            - передачу актуального PAED обратно в DeviceManager;
+            - накопление спектра;
+            - определение окончания полного спектрального цикла;
+            - запись текущих измерений в буферы БД;
+            - передачу данных в ModBus Bridge.
+
+        ВАЖНО:
+            Для управляющей логики спектра используется только
+            актуальный ВАЛИДНЫЙ PAED.
+
+            Если очередной PAED невалиден, в DeviceManager
+            передаётся None, чтобы старое значение PAED не могло
+            ошибочно разрешить новый StartSpectre.
         """
-        card = self.cards_by_sn.get(packet.serial_number)
-        if card is None:
-            return
+
+        # ============================================================
+        # 1. ОСНОВНАЯ ИНФОРМАЦИЯ О ПАКЕТЕ
+        # ============================================================
 
         sn = packet.serial_number
         mode = packet.mode
-        size = packet.size
         buff = packet.buff
 
+        # ============================================================
+        # 2. ИЩЕМ GUI-КАРТОЧКУ ПРИБОРА
+        # ============================================================
+
+        card = self.cards_by_sn.get(sn)
+
+        if card is None:
+
+            self.ui.textEdit.append(
+                (
+                    "Помилка: не знайдено картку "
+                    f"для приладу SN {sn}."
+                )
+            )
+
+            return
+
         try:
+
+            # ========================================================
+            # RAD DOSE
+            # ========================================================
+
             if mode == "RadDose":
+
+                # ----------------------------------------------------
+                # Разбираем пакет ПАЕД
+                # ----------------------------------------------------
+
                 data = self.device_manager._paed_data(buff)
-                if data:
-                    dose = data["ped_value"]
-                    accuracy = data["accuracy"]
-                    card.set_dose_value(dose, accuracy)
-                    
-                    self.device_manager.update_device_paed.emit(sn, dose)
-                    
-                    low_failure = data.get("low_sens_failure", True)
-                    high_failure = data.get("high_sens_failure", True)
-                    result_valid = data.get("result_valid", False)
-                    
-                    card.set_detector_status(low_failure, high_failure, result_valid)
-                    
-                    device_id = self.db_manager.get_device_id(sn)
-                    if device_id is not None:
-                        temp_value = getattr(card, 'last_temperature', 0.0)
-                        
-                        if card.location_type == "room":
-                            self.db_manager.buffer_wall_measurement(
-                                device_id=device_id,
-                                paed=dose,
-                                temperature=temp_value,
-                                low_status=1 if low_failure else 0,
-                                high_status=1 if high_failure else 0,
-                                valid=1 if result_valid else 0
-                            )
-                            cz_object = {
-                                "number": card.posit_number,
-                                "sn": int(sn) if sn.isdigit() else 0,
-                                "temperature": temp_value,
-                                "paed": dose,
-                                "high_sensitivity": 1 if high_failure else 0,
-                                "low_sensitivity": 1 if low_failure else 0,
-                                "valid": 1 if result_valid else 0,
-                                "device_connection": 1
-                            }
-                            self._send_cz_data([cz_object])
-                            
-                        elif card.location_type == "cistern":
-                            fullness_status = "full" if getattr(card, 'is_full', False) else "empty"
-                            group = self.cistern_groups.get(card.posit_number, "A")
-                            
-                            # --- Добавлен spectrum_active ---
-                            self.db_manager.buffer_cistern_measurement(
-                                device_id=device_id,
-                                paed=dose,
-                                temperature=temp_value,
-                                low_status=1 if low_failure else 0,
-                                high_status=1 if high_failure else 0,
-                                valid=1 if result_valid else 0,
-                                fullness_status=fullness_status,
-                                group=group,
-                                activity_json="{}",
-                                concentration_json="{}",
-                                spectrum_active=card.spectrum_active
-                            )
-                            
-                            # Визначаємо кількість позицій
-                            if card.posit_number in (1, 2):
-                                isotope_count = 2
-                            elif card.posit_number == 3:
-                                isotope_count = 5
-                            else:
-                                isotope_count = 3
-                            
-                            isotopes = []
-                            for i in range(1, isotope_count + 1):
-                                isotopes.append({
-                                    "id": i,
-                                    "name": 0,
-                                    "activity": 0.0,
-                                    "concentration": 0.0
-                                })
-                            
-                            zb_object = {
-                                "number": card.posit_number,
-                                "sn": int(sn) if sn.isdigit() else 0,
-                                "temperature": temp_value,
-                                "paed": dose,
-                                "high_sensitivity": 1 if high_failure else 0,
-                                "low_sensitivity": 1 if low_failure else 0,
-                                "valid": 1 if result_valid else 0,
-                                "device_connection": 1,
-                                "ready_to_drain": 0,
-                                "isotopes": isotopes
-                            }
-                            self._send_zb_data([zb_object])
+
+                if not data:
+
+                    # Если пакет по какой-либо причине не удалось
+                    # разобрать, прежний PAED нельзя оставлять
+                    # разрешающим значением для StartSpectre.
+                    self.device_manager.update_device_paed.emit(
+                        sn,
+                        None
+                    )
+
+                    return
+
+                dose = data["ped_value"]
+                accuracy = data["accuracy"]
+
+                low_failure = data.get(
+                    "low_sens_failure",
+                    True
+                )
+
+                high_failure = data.get(
+                    "high_sens_failure",
+                    True
+                )
+
+                result_valid = data.get(
+                    "result_valid",
+                    False
+                )
+
+                # ----------------------------------------------------
+                # GUI
+                # ----------------------------------------------------
+
+                card.set_dose_value(
+                    dose,
+                    accuracy
+                )
+
+                card.set_detector_status(
+                    low_failure,
+                    high_failure,
+                    result_valid
+                )
+
+                # ----------------------------------------------------
+                # УПРАВЛЯЮЩИЙ PAED
+                # ----------------------------------------------------
+                #
+                # Только валидный PAED может использоваться
+                # DeviceManager для принятия решения:
+                #
+                #     PAED <= 50 -> StartSpectre
+                #
+                # Невалидное измерение уничтожает актуальность
+                # предыдущего PAED.
+
+                self.device_manager.update_device_paed.emit(
+                    sn,
+                    dose if result_valid else None
+                )
+
+                # ----------------------------------------------------
+                # ИЩЕМ DEVICE_ID
+                # ----------------------------------------------------
+
+                device_id = self.db_manager.get_device_id(sn)
+
+                if device_id is None:
+
+                    self.ui.textEdit.append(
+                        (
+                            "Помилка: прилад "
+                            f"{sn} не знайдено в БД."
+                        )
+                    )
+
+                    return
+
+                # ----------------------------------------------------
+                # Последняя известная температура
+                # ----------------------------------------------------
+                #
+                # Вопрос хранения температуры до первого реального
+                # измерения будет отдельно проверяться в цепочках
+                # сохранения БД (#17/#18).
+
+                temp_value = getattr(
+                    card,
+                    "last_temperature",
+                    0.0
+                )
+
+                # ====================================================
+                # CZ — ПРИБОР ПОМЕЩЕНИЯ
+                # ====================================================
+
+                if card.location_type == "room":
+
+                    self.db_manager.buffer_wall_measurement(
+                        device_id=device_id,
+                        paed=dose,
+                        temperature=temp_value,
+                        low_status=1 if low_failure else 0,
+                        high_status=1 if high_failure else 0,
+                        valid=1 if result_valid else 0
+                    )
+
+                    cz_object = {
+                        "number": card.posit_number,
+                        "sn": int(sn) if sn.isdigit() else 0,
+                        "temperature": temp_value,
+                        "paed": dose,
+                        "high_sensitivity": (
+                            1 if high_failure else 0
+                        ),
+                        "low_sensitivity": (
+                            1 if low_failure else 0
+                        ),
+                        "valid": (
+                            1 if result_valid else 0
+                        ),
+                        "device_connection": 1
+                    }
+
+                    self._send_cz_data(
+                        [cz_object]
+                    )
+
+                # ====================================================
+                # ZB — ПРИБОР ЦИСТЕРНЫ
+                # ====================================================
+
+                elif card.location_type == "cistern":
+
+                    fullness_status = (
+                        "full"
+                        if getattr(
+                            card,
+                            "is_full",
+                            False
+                        )
+                        else "empty"
+                    )
+
+                    group = self.cistern_groups.get(
+                        card.posit_number,
+                        "A"
+                    )
+
+                    self.db_manager.buffer_cistern_measurement(
+                        device_id=device_id,
+                        paed=dose,
+                        temperature=temp_value,
+                        low_status=1 if low_failure else 0,
+                        high_status=1 if high_failure else 0,
+                        valid=1 if result_valid else 0,
+                        fullness_status=fullness_status,
+                        group=group,
+                        activity_json="{}",
+                        concentration_json="{}",
+                        spectrum_active=card.spectrum_active
+                    )
+
+                    # ------------------------------------------------
+                    # Формируем пустой набор изотопов для текущего
+                    # обычного измерения PAED.
+                    # ------------------------------------------------
+
+                    if card.posit_number in (1, 2):
+
+                        isotope_count = 2
+
+                    elif card.posit_number == 3:
+
+                        isotope_count = 5
+
                     else:
-                        self.ui.textEdit.append(f"Помилка: прилад {sn} не знайдено в БД")
+
+                        isotope_count = 3
+
+                    isotopes = []
+
+                    for i in range(
+                        1,
+                        isotope_count + 1
+                    ):
+
+                        isotopes.append(
+                            {
+                                "id": i,
+                                "name": 0,
+                                "activity": 0.0,
+                                "concentration": 0.0
+                            }
+                        )
+
+                    zb_object = {
+                        "number": card.posit_number,
+                        "sn": (
+                            int(sn)
+                            if sn.isdigit()
+                            else 0
+                        ),
+                        "temperature": temp_value,
+                        "paed": dose,
+                        "high_sensitivity": (
+                            1 if high_failure else 0
+                        ),
+                        "low_sensitivity": (
+                            1 if low_failure else 0
+                        ),
+                        "valid": (
+                            1 if result_valid else 0
+                        ),
+                        "device_connection": 1,
+                        "ready_to_drain": 0,
+                        "isotopes": isotopes
+                    }
+
+                    self._send_zb_data(
+                        [zb_object]
+                    )
+
+            # ========================================================
+            # TEMPERATURE
+            # ========================================================
 
             elif mode == "Temperature":
-                data = self.device_manager._temp_data(buff)
-                if data:
-                    card.set_temp_value(data)
-                    try:
-                        temp_float = float(data.split()[0])
-                        card.last_temperature = temp_float
-                    except:
-                        pass
+
+                temperature = (
+                    self.device_manager._temp_data(buff)
+                )
+
+                # ----------------------------------------------------
+                # None означает:
+                #
+                # - некорректные данные;
+                # - либо прибор сообщил об отказе термодатчика.
+                #
+                # Старую температуру не выдаём за новое измерение.
+                # ----------------------------------------------------
+
+                if temperature is None:
+
+                    self.ui.textEdit.append(
+                        (
+                            "Помилка температури для "
+                            f"SN {sn}: дані недійсні "
+                            "або термодатчик повідомив "
+                            "про відмову."
+                        )
+                    )
+
+                    return
+
+                # ----------------------------------------------------
+                # Обновляем GUI
+                # ----------------------------------------------------
+
+                card.set_temp_value(
+                    temperature
+                )
+
+                # ----------------------------------------------------
+                # Сохраняем последнее реально полученное значение
+                # ----------------------------------------------------
+
+                try:
+
+                    card.last_temperature = float(
+                        temperature
+                    )
+
+                except (TypeError, ValueError):
+
+                    self.ui.textEdit.append(
+                        (
+                            "Помилка перетворення "
+                            "температури для "
+                            f"SN {sn}: {temperature}"
+                        )
+                    )
+
+                    return
+
+            # ========================================================
+            # START SPECTRE
+            # ========================================================
 
             elif mode == "StartSpectre":
-                self.ui.textEdit.append(f"Початок збору спектру для {sn}")
+
+                # Сам факт попадания сюда означает, что
+                # DeviceManager уже получил и проверил
+                # успешный ответ StartSpectre.
+                #
+                # Именно в этот момент фиксируем начало полного
+                # спектрального цикла по монотонным часам ПК.
+                # Время отправки команды не используется, потому что
+                # StartSpectre мог завершиться таймаутом или ошибкой.
+
+                card.spectrum_start_monotonic = time.monotonic()
+
+                # Фактическое время завершённого цикла будет записано
+                # только при получении первого успешного GetSpectre
+                # после достижения заданного времени накопления.
+                card.spectrum_elapsed_time = 0.0
+
+                # Локальный флаг карточки синхронизируем с фактом
+                # успешного запуска спектрального накопления.
+                card.spectrum_active = True
+
+                self.ui.textEdit.append(
+                    (
+                        "Початок збору спектру "
+                        f"для SN {sn}."
+                    )
+                )
+
+            # ========================================================
+            # GET SPECTRE
+            # ========================================================
 
             elif mode == "GetSpectre":
-                if isinstance(packet.buff, dict):
-                    channels = packet.buff.get("channels", [])
-                    paed_value = packet.buff.get("paed_value", 0.0)
-                    accuracy = packet.buff.get("accuracy", 0)
-                    test_byte = packet.buff.get("test_byte", 0)
-                    result_valid = packet.buff.get("valid", False)
 
-                    self.device_manager.update_device_paed.emit(sn, paed_value)
-                    card.last_paed_from_spectrum = paed_value
-                    card.add_spectrum_data(channels)
-                    card.set_dose_value(paed_value, accuracy)
-                    
-                    high_failure = not bool(test_byte & 0b00000001)
-                    low_failure = not bool(test_byte & 0b00000010)
-                    card.set_detector_status(low_failure, high_failure, result_valid)
-                    
-                    device_id = self.db_manager.get_device_id(sn)
-                    if device_id is not None and card.location_type == "cistern":
-                        temp_value = getattr(card, 'last_temperature', 0.0)
-                        fullness_status = "full" if getattr(card, 'is_full', False) else "empty"
-                        group = self.cistern_groups.get(card.posit_number, "A")
-                        
-                        # --- Добавлен spectrum_active ---
-                        self.db_manager.buffer_cistern_measurement(
-                            device_id=device_id,
-                            paed=paed_value,
-                            temperature=temp_value,
-                            low_status=1 if low_failure else 0,
-                            high_status=1 if high_failure else 0,
-                            valid=1 if result_valid else 0,
-                            fullness_status=fullness_status,
-                            group=group,
-                            activity_json="{}",
-                            concentration_json="{}",
-                            spectrum_active=card.spectrum_active
+                # ----------------------------------------------------
+                # После _parse_spectrum_data() buff должен быть dict.
+                # ----------------------------------------------------
+
+                if not isinstance(buff, dict):
+
+                    self.ui.textEdit.append(
+                        (
+                            "Помилка: некоректні дані "
+                            "GetSpectre для "
+                            f"SN {sn}."
                         )
-                    elif device_id is None:
-                        self.ui.textEdit.append(f"Помилка: прилад {sn} не знайдено в БД")
-                    
-                    if card.is_spectrum_ready():
-                        card.calculate_activity()
-                else:
-                    self.ui.textEdit.append(f"Помилка: отримано некоректні дані спектру для {sn}")
+                    )
+
+                    return
+
+                channels = buff.get(
+                    "channels"
+                )
+
+                paed_value = buff.get(
+                    "paed_value"
+                )
+
+                accuracy = buff.get(
+                    "accuracy",
+                    0
+                )
+
+                test_byte = buff.get(
+                    "test_byte",
+                    0
+                )
+
+                result_valid = bool(
+                    buff.get(
+                        "valid",
+                        False
+                    )
+                )
+
+                # ----------------------------------------------------
+                # ПРОВЕРКА СПЕКТРАЛЬНОГО МАССИВА
+                # ----------------------------------------------------
+                #
+                # Текущая структура:
+                #
+                #     1023 канала
+                #     +
+                #     acquisition_time
+                #
+                # Итого 1024 элемента.
+
+                if (
+                    not isinstance(
+                        channels,
+                        (list, tuple)
+                    )
+                    or len(channels) != 1024
+                ):
+
+                    self.ui.textEdit.append(
+                        (
+                            "Помилка: некоректна "
+                            "структура спектру для "
+                            f"SN {sn}."
+                        )
+                    )
+
+                    return
+
+                # ----------------------------------------------------
+                # УПРАВЛЯЮЩИЙ PAED
+                # ----------------------------------------------------
+
+                self.device_manager.update_device_paed.emit(
+                    sn,
+                    (
+                        paed_value
+                        if result_valid
+                        else None
+                    )
+                )
+
+                # ----------------------------------------------------
+                # Сохраняем PAED из спектрального ответа
+                # ----------------------------------------------------
+
+                card.last_paed_from_spectrum = (
+                    paed_value
+                )
+
+                # ----------------------------------------------------
+                # Обновляем отображение PAED
+                # ----------------------------------------------------
+
+                card.set_dose_value(
+                    paed_value,
+                    accuracy
+                )
+
+                # ----------------------------------------------------
+                # Статусы детекторов
+                # ----------------------------------------------------
+                #
+                # В существующей логике:
+                #
+                # True  -> соответствующий детектор исправен;
+                # False -> отказ.
+                #
+                # Названия переменных исторически неудачны,
+                # но здесь сохраняем существующую семантику.
+
+                high_failure = not bool(
+                    test_byte & 0b00000001
+                )
+
+                low_failure = not bool(
+                    test_byte & 0b00000010
+                )
+
+                card.set_detector_status(
+                    low_failure,
+                    high_failure,
+                    result_valid
+                )
+
+                # ----------------------------------------------------
+                # НАКОПЛЕНИЕ ОЧЕРЕДНОГО УЧАСТКА
+                # ----------------------------------------------------
+                #
+                # add_spectrum_data():
+                #
+                #     S_total += S_i
+                #     T_device_total += T_device_i   (диагностика)
+                #     spectrum_counter += 1          (диагностика)
+                #
+                # После добавления ТЕКУЩЕГО пакета метод проверяет
+                # фактически прошедшее время ПК от подтверждённого
+                # StartSpectre до текущего успешного GetSpectre.
+                #
+                # Поэтому первый успешный GetSpectre после достижения
+                # spectrum_accumulation_time обязательно включается
+                # в итоговый накопленный спектр и завершает цикл.
+
+                spectrum_ready = (
+                    card.add_spectrum_data(
+                        channels
+                    )
+                )
+
+                # ----------------------------------------------------
+                # СОХРАНЯЕМ ТЕКУЩЕЕ ИЗМЕРЕНИЕ В БУФЕР БД
+                # ----------------------------------------------------
+
+                device_id = (
+                    self.db_manager.get_device_id(sn)
+                )
+
+                if (
+                    device_id is not None
+                    and card.location_type == "cistern"
+                ):
+
+                    temp_value = getattr(
+                        card,
+                        "last_temperature",
+                        0.0
+                    )
+
+                    fullness_status = (
+                        "full"
+                        if getattr(
+                            card,
+                            "is_full",
+                            False
+                        )
+                        else "empty"
+                    )
+
+                    group = self.cistern_groups.get(
+                        card.posit_number,
+                        "A"
+                    )
+
+                    self.db_manager.buffer_cistern_measurement(
+                        device_id=device_id,
+                        paed=paed_value,
+                        temperature=temp_value,
+                        low_status=(
+                            1 if low_failure else 0
+                        ),
+                        high_status=(
+                            1 if high_failure else 0
+                        ),
+                        valid=(
+                            1 if result_valid else 0
+                        ),
+                        fullness_status=fullness_status,
+                        group=group,
+                        activity_json="{}",
+                        concentration_json="{}",
+                        spectrum_active=card.spectrum_active
+                    )
+
+                elif device_id is None:
+
+                    self.ui.textEdit.append(
+                        (
+                            "Помилка: прилад "
+                            f"{sn} не знайдено в БД."
+                        )
+                    )
+
+                # ----------------------------------------------------
+                # ПОЛНЫЙ СПЕКТРАЛЬНЫЙ ЦИКЛ ЗАВЕРШЁН
+                # ----------------------------------------------------
+                #
+                # Порядок здесь принципиален:
+                #
+                # 1. Текущий GetSpectre уже проверен и добавлен
+                #    в spectrum_buffer внутри add_spectrum_data().
+                #
+                # 2. Если заданное время накопления уже достигнуто,
+                #    фиксируем ФАКТИЧЕСКУЮ длительность полного цикла
+                #    по монотонным часам ПК.
+                #
+                # 3. calculate_activity() использует именно это время
+                #    как расчётное T. Время, сообщённое прибором,
+                #    остаётся только диагностическим.
+                #
+                # 4. После расчёта сообщаем DeviceManager, что текущий
+                #    спектральный цикл закончен. Следующий цикл сможет
+                #    снова начаться через отдельный StartSpectre.
+
+                if spectrum_ready:
+
+                    if card.spectrum_start_monotonic is None:
+
+                        self.ui.textEdit.append(
+                            (
+                                "Помилка: неможливо визначити "
+                                "час спектрального циклу для "
+                                f"SN {sn}."
+                            )
+                        )
+
+                        return
+
+                    card.spectrum_elapsed_time = (
+                        time.monotonic()
+                        - card.spectrum_start_monotonic
+                    )
+
+                    if (
+                        not math.isfinite(
+                            card.spectrum_elapsed_time
+                        )
+                        or card.spectrum_elapsed_time <= 0.0
+                    ):
+
+                        self.ui.textEdit.append(
+                            (
+                                "Помилка: некоректний фактичний "
+                                "час накопичення спектру для "
+                                f"SN {sn}: "
+                                f"{card.spectrum_elapsed_time}"
+                            )
+                        )
+
+                        return
+
+                    card.calculate_activity()
+
+                    self.spectrum_cycle_finished.emit(
+                        sn
+                    )
+
+            # ========================================================
+            # НЕИЗВЕСТНЫЙ MODE
+            # ========================================================
+
+            else:
+
+                self.ui.textEdit.append(
+                    (
+                        "Помилка: невідомий режим "
+                        f"'{mode}' для SN {sn}."
+                    )
+                )
 
         except Exception as e:
-            self.ui.textEdit.append(f"Error parsing packet for {sn}: {e}\n-------------------")
+
+            # ========================================================
+            # ЗАЩИТА GUI-ПОТОКА
+            # ========================================================
+            #
+            # Ошибка обработки одного пакета не должна приводить
+            # к падению всего приложения.
+
+            self.ui.textEdit.append(
+                (
+                    "Error parsing packet for "
+                    f"{sn}: {e}\n"
+                    "-------------------"
+                )
+            )
 
 
 
-   
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
 
 
     def create_device_card(self, device):
@@ -3538,8 +5398,6 @@ class App(QObject):
         dialog.exec()
 
 
-
-
     def on_search_devices(self):
         """
             Запуск поиска приборов с блокировкой кнопки
@@ -3551,61 +5409,142 @@ class App(QObject):
 
         self.ui.textEdit.append("Пошук приладів...")
         # Запускаем поиск
-        self.search_devices.emit()     
+        self.search_devices.emit()           
 
 
 
     def _normalize_spectrum(self, spectrum, T):
         """
-            Корекція вхідного спектру на мертвий час та нормування по часу.
-            
-            Вхід:
-                spectrum - list[float] або list[int] масив 1023 каналів (k_i)
-                T - час вимірювання в секундах (напр. 3600)
-            
-            Вихід:
-                arr1 - list[float] нормований спектр (n_i = k_i / T1)
-            
-            Алгоритм:
-                1. sum_k = sum(spectrum) - сума імпульсів по всіх каналах
-                2. T1 = T - 0.00002 * sum_k - скоригований час
-                3. n_i = k_i / T1 - інтенсивність в кожному каналі
+        Корекція вхідного спектру на мертвий час та нормування по часу.
+
+        Формула консультанта:
+            sum_k = sum(k_i)
+            T1 = T - DEAD_TIME_COEFF * sum_k
+            n_i = k_i / T1
+
+        Повертає list[float] довжиною 1023 або None, якщо вхідні
+        дані не дозволяють виконати коректний розрахунок.
         """
-        sum_k = sum(spectrum)
-        T1 = T - self.DEAD_TIME_COEFF * sum_k
-        if T1 <= 0:
-            T1 = T  # захист від негативного часу
-        arr1 = [k / T1 for k in spectrum]
-        return arr1 
+
+        # ------------------------------------------------------------
+        # 1. ПЕРЕВІРКА ЧАСУ T
+        # ------------------------------------------------------------
+        try:
+            real_time = float(T)
+        except (TypeError, ValueError):
+            return None
+
+        if not math.isfinite(real_time) or real_time <= 0.0:
+            return None
+
+        # ------------------------------------------------------------
+        # 2. ПЕРЕВІРКА 1023 КАНАЛІВ
+        # ------------------------------------------------------------
+        if not isinstance(spectrum, (list, tuple, np.ndarray)):
+            return None
+
+        if len(spectrum) != 1023:
+            return None
+
+        checked = []
+
+        for value in spectrum:
+            try:
+                value_f = float(value)
+            except (TypeError, ValueError):
+                return None
+
+            # Сирі накопичені імпульси повинні бути кінцевими та
+            # не можуть бути від'ємними.
+            if not math.isfinite(value_f) or value_f < 0.0:
+                return None
+
+            checked.append(value_f)
+
+        # ------------------------------------------------------------
+        # 3. КОРЕКЦІЯ НА МЕРТВИЙ ЧАС
+        # ------------------------------------------------------------
+        sum_k = math.fsum(checked)
+        T1 = real_time - self.DEAD_TIME_COEFF * sum_k
+
+        # Якщо T1 <= 0, формула фізично/математично непридатна.
+        # Старий код мовчки підміняв T1 на T; тепер цього не робимо.
+        if not math.isfinite(T1) or T1 <= 0.0:
+            return None
+
+        # ------------------------------------------------------------
+        # 4. НОРМУВАННЯ ARR_1
+        # ------------------------------------------------------------
+        return [value / T1 for value in checked]
+
+
 
     def _subtract_background(self, arr1):
         """
-        Віднімання базового фону з нормованого спектру.
-        
-        Вхід:
-            arr1 - list[float] нормований спектр (після _normalize_spectrum)
-        
-        Вихід:
-            arr2 - list[float] спектр з віднятим фоном
-        
-        Алгоритм:
-            Для кожного каналу i: arr2[i] = arr1[i] - background[i]
-        
-        Примітка:
-            Файл фону завантажується з self.calibration_spectra["background"]
-            Якщо фон не завантажено - повертаємо arr1 без змін
+        Віднімає підготовлений консультантом фоновий спектр.
+
+        background.txt вже приведений до потрібного масштабу, тому
+        додатково нормувати його тут НЕ потрібно.
+
+        Повертає ARR_2 або None, якщо фон чи ARR_1 некоректні.
+        Розрахунок без фону не продовжується.
         """
+
+        # ------------------------------------------------------------
+        # 1. ПЕРЕВІРКА ARR_1
+        # ------------------------------------------------------------
+        if not isinstance(arr1, (list, tuple, np.ndarray)):
+            return None
+
+        if len(arr1) != 1023:
+            return None
+
+        arr1_checked = []
+        for value in arr1:
+            try:
+                value_f = float(value)
+            except (TypeError, ValueError):
+                return None
+
+            if not math.isfinite(value_f):
+                return None
+
+            arr1_checked.append(value_f)
+
+        # ------------------------------------------------------------
+        # 2. ОТРИМУЄМО ОБОВ'ЯЗКОВИЙ ФОНОВИЙ СПЕКТР
+        # ------------------------------------------------------------
         bg = self.calibration_spectra.get("background")
-        if bg is None or len(bg) < 1023:
-            # Якщо фону немає - повертаємо без змін
-            return arr1.copy()
-        
-        # Обрізаємо до 1023 каналів (якщо більше)
-        bg = bg[:1023]
-        
-        # Віднімаємо
-        arr2 = [arr1[i] - bg[i] for i in range(1023)]
-        return arr2
+
+        # load_calibration_spectra вже перевіряє точну довжину 1024,
+        # але тут залишаємо захист на випадок зміни даних у runtime.
+        if bg is None or not isinstance(bg, (list, tuple, np.ndarray)):
+            return None
+
+        if len(bg) != 1024:
+            return None
+
+        background = []
+        for value in bg[:1023]:
+            try:
+                value_f = float(value)
+            except (TypeError, ValueError):
+                return None
+
+            if not math.isfinite(value_f):
+                return None
+
+            background.append(value_f)
+
+        # ------------------------------------------------------------
+        # 3. ФОРМУЄМО ARR_2
+        # ------------------------------------------------------------
+        # Від'ємні значення ARR_2 допустимі як результат віднімання
+        # фону; штучно обрізати їх до нуля на цьому етапі не можна.
+        return [
+            arr1_checked[i] - background[i]
+            for i in range(1023)
+        ]
 
 
     def _calculate_window_sum(self, spectrum, start, end):
@@ -3667,61 +5606,54 @@ class App(QObject):
 
     def _load_base_spectrum(self, name):
         """
-        Завантаження базового спектру з self.calibration_spectra.
+        Повертає базовий спектр довжиною 1023 канали.
 
-        Вхід:
-            name - логічне ім'я спектру.
+        Для логічного імені "base_I" використовується файл
+        calibration/I-131.txt. Сам файл уже підготовлений консультантом
+        у потрібному масштабі та повторно не нормується.
 
-        Вихід:
-            list[float] - спектр довжиною 1023 каналів.
-            None - якщо необхідний спектр не знайдено.
-
-        Примітка:
-            У алгоритмах ідентифікації базовий спектр йоду
-            запитується під логічним ім'ям "base_I".
-
-            Фактичний файл у папці calibration має ім'я:
-                I-131.txt
-
-            Тому для "base_I" використовуємо спектр "I-131".
+        Якщо спектр відсутній або пошкоджений, повертається None.
+        Нульове доповнення короткого масиву більше не виконується.
         """
 
         # ------------------------------------------------------------
-        # 1. ВИЗНАЧАЄМО ФАКТИЧНЕ ІМ'Я СПЕКТРУ
+        # 1. ВИЗНАЧАЄМО ФАКТИЧНЕ ІМ'Я
         # ------------------------------------------------------------
-
-        spectrum_name = name
-
-        # Алгоритми груп B та reserve використовують логічне
-        # ім'я "base_I", але реальний файл називається I-131.txt.
-        if name == "base_I":
-            spectrum_name = "I-131"
+        spectrum_name = "I-131" if name == "base_I" else name
 
         # ------------------------------------------------------------
-        # 2. ОТРИМУЄМО СПЕКТР
+        # 2. ОТРИМУЄМО ЗАВАНТАЖЕНИЙ ЕТАЛОН
         # ------------------------------------------------------------
-
         spectrum = self.calibration_spectra.get(spectrum_name)
 
         if spectrum is None:
             return None
 
+        if not isinstance(spectrum, (list, tuple, np.ndarray)):
+            return None
+
+        # Калібрувальний файл повинен мати рівно 1024 значення.
+        if len(spectrum) != 1024:
+            return None
+
         # ------------------------------------------------------------
-        # 3. ПРИВОДИМО СПЕКТР ДО 1023 РОБОЧИХ КАНАЛІВ
+        # 3. ПОВЕРТАЄМО ТІЛЬКИ 1023 СПЕКТРАЛЬНІ КАНАЛИ
         # ------------------------------------------------------------
-        #
-        # 1024-е значення у файлі використовується як час набору,
-        # тому для спектральних розрахунків використовуються
-        # тільки перші 1023 значення.
+        result = []
 
-        if len(spectrum) >= 1023:
-            return list(spectrum[:1023])
+        for value in spectrum[:1023]:
+            try:
+                value_f = float(value)
+            except (TypeError, ValueError):
+                return None
 
-        # Теоретичний захист на випадок короткого масиву.
-        result = list(spectrum)
-        result.extend([0.0] * (1023 - len(result)))
+            if not math.isfinite(value_f):
+                return None
 
-        return result     
+            result.append(value_f)
+
+        return result
+     
 
     def _calculate_decay_coefficient(self, T, half_life_minutes):
         """
@@ -3769,138 +5701,445 @@ class App(QObject):
 
     def _identify_group_A(self, arr1, arr2, real_time, volume, history):
         """
-        Ідентифікація ізотопів для групи A (цистерни 1, 2).
-        
-        Вхід:
-            arr1 - list[float] нормований спектр (ARR_1) - до віднімання фону
-            arr2 - list[float] спектр після віднімання фону (ARR_2)
-            real_time - float час вимірювання в секундах (T)
-            volume - float об'єм цистерни в літрах
-            history - dict або None, історія попередніх вимірювань для Tc
-                    (очікується словник з ключами: "sum_F_arr1", "sum_F_arr2", "sum_Tc_arr2")
-        
-        Вихід:
-            dict з результатами:
-            {
-                "group": "A",
-                "isotopes": ["18F", "99mTc"],
-                "18F": {
-                    "activity": float,          # загальна активність, Бк
-                    "concentration": float,     # питома активність, Бк/л
-                    "activity_upper": float,    # верхня межа активності, Бк
-                    "activity_lower": float,    # нижня межа активності, Бк
-                    "conc_upper": float,        # верхня межа концентрації, Бк/л
-                    "conc_lower": float,        # нижня межа концентрації, Бк/л
-                    "detected": str,            # "Є" / "МОЖЕ БУТИ" / "НЕМАЄ"
-                    "sum_clean": float,         # сума по ARR_2
-                    "sum_raw": float,           # сума по ARR_1
-                    "limits": {"upper": float, "lower": float}
-                },
-                "99mTc": {
-                    ... аналогічно ...
-                },
-                "real_time": float,
-                "history_updated": dict        # оновлена історія для наступного виклику
-            }
+        Ідентифікація ізотопів для групи A (цистерни ZB1, ZB2).
+
+        Алгоритм реалізований за первинним описом "F, Tc":
+
+        ПЕРШИЙ ЦИКЛ
+        ------------
+        1. Для 18F результат розраховується одразу.
+        2. Для 99mTc результат ще НЕ видається.
+        3. Поточна площа Tc з ARR_2 запам'ятовується для другого циклу.
+        4. K_F та K_Tc обчислюються за фактичним T першого циклу
+           і фіксуються як константи для наступних циклів.
+
+        ДРУГИЙ ЦИКЛ
+        ------------
+        1. 18F розраховується звичайно.
+        2. 99mTc розраховується ОБОВ'ЯЗКОВО за формулою динаміки:
+               S_Tc =
+               (S_current - K_F * S_previous) /
+               (K_Tc - K_F)
+        3. Для другого циклу отриманий динамічний результат НЕ
+           замінюється прямою площею.
+        4. Після цього обчислюється відношення:
+               ratio = S_Tc_dynamic / S_current
+        5. Якщо ratio < 0.95, з третього циклу використовується
+           прямий метод.
+           Якщо ratio >= 0.95, з третього циклу продовжується
+           динамічний метод.
+           Значення рівно 0.95 за погодженим правилом відноситься
+           до динамічного режиму.
+
+        ТРЕТІЙ ЦИКЛ І ДАЛІ
+        ------------------
+        1. Якщо tc_use_direct == True:
+               S_Tc = S_current
+        2. Інакше:
+               S_Tc =
+               (S_current - K_F * S_previous) /
+               (K_Tc - K_F)
+
+        ВАЖЛИВО
+        -------
+        - K_F та K_Tc після першого циклу не перераховуються.
+        - previous_Tc_arr2 після кожного завершеного циклу
+          оновлюється поточною площею Tc з ARR_2.
+        - Якщо історія пошкоджена або неповна, алгоритм безпечно
+          починає нову "першу годину", а не використовує
+          некоректні дані.
+        - У першому циклі 99mTc повертається з available=False.
+          Це означає: результат Tc ще не отриманий, а не "Tc немає".
         """
-        
-        # --- 1. Розрахунок для фтору (18F) ---
+
+        # ============================================================
+        # 0. БАЗОВА ПЕРЕВІРКА ВХІДНИХ ДАНИХ
+        # ============================================================
+
+        if len(arr1) != 1023 or len(arr2) != 1023:
+            raise ValueError(
+                "Група A: ARR_1 та ARR_2 повинні містити рівно 1023 канали."
+            )
+
+        try:
+            real_time = float(real_time)
+            volume = float(volume)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "Група A: T та об'єм повинні бути числовими."
+            ) from exc
+
+        if not math.isfinite(real_time) or real_time <= 0.0:
+            raise ValueError(
+                f"Група A: некоректний час вимірювання T={real_time}."
+            )
+
+        if not math.isfinite(volume) or volume < 0.0:
+            raise ValueError(
+                f"Група A: некоректний об'єм цистерни={volume}."
+            )
+
+        # ============================================================
+        # 1. РОЗРАХУНОК 18F
+        # ============================================================
+
         isotope_F = "18F"
         window_F = self.GROUP_A_WINDOWS[isotope_F]
         coeff_F = self.GROUP_A_COEFFICIENTS[isotope_F]
         sigma_F = self.GROUP_A_SIGMA[isotope_F]
-        
-        sum_F_clean = self._calculate_window_sum(arr2, window_F[0], window_F[1])
-        sum_F_raw = self._calculate_window_sum(arr1, window_F[0], window_F[1])
-        
-        limits_F = self._calculate_limits(sum_F_clean, sum_F_raw, real_time, sigma_F)
-        
+
+        # Площа з ARR_2 — після віднімання фону.
+        sum_F_clean = self._calculate_window_sum(
+            arr2,
+            window_F[0],
+            window_F[1]
+        )
+
+        # Площа з ARR_1 — для статистичних меж.
+        sum_F_raw = self._calculate_window_sum(
+            arr1,
+            window_F[0],
+            window_F[1]
+        )
+
+        limits_F = self._calculate_limits(
+            sum_F_clean,
+            sum_F_raw,
+            real_time,
+            sigma_F
+        )
+
+        # Питома активність 18F.
         conc_F = sum_F_clean * coeff_F
+
+        # Загальна активність 18F.
         activity_F = conc_F * volume
-        
+
+        # Межі питомої активності.
         conc_F_upper = limits_F["upper"] * coeff_F
         conc_F_lower = limits_F["lower"] * coeff_F
+
+        # Межі загальної активності.
         activity_F_upper = conc_F_upper * volume
         activity_F_lower = conc_F_lower * volume
-        
-        if limits_F["upper"] > 0 and limits_F["lower"] > 0:
+
+        # Ідентифікація 18F за положенням верхньої/нижньої межі.
+        if limits_F["upper"] > 0.0 and limits_F["lower"] > 0.0:
             detected_F = "Є"
-        elif limits_F["upper"] > 0 and limits_F["lower"] <= 0:
+        elif limits_F["upper"] > 0.0 and limits_F["lower"] <= 0.0:
             detected_F = "МОЖЕ БУТИ"
         else:
             detected_F = "НЕМАЄ"
-        
-        # --- 2. Розрахунок для технецію (99mTc) ---
+
+        # ============================================================
+        # 2. ПОТОЧНІ ПЛОЩІ 99mTc
+        # ============================================================
+
         isotope_Tc = "99mTc"
         window_Tc = self.GROUP_A_WINDOWS[isotope_Tc]
         coeff_Tc = self.GROUP_A_COEFFICIENTS[isotope_Tc]
         sigma_Tc = self.GROUP_A_SIGMA[isotope_Tc]
-        
-        sum_Tc_clean_current = self._calculate_window_sum(arr2, window_Tc[0], window_Tc[1])
-        sum_Tc_raw_current = self._calculate_window_sum(arr1, window_Tc[0], window_Tc[1])
-        
-        if history is None or not history:
-            # Перша година
-            sum_Tc_clean = sum_Tc_clean_current
-            sum_Tc_raw = sum_Tc_raw_current
-            
-            history_updated = {
-                "sum_F_arr1": sum_F_raw,
-                "sum_F_arr2": sum_F_clean,
-                "sum_Tc_arr2": sum_Tc_clean_current,
-                "sum_Tc_arr1": sum_Tc_raw_current,
-                "hour": 1
+
+        # Поточна площа Tc після віднімання фону.
+        sum_Tc_clean_current = self._calculate_window_sum(
+            arr2,
+            window_Tc[0],
+            window_Tc[1]
+        )
+
+        # Поточна площа Tc з ARR_1.
+        # Вона використовується для статистичної похибки
+        # саме поточного циклу.
+        sum_Tc_raw_current = self._calculate_window_sum(
+            arr1,
+            window_Tc[0],
+            window_Tc[1]
+        )
+
+        # ============================================================
+        # 3. ПЕРЕВІРКА ІСТОРІЇ
+        # ============================================================
+        #
+        # Історія повинна бути придатна для продовження динамічного
+        # алгоритму. Якщо вона пошкоджена, не намагаємося вгадувати
+        # дані — починаємо новий перший цикл.
+
+        history_valid = False
+
+        if isinstance(history, dict) and history:
+            required_keys = {
+                "cycle",
+                "K_F",
+                "K_Tc",
+                "previous_Tc_arr2",
+                "tc_use_direct"
             }
-        else:
-            # Наступні години
-            K_F = self._calculate_decay_coefficient(real_time, self.GROUP_A_HALF_LIFE[isotope_F])
-            K_Tc = self._calculate_decay_coefficient(real_time, self.GROUP_A_HALF_LIFE[isotope_Tc])
-            
-            prev_sum_Tc_arr2 = history["sum_Tc_arr2"]
-            
+
+            if required_keys.issubset(history.keys()):
+                try:
+                    hist_cycle = int(history["cycle"])
+                    hist_K_F = float(history["K_F"])
+                    hist_K_Tc = float(history["K_Tc"])
+                    hist_prev_Tc = float(history["previous_Tc_arr2"])
+
+                    # tc_use_direct на першому циклі ще не визначений
+                    # і тому може бути None.
+                    hist_mode = history["tc_use_direct"]
+
+                    history_valid = (
+                        hist_cycle >= 1
+                        and math.isfinite(hist_K_F)
+                        and math.isfinite(hist_K_Tc)
+                        and math.isfinite(hist_prev_Tc)
+                        and hist_mode in (None, True, False)
+                    )
+
+                except (TypeError, ValueError):
+                    history_valid = False
+
+        # ============================================================
+        # 4. ПЕРШИЙ ЦИКЛ
+        # ============================================================
+
+        if not history_valid:
+
+            # Коефіцієнти розпаду розраховуються ОДИН РАЗ
+            # за фактичним T першого циклу.
+            K_F = self._calculate_decay_coefficient(
+                real_time,
+                self.GROUP_A_HALF_LIFE[isotope_F]
+            )
+
+            K_Tc = self._calculate_decay_coefficient(
+                real_time,
+                self.GROUP_A_HALF_LIFE[isotope_Tc]
+            )
+
+            if (
+                not math.isfinite(K_F)
+                or not math.isfinite(K_Tc)
+            ):
+                raise ValueError(
+                    "Група A: не вдалося отримати коректні K_F/K_Tc."
+                )
+
+            # Знаменник знадобиться з другого циклу.
             denom = K_Tc - K_F
+
             if abs(denom) < 1e-12:
-                sum_Tc_clean = sum_Tc_clean_current
-                sum_Tc_raw = sum_Tc_raw_current
-            else:
-                sum_Tc_clean = (sum_Tc_clean_current - K_F * prev_sum_Tc_arr2) / denom
-                sum_Tc_raw = sum_Tc_raw_current
-            
-            # Перевірка умови переходу до прямих площ
-            if sum_Tc_clean_current > 0 and (sum_Tc_clean / sum_Tc_clean_current) < self.GROUP_A_TC_THRESHOLD:
-                sum_Tc_clean = sum_Tc_clean_current
-                sum_Tc_raw = sum_Tc_raw_current
-            
+                raise ValueError(
+                    "Група A: K_Tc - K_F занадто малий для "
+                    "динамічного розрахунку Tc."
+                )
+
             history_updated = {
-                "sum_F_arr1": sum_F_raw,
-                "sum_F_arr2": sum_F_clean,
-                "sum_Tc_arr2": sum_Tc_clean_current,
-                "sum_Tc_arr1": sum_Tc_raw_current,
-                "hour": history.get("hour", 0) + 1
+                # Номер завершеного спектрального циклу.
+                "cycle": 1,
+
+                # Константні коефіцієнти, отримані за перший цикл.
+                "K_F": K_F,
+                "K_Tc": K_Tc,
+
+                # Поточна ARR_2 зона Tc стає попередньою
+                # для другого циклу.
+                "previous_Tc_arr2": sum_Tc_clean_current,
+
+                # Після першого циклу режим ще не визначений.
+                # Рішення приймається лише після другого циклу.
+                "tc_use_direct": None,
+
+                # Саме відношення також з'явиться лише
+                # після другого циклу.
+                "tc_ratio": None,
+
+                # Діагностично зберігаємо T першого циклу,
+                # за яким були отримані K.
+                "reference_time": real_time
             }
-        
-        limits_Tc = self._calculate_limits(sum_Tc_clean, sum_Tc_raw, real_time, sigma_Tc)
-        
+
+            # У першому циклі Tc ЩЕ НЕ РОЗРАХОВУЄТЬСЯ.
+            #
+            # available=False принципово відрізняє стан
+            # "результату ще немає" від реального результату
+            # "активність = 0".
+            result = {
+                "group": "A",
+                "isotopes": ["18F", "99mTc"],
+
+                "18F": {
+                    "available": True,
+                    "activity": activity_F,
+                    "concentration": conc_F,
+                    "activity_upper": activity_F_upper,
+                    "activity_lower": activity_F_lower,
+                    "conc_upper": conc_F_upper,
+                    "conc_lower": conc_F_lower,
+                    "detected": detected_F,
+                    "sum_clean": sum_F_clean,
+                    "sum_raw": sum_F_raw,
+                    "limits": limits_F
+                },
+
+                "99mTc": {
+                    "available": False,
+                    "activity": None,
+                    "concentration": None,
+                    "activity_upper": None,
+                    "activity_lower": None,
+                    "conc_upper": None,
+                    "conc_lower": None,
+                    "detected": None,
+
+                    # Поточні площі залишаємо для діагностики,
+                    # але не трактуємо як результат Tc.
+                    "sum_clean": sum_Tc_clean_current,
+                    "sum_raw": sum_Tc_raw_current,
+
+                    "limits": None,
+                    "delay_cycles": 1
+                },
+
+                "real_time": real_time,
+                "history_updated": history_updated
+            }
+
+            return result
+
+        # ============================================================
+        # 5. ДРУГИЙ ТА НАСТУПНІ ЦИКЛИ
+        # ============================================================
+
+        cycle = hist_cycle + 1
+        K_F = hist_K_F
+        K_Tc = hist_K_Tc
+        prev_sum_Tc_arr2 = hist_prev_Tc
+
+        denom = K_Tc - K_F
+
+        if abs(denom) < 1e-12:
+            raise ValueError(
+                "Група A: K_Tc - K_F занадто малий для "
+                "динамічного розрахунку Tc."
+            )
+
+        # ------------------------------------------------------------
+        # 5.1. Другий цикл
+        # ------------------------------------------------------------
+        #
+        # Другий цикл ЗАВЖДИ рахуємо за динамічною формулою.
+        # Порогове відношення визначає тільки алгоритм
+        # ТРЕТЬОГО та наступних циклів.
+
+        if cycle == 2:
+
+            sum_Tc_clean = (
+                sum_Tc_clean_current
+                - K_F * prev_sum_Tc_arr2
+            ) / denom
+
+            # Відношення п.11.
+            #
+            # Якщо поточна площа дорівнює нулю, математично
+            # відношення визначити неможливо.
+            #
+            # У такому випадку безпечніше не перемикатися
+            # у прямий режим автоматично; залишаємо dynamic.
+            if abs(sum_Tc_clean_current) > 1e-12:
+                tc_ratio = (
+                    sum_Tc_clean
+                    / sum_Tc_clean_current
+                )
+            else:
+                tc_ratio = None
+
+            if (
+                tc_ratio is not None
+                and math.isfinite(tc_ratio)
+                and tc_ratio < self.GROUP_A_TC_THRESHOLD
+            ):
+                tc_use_direct = True
+            else:
+                # За погодженим правилом ratio == 0.95
+                # належить до динамічного режиму.
+                tc_use_direct = False
+
+        # ------------------------------------------------------------
+        # 5.2. Третій цикл і далі
+        # ------------------------------------------------------------
+        else:
+
+            tc_use_direct = bool(hist_mode)
+            tc_ratio = history.get("tc_ratio")
+
+            if tc_use_direct:
+                # Прямий метод: беремо поточну площу ARR_2.
+                sum_Tc_clean = sum_Tc_clean_current
+
+            else:
+                # Динамічний метод.
+                sum_Tc_clean = (
+                    sum_Tc_clean_current
+                    - K_F * prev_sum_Tc_arr2
+                ) / denom
+
+        # ============================================================
+        # 6. МЕЖІ, АКТИВНІСТЬ ТА ІДЕНТИФІКАЦІЯ Tc
+        # ============================================================
+        #
+        # Для статистичної складової використовується ARR_1
+        # ПОТОЧНОГО циклу, як указано в первинному алгоритмі.
+
+        limits_Tc = self._calculate_limits(
+            sum_Tc_clean,
+            sum_Tc_raw_current,
+            real_time,
+            sigma_Tc
+        )
+
         conc_Tc = sum_Tc_clean * coeff_Tc
         activity_Tc = conc_Tc * volume
-        
+
         conc_Tc_upper = limits_Tc["upper"] * coeff_Tc
         conc_Tc_lower = limits_Tc["lower"] * coeff_Tc
+
         activity_Tc_upper = conc_Tc_upper * volume
         activity_Tc_lower = conc_Tc_lower * volume
-        
-        if limits_Tc["upper"] > 0 and limits_Tc["lower"] > 0:
+
+        if limits_Tc["upper"] > 0.0 and limits_Tc["lower"] > 0.0:
             detected_Tc = "Є"
-        elif limits_Tc["upper"] > 0 and limits_Tc["lower"] <= 0:
+        elif limits_Tc["upper"] > 0.0 and limits_Tc["lower"] <= 0.0:
             detected_Tc = "МОЖЕ БУТИ"
         else:
             detected_Tc = "НЕМАЄ"
-        
-        # --- Результат ---
+
+        # ============================================================
+        # 7. ОНОВЛЮЄМО ІСТОРІЮ
+        # ============================================================
+        #
+        # Поточна ARR_2 зона Tc повинна стати попередньою
+        # для наступного циклу — незалежно від того, який режим
+        # (direct/dynamic) був використаний для результату.
+
+        history_updated = {
+            "cycle": cycle,
+            "K_F": K_F,
+            "K_Tc": K_Tc,
+            "previous_Tc_arr2": sum_Tc_clean_current,
+            "tc_use_direct": tc_use_direct,
+            "tc_ratio": tc_ratio,
+            "reference_time": history.get("reference_time", real_time)
+        }
+
+        # ============================================================
+        # 8. ФОРМУЄМО РЕЗУЛЬТАТ
+        # ============================================================
+
         result = {
             "group": "A",
             "isotopes": ["18F", "99mTc"],
+
             "18F": {
+                "available": True,
                 "activity": activity_F,
                 "concentration": conc_F,
                 "activity_upper": activity_F_upper,
@@ -3912,7 +6151,9 @@ class App(QObject):
                 "sum_raw": sum_F_raw,
                 "limits": limits_F
             },
+
             "99mTc": {
+                "available": True,
                 "activity": activity_Tc,
                 "concentration": conc_Tc,
                 "activity_upper": activity_Tc_upper,
@@ -3921,166 +6162,376 @@ class App(QObject):
                 "conc_lower": conc_Tc_lower,
                 "detected": detected_Tc,
                 "sum_clean": sum_Tc_clean,
-                "sum_raw": sum_Tc_raw,
+                "sum_raw": sum_Tc_raw_current,
                 "limits": limits_Tc,
-                "delay_hours": 1
+                "delay_cycles": 1,
+
+                # Діагностичні поля, корисні для перевірки
+                # алгоритму на реальних даних.
+                "tc_ratio": tc_ratio,
+                "tc_use_direct": tc_use_direct
             },
+
             "real_time": real_time,
             "history_updated": history_updated
         }
-        
+
         return result
+
+
 
 
     def _identify_group_B(self, arr1, arr2, real_time, volume):
         """
-        Ідентифікація ізотопів для групи B (цистерни 4–9).
-        Ізотопи: 133I, 177Lu, 90Y.
-        Порядок розрахунку: 90Y → 133I (з базовим спектром) → 177Lu.
-        
-        Вхід:
-            arr1 - list[float] нормований спектр (ARR_1) - до віднімання фону
-            arr2 - list[float] спектр після віднімання фону (ARR_2)
-            real_time - float час вимірювання в секундах (T)
-            volume - float об'єм цистерни в літрах
-        
-        Вихід:
-            dict з результатами:
-            {
-                "group": "B",
-                "isotopes": ["133I", "177Lu", "90Y"],
-                "133I": {
-                    "activity": float,
-                    "concentration": float,
-                    "activity_upper": float,
-                    "activity_lower": float,
-                    "conc_upper": float,
-                    "conc_lower": float,
-                    "detected": str,           # "Є" / "МОЖЕ БУТИ" / "НЕМАЄ"
-                    "sum_clean": float,
-                    "sum_raw": float,
-                    "limits": {"upper": float, "lower": float}
-                },
-                "177Lu": { ... аналогічно ... },
-                "90Y": { ... аналогічно ... },
-                "real_time": float
-            }
+        Ідентифікація ізотопів для групи B (цистерни ZB4–ZB9).
+
+        Ізотопи:
+            - 90Y
+            - 133I
+            - 177Lu
+
+        Алгоритм виконується строго в послідовності:
+
+            1. 90Y по ARR_2.
+            2. Масштабування базового спектра I-131 по зоні 90–150.
+            3. Розрахунок 133I по масштабованому спектру ARR_3.
+            4. Формування ARR_4 = ARR_2 - ARR_3.
+            5. Розрахунок 177Lu по ARR_4.
+
+        ВАЖЛИВО:
+
+            - розрахунковий час T для алгоритму групи B фіксований
+            і дорівнює 3600 секунд;
+
+            - ARR_1 повинен бути вже підготовлений у identify_isotopes_alim()
+            з використанням цього ж T = 3600 с;
+
+            - базовий спектр I-131.txt є обов'язковим;
+
+            - якщо базовий спектр відсутній або некоректний,
+            розрахунок групи B не продовжується;
+
+            - від'ємні значення ARR_2, ARR_3, ARR_4, площ та активностей
+            допустимі та НЕ обрізаються до нуля;
+
+            - для статистичних меж 133I під квадратним коренем
+            використовується сума каналів 90–150 з ARR_1,
+            що окремо підтверджено консультантом;
+
+            - попередні спектральні цикли для групи B не використовуються.
         """
-        
-        # --- 1. Розрахунок для ітрію (90Y) ---
+
+        # ============================================================
+        # 0. БАЗОВА ПЕРЕВІРКА ВХІДНИХ ДАНИХ
+        # ============================================================
+
+        if len(arr1) != 1023 or len(arr2) != 1023:
+            self.ui.textEdit.append(
+                "Помилка групи B: ARR_1 та ARR_2 повинні містити "
+                "рівно 1023 канали."
+            )
+            return None
+
+        try:
+            volume = float(volume)
+        except (TypeError, ValueError):
+            self.ui.textEdit.append(
+                "Помилка групи B: некоректний об'єм цистерни."
+            )
+            return None
+
+        if not math.isfinite(volume) or volume <= 0.0:
+            self.ui.textEdit.append(
+                f"Помилка групи B: некоректний об'єм цистерни: {volume}."
+            )
+            return None
+
+        # ------------------------------------------------------------
+        # Для алгоритму групи B консультант підтвердив:
+        #
+        #     T = 3600 секунд.
+        #
+        # Фактичний час ПК може відрізнятися на декілька секунд,
+        # але у формулах алгоритму використовується саме 3600.
+        # ------------------------------------------------------------
+
+        calculation_time = 3600.0
+
+        # ============================================================
+        # 1. 90Y
+        # ============================================================
+
         isotope_Y = "90Y"
         window_Y = self.GROUP_B_WINDOWS[isotope_Y]
         coeff_Y = self.GROUP_B_COEFFICIENTS[isotope_Y]
         sigma_Y = self.GROUP_B_SIGMA[isotope_Y]
-        
-        sum_Y_clean = self._calculate_window_sum(arr2, window_Y[0], window_Y[1])
-        sum_Y_raw = self._calculate_window_sum(arr1, window_Y[0], window_Y[1])
-        
-        limits_Y = self._calculate_limits(sum_Y_clean, sum_Y_raw, real_time, sigma_Y)
-        
+
+        # Центральна площа 90Y береться з ARR_2.
+        sum_Y_clean = self._calculate_window_sum(
+            arr2,
+            window_Y[0],
+            window_Y[1]
+        )
+
+        # Для статистичної похибки використовується ARR_1.
+        sum_Y_raw = self._calculate_window_sum(
+            arr1,
+            window_Y[0],
+            window_Y[1]
+        )
+
+        limits_Y = self._calculate_limits(
+            sum_Y_clean,
+            sum_Y_raw,
+            calculation_time,
+            sigma_Y
+        )
+
+        # Питома активність.
         conc_Y = sum_Y_clean * coeff_Y
+
+        # Загальна активність.
         activity_Y = conc_Y * volume
-        
+
+        # Межі питомої активності.
         conc_Y_upper = limits_Y["upper"] * coeff_Y
         conc_Y_lower = limits_Y["lower"] * coeff_Y
+
+        # Межі загальної активності.
         activity_Y_upper = conc_Y_upper * volume
         activity_Y_lower = conc_Y_lower * volume
-        
-        if limits_Y["upper"] > 0 and limits_Y["lower"] > 0:
+
+        # Правило ідентифікації однакове для всіх алгоритмів.
+        if limits_Y["upper"] > 0.0 and limits_Y["lower"] > 0.0:
             detected_Y = "Є"
-        elif limits_Y["upper"] > 0 and limits_Y["lower"] <= 0:
+
+        elif limits_Y["upper"] > 0.0 and limits_Y["lower"] <= 0.0:
             detected_Y = "МОЖЕ БУТИ"
+
         else:
             detected_Y = "НЕМАЄ"
-        
-        # --- 2. Розрахунок для йоду (133I) з використанням базового спектру ---
+
+        # ============================================================
+        # 2. 133I — БАЗОВИЙ СПЕКТР
+        # ============================================================
+
         isotope_I = "133I"
         window_I = self.GROUP_B_WINDOWS[isotope_I]
         coeff_I = self.GROUP_B_COEFFICIENTS[isotope_I]
         sigma_I = self.GROUP_B_SIGMA[isotope_I]
-        
-        # Завантажуємо базовий спектр йоду (очікується файл "base_I" в self.calibration_spectra)
+
+        # Базовий спектр I-131 є ОБОВ'ЯЗКОВИМ.
+        #
+        # За відповіддю консультанта не допускається резервний
+        # прямий розрахунок йоду без I-131.txt.
         base_spectrum = self._load_base_spectrum("base_I")
+
         if base_spectrum is None:
-            # Якщо базовий спектр відсутній, використовуємо пряму площу без масштабування
-            sum_I_clean = self._calculate_window_sum(arr2, window_I[0], window_I[1])
-            sum_I_raw = self._calculate_window_sum(arr1, window_I[0], window_I[1])
-            limits_I = self._calculate_limits(sum_I_clean, sum_I_raw, real_time, sigma_I)
-            arr3 = None
-        else:
-            # Обчислюємо площу базового спектру у вікні I
-            sum_base_I = self._calculate_window_sum(base_spectrum, window_I[0], window_I[1])
-            if sum_base_I <= 0:
-                # Якщо базова площа нульова — масштабування неможливе
-                sum_I_clean = self._calculate_window_sum(arr2, window_I[0], window_I[1])
-                sum_I_raw = self._calculate_window_sum(arr1, window_I[0], window_I[1])
-                limits_I = self._calculate_limits(sum_I_clean, sum_I_raw, real_time, sigma_I)
-                arr3 = None
-            else:
-                # Коефіцієнт масштабування: (площа I з ARR_2) / (площа базового I)
-                sum_I_clean = self._calculate_window_sum(arr2, window_I[0], window_I[1])
-                scale = sum_I_clean / sum_base_I
-                
-                # Масштабуємо базовий спектр (ARR_3 = base * scale)
-                arr3 = [val * scale for val in base_spectrum]
-                
-                # Площа I з масштабованого базового спектру (ARR_3)
-                sum_I_clean = self._calculate_window_sum(arr3, window_I[0], window_I[1])
-                sum_I_raw = self._calculate_window_sum(arr1, window_I[0], window_I[1])
-                
-                limits_I = self._calculate_limits(sum_I_clean, sum_I_raw, real_time, sigma_I)
-        
+            self.ui.textEdit.append(
+                "Помилка групи B: базовий спектр I-131.txt "
+                "відсутній або пошкоджений. "
+                "Розрахунок групи B скасовано."
+            )
+            return None
+
+        if len(base_spectrum) != 1023:
+            self.ui.textEdit.append(
+                "Помилка групи B: базовий спектр I-131 "
+                "повинен містити рівно 1023 спектральні канали."
+            )
+            return None
+
+        # ============================================================
+        # 3. КОЕФІЦІЄНТ МАСШТАБУВАННЯ ЙОДУ
+        # ============================================================
+
+        # Для групи B і чисельник, і знаменник коефіцієнта
+        # масштабування беруться у вікні 90–150.
+        sum_I_arr2 = self._calculate_window_sum(
+            arr2,
+            window_I[0],
+            window_I[1]
+        )
+
+        sum_base_I = self._calculate_window_sum(
+            base_spectrum,
+            window_I[0],
+            window_I[1]
+        )
+
+        # За словами консультанта базовий спектр незмінний,
+        # тому його площа 90–150 у штатному стані не повинна
+        # бути нульовою або від'ємною.
+        #
+        # Якщо це все-таки сталося, це означає пошкодження
+        # калібрувальних даних. Підміняти алгоритм іншим
+        # способом розрахунку заборонено.
+        if (
+            not math.isfinite(sum_base_I)
+            or sum_base_I <= 0.0
+        ):
+            self.ui.textEdit.append(
+                "Помилка групи B: некоректна площа базового "
+                f"спектра I-131 у каналах 90–150: {sum_base_I}. "
+                "Розрахунок скасовано."
+            )
+            return None
+
+        # Чисельник може бути додатним, нульовим або від'ємним.
+        #
+        # Консультант прямо підтвердив, що його не потрібно
+        # обмежувати нулем або брати по модулю.
+        scale_I = sum_I_arr2 / sum_base_I
+
+        if not math.isfinite(scale_I):
+            self.ui.textEdit.append(
+                "Помилка групи B: отримано некоректний коефіцієнт "
+                f"масштабування I-131: {scale_I}."
+            )
+            return None
+
+        # ============================================================
+        # 4. ARR_3 — МАСШТАБОВАНИЙ БАЗОВИЙ СПЕКТР ЙОДУ
+        # ============================================================
+
+        arr3 = [
+            value * scale_I
+            for value in base_spectrum
+        ]
+
+        # Від'ємні значення ARR_3 допустимі.
+        if any(not math.isfinite(value) for value in arr3):
+            self.ui.textEdit.append(
+                "Помилка групи B: ARR_3 містить некоректні "
+                "числові значення."
+            )
+            return None
+
+        # ============================================================
+        # 5. ПЛОЩА ТА МЕЖІ 133I
+        # ============================================================
+
+        # Центральна площа 133I визначається вже по ARR_3.
+        sum_I_clean = self._calculate_window_sum(
+            arr3,
+            window_I[0],
+            window_I[1]
+        )
+
+        # ВАЖЛИВО:
+        #
+        # консультант окремо підтвердив, що під квадратним
+        # коренем для статистичних границь йоду потрібно
+        # використовувати суму 90–150 саме з ARR_1.
+        sum_I_raw = self._calculate_window_sum(
+            arr1,
+            window_I[0],
+            window_I[1]
+        )
+
+        limits_I = self._calculate_limits(
+            sum_I_clean,
+            sum_I_raw,
+            calculation_time,
+            sigma_I
+        )
+
         conc_I = sum_I_clean * coeff_I
         activity_I = conc_I * volume
-        
+
         conc_I_upper = limits_I["upper"] * coeff_I
         conc_I_lower = limits_I["lower"] * coeff_I
+
         activity_I_upper = conc_I_upper * volume
         activity_I_lower = conc_I_lower * volume
-        
-        if limits_I["upper"] > 0 and limits_I["lower"] > 0:
+
+        if limits_I["upper"] > 0.0 and limits_I["lower"] > 0.0:
             detected_I = "Є"
-        elif limits_I["upper"] > 0 and limits_I["lower"] <= 0:
+
+        elif limits_I["upper"] > 0.0 and limits_I["lower"] <= 0.0:
             detected_I = "МОЖЕ БУТИ"
+
         else:
             detected_I = "НЕМАЄ"
-        
-        # --- 3. Розрахунок для лютецію (177Lu) після віднімання масштабованого йоду ---
+
+        # ============================================================
+        # 6. ARR_4 = ARR_2 - ARR_3
+        # ============================================================
+
+        # Ніякого fallback ARR_4 = ARR_2 більше немає.
+        #
+        # Якщо ARR_3 не вдалося отримати, метод уже завершився вище.
+        arr4 = [
+            arr2[i] - arr3[i]
+            for i in range(1023)
+        ]
+
+        # Від'ємні значення ARR_4 дозволені консультантом.
+        if any(not math.isfinite(value) for value in arr4):
+            self.ui.textEdit.append(
+                "Помилка групи B: ARR_4 містить некоректні "
+                "числові значення."
+            )
+            return None
+
+        # ============================================================
+        # 7. 177Lu
+        # ============================================================
+
         isotope_Lu = "177Lu"
         window_Lu = self.GROUP_B_WINDOWS[isotope_Lu]
         coeff_Lu = self.GROUP_B_COEFFICIENTS[isotope_Lu]
         sigma_Lu = self.GROUP_B_SIGMA[isotope_Lu]
-        
-        # Формуємо спектр ARR_4 = ARR_2 - ARR_3 (якщо arr3 існує)
-        if arr3 is not None:
-            arr4 = [arr2[i] - arr3[i] for i in range(len(arr2))]
-        else:
-            arr4 = arr2  # якщо масштабованого йоду немає, використовуємо ARR_2 без змін
-        
-        sum_Lu_clean = self._calculate_window_sum(arr4, window_Lu[0], window_Lu[1])
-        sum_Lu_raw = self._calculate_window_sum(arr1, window_Lu[0], window_Lu[1])
-        
-        limits_Lu = self._calculate_limits(sum_Lu_clean, sum_Lu_raw, real_time, sigma_Lu)
-        
+
+        # Центральна площа Lu береться з ARR_4.
+        sum_Lu_clean = self._calculate_window_sum(
+            arr4,
+            window_Lu[0],
+            window_Lu[1]
+        )
+
+        # Для статистичної складової використовується ARR_1.
+        sum_Lu_raw = self._calculate_window_sum(
+            arr1,
+            window_Lu[0],
+            window_Lu[1]
+        )
+
+        limits_Lu = self._calculate_limits(
+            sum_Lu_clean,
+            sum_Lu_raw,
+            calculation_time,
+            sigma_Lu
+        )
+
         conc_Lu = sum_Lu_clean * coeff_Lu
         activity_Lu = conc_Lu * volume
-        
+
         conc_Lu_upper = limits_Lu["upper"] * coeff_Lu
         conc_Lu_lower = limits_Lu["lower"] * coeff_Lu
+
         activity_Lu_upper = conc_Lu_upper * volume
         activity_Lu_lower = conc_Lu_lower * volume
-        
-        if limits_Lu["upper"] > 0 and limits_Lu["lower"] > 0:
+
+        if limits_Lu["upper"] > 0.0 and limits_Lu["lower"] > 0.0:
             detected_Lu = "Є"
-        elif limits_Lu["upper"] > 0 and limits_Lu["lower"] <= 0:
+
+        elif limits_Lu["upper"] > 0.0 and limits_Lu["lower"] <= 0.0:
             detected_Lu = "МОЖЕ БУТИ"
+
         else:
             detected_Lu = "НЕМАЄ"
-        
-        # --- Результат ---
+
+        # ============================================================
+        # 8. ФОРМУЄМО РЕЗУЛЬТАТ
+        # ============================================================
+
         result = {
             "group": "B",
+
+            # Порядок тут залишаємо сумісним з поточним GUI / Bridge.
             "isotopes": ["133I", "177Lu", "90Y"],
+
             "133I": {
                 "activity": activity_I,
                 "concentration": conc_I,
@@ -4093,6 +6544,7 @@ class App(QObject):
                 "sum_raw": sum_I_raw,
                 "limits": limits_I
             },
+
             "177Lu": {
                 "activity": activity_Lu,
                 "concentration": conc_Lu,
@@ -4105,6 +6557,7 @@ class App(QObject):
                 "sum_raw": sum_Lu_raw,
                 "limits": limits_Lu
             },
+
             "90Y": {
                 "activity": activity_Y,
                 "concentration": conc_Y,
@@ -4117,459 +6570,2453 @@ class App(QObject):
                 "sum_raw": sum_Y_raw,
                 "limits": limits_Y
             },
-            "real_time": real_time
+
+            # Фактичний час ПК залишаємо як діагностичну інформацію.
+            "real_time": real_time,
+
+            # Додатково явно фіксуємо час, який використаний
+            # у математичних формулах.
+            "calculation_time": calculation_time,
+
+            "components": {
+                "iodine_scaled": arr3,
+                "after_iodine_subtraction": arr4
+            }
         }
-        
+
         return result
 
-    def _identify_group_reserve(self, arr1, arr2, real_time, volume, history):
+
+
+    def _identify_group_reserve(
+        self,
+        arr1,
+        arr2,
+        real_time,
+        volume,
+        history,
+        hour_valid=True,
+        invalid_reason=None
+    ):
         """
-        Ідентифікація ізотопів для резервної цистерни (цистерна 3).
-        Усі 5 ізотопів: 18F, 99mTc, 133I, 177Lu, 90Y.
-        
-        Порядок розрахунку:
-            1. 90Y (371–820)
-            2. 133I (базове окно 115–150 для масштабування, фінальне 90–150)
-            3. Віднімання масштабованого I
-            4. 177Lu (63–89)
-            5. 18F (161–204)
-            6. 99mTc (12–64, 1 сигма, динаміка з затримкою 6 годин)
-        
-        Вхід:
-            arr1 - list[float] нормований спектр (ARR_1) - до віднімання фону
-            arr2 - list[float] спектр після віднімання фону (ARR_2)
-            real_time - float час вимірювання в секундах (T)
-            volume - float об'єм цистерни в літрах
-            history - dict або None, історія для Tc:
-                {
-                    "hours": [sum_Tc_clean, ...],  # список площ Tc по годинах
-                    "hour_index": int,              # поточна година (1..n)
-                    "extrapolation_started": bool,  # чи вже перейшли до екстраполяції
-                    "last_upper": float,            # останнє значення верхньої межі для екстраполяції
-                    "last_lower": float             # останнє значення нижньої межі для екстраполяції
-                }
-        
-        Вихід:
-            dict з результатами для всіх 5 ізотопів +
-            "history_updated" для Tc
+        Ідентифікація ізотопів для резервної цистерни ZB3.
+
+        Ізотопи:
+
+            - 90Y
+            - 133I
+            - 177Lu
+            - 18F
+            - 99mTc
+
+        Алгоритм реалізовано відповідно до окремого алгоритму
+        "F, Tc, I, Lu, Y" та відповідей консультанта.
+
+        ================================================================
+        ОСНОВНІ ПРАВИЛА
+        ================================================================
+
+        1. Розрахунковий час алгоритму:
+
+                T = 3600 секунд
+
+        незалежно від фактичного часу ПК.
+
+        real_time передається сюди тільки як діагностичне значення.
+
+        2. Послідовність обробки:
+
+                ARR_1
+                ↓
+                ARR_2
+                ↓
+                90Y
+                ↓
+                масштабування I-131
+                ↓
+                ARR_3
+                ↓
+                133I
+                ↓
+                ARR_4 = ARR_2 - ARR_3
+                ↓
+                177Lu
+                ↓
+                18F
+                ↓
+                99mTc
+
+        3. Для I-131:
+
+        - масштабування базового спектра:
+                115...150;
+
+        - кінцева площа 133I:
+                90...150;
+
+        - статистична складова:
+                ARR_1[90...150].
+
+        4. Для 99mTc:
+
+        - зона:
+                12...64;
+
+        - початкові межі:
+                ± 1 sigma;
+
+        - кожна година зберігається в історії;
+
+        - починаючи з 7-ї години поточний цикл порівнюється
+            з циклом рівно 6 годин тому:
+
+                7 ↔ 1
+                8 ↔ 2
+                9 ↔ 3
+                ...
+
+        - ratio = стара_площа / поточна_площа;
+
+        - ratio <= 2:
+                алгоритм Tc + Lu;
+
+        - ratio > 2:
+                алгоритм Tc + F;
+
+        - якщо ratio < 1.5:
+                поточний результат СПОЧАТКУ розраховується
+                за алгоритмом Tc + Lu,
+                а екстраполяція починається тільки
+                з НАСТУПНОЇ години;
+
+        - після переходу до екстраполяції назад до
+            шестигодинного алгоритму вже не повертаємося
+            до спорожнення / нового заповнення цистерни;
+
+        - екстраполяція:
+
+                previous_upper * 0.890899
+                previous_lower * 0.890899
+
+            де upper/lower — межі ПИТОМОЇ активності Tc.
+
+        5. Перші 6 годин остаточного результату Tc немає:
+
+                available = False
+
+        6. Якщо один часовий цикл неможливо коректно обробити,
+        то за наявності попереднього остаточного результату Tc
+        використовується екстраполяція.
+
+        Якщо попереднього результату Tc ще немає,
+        результат Tc залишається unavailable.
+
+        7. Від'ємні значення ARR_2 / ARR_3 / ARR_4 та площ
+        не обрізаються.
         """
-        
-        # --- 1. Розрахунок для ітрію (90Y) ---
-        isotope_Y = "90Y"
-        window_Y = self.GROUP_RESERVE_WINDOWS[isotope_Y]
-        coeff_Y = self.GROUP_RESERVE_COEFFICIENTS[isotope_Y]
-        sigma_Y = self.GROUP_RESERVE_SIGMA[isotope_Y]
-        
-        sum_Y_clean = self._calculate_window_sum(arr2, window_Y[0], window_Y[1])
-        sum_Y_raw = self._calculate_window_sum(arr1, window_Y[0], window_Y[1])
-        limits_Y = self._calculate_limits(sum_Y_clean, sum_Y_raw, real_time, sigma_Y)
-        
-        conc_Y = sum_Y_clean * coeff_Y
-        activity_Y = conc_Y * volume
-        conc_Y_upper = limits_Y["upper"] * coeff_Y
-        conc_Y_lower = limits_Y["lower"] * coeff_Y
-        activity_Y_upper = conc_Y_upper * volume
-        activity_Y_lower = conc_Y_lower * volume
-        
-        if limits_Y["upper"] > 0 and limits_Y["lower"] > 0:
-            detected_Y = "Є"
-        elif limits_Y["upper"] > 0 and limits_Y["lower"] <= 0:
-            detected_Y = "МОЖЕ БУТИ"
-        else:
-            detected_Y = "НЕМАЄ"
-        
-        # --- 2. Розрахунок для йоду (133I) з базовим спектром ---
-        isotope_I = "133I"
-        window_I = self.GROUP_RESERVE_WINDOWS[isotope_I]           # фінальне окно (90–150)
-        base_window_I = self.GROUP_RESERVE_BASE_I_WINDOW           # окно для масштабування (115–150)
-        coeff_I = self.GROUP_RESERVE_COEFFICIENTS[isotope_I]
-        sigma_I = self.GROUP_RESERVE_SIGMA[isotope_I]
-        
-        # Завантажуємо базовий спектр йоду
-        base_spectrum = self._load_base_spectrum("base_I")
-        if base_spectrum is None:
-            # Якщо базового спектра немає — використовуємо пряму площу
-            sum_I_clean = self._calculate_window_sum(arr2, window_I[0], window_I[1])
-            sum_I_raw = self._calculate_window_sum(arr1, window_I[0], window_I[1])
-            limits_I = self._calculate_limits(sum_I_clean, sum_I_raw, real_time, sigma_I)
-            arr3 = None
-        else:
-            # Площа I з ARR_2 у базовому вікні (115–150)
-            sum_I_arr2_base = self._calculate_window_sum(arr2, base_window_I[0], base_window_I[1])
-            # Площа базового спектра у базовому вікні (115–150)
-            sum_base_I = self._calculate_window_sum(base_spectrum, base_window_I[0], base_window_I[1])
-            
-            if sum_base_I <= 0:
-                sum_I_clean = self._calculate_window_sum(arr2, window_I[0], window_I[1])
-                sum_I_raw = self._calculate_window_sum(arr1, window_I[0], window_I[1])
-                limits_I = self._calculate_limits(sum_I_clean, sum_I_raw, real_time, sigma_I)
-                arr3 = None
-            else:
-                scale = sum_I_arr2_base / sum_base_I
-                arr3 = [val * scale for val in base_spectrum]
-                sum_I_clean = self._calculate_window_sum(arr3, window_I[0], window_I[1])
-                sum_I_raw = self._calculate_window_sum(arr1, window_I[0], window_I[1])
-                limits_I = self._calculate_limits(sum_I_clean, sum_I_raw, real_time, sigma_I)
-        
-        conc_I = sum_I_clean * coeff_I
-        activity_I = conc_I * volume
-        conc_I_upper = limits_I["upper"] * coeff_I
-        conc_I_lower = limits_I["lower"] * coeff_I
-        activity_I_upper = conc_I_upper * volume
-        activity_I_lower = conc_I_lower * volume
-        
-        if limits_I["upper"] > 0 and limits_I["lower"] > 0:
-            detected_I = "Є"
-        elif limits_I["upper"] > 0 and limits_I["lower"] <= 0:
-            detected_I = "МОЖЕ БУТИ"
-        else:
-            detected_I = "НЕМАЄ"
-        
-        # --- 3. Віднімання масштабованого йоду (ARR_4 = ARR_2 - ARR_3) ---
-        if arr3 is not None:
-            arr4 = [arr2[i] - arr3[i] for i in range(len(arr2))]
-        else:
-            arr4 = arr2
-        
-        # --- 4. Розрахунок для лютецію (177Lu) ---
-        isotope_Lu = "177Lu"
-        window_Lu = self.GROUP_RESERVE_WINDOWS[isotope_Lu]
-        coeff_Lu = self.GROUP_RESERVE_COEFFICIENTS[isotope_Lu]
-        sigma_Lu = self.GROUP_RESERVE_SIGMA[isotope_Lu]
-        
-        sum_Lu_clean = self._calculate_window_sum(arr4, window_Lu[0], window_Lu[1])
-        sum_Lu_raw = self._calculate_window_sum(arr1, window_Lu[0], window_Lu[1])
-        limits_Lu = self._calculate_limits(sum_Lu_clean, sum_Lu_raw, real_time, sigma_Lu)
-        
-        conc_Lu = sum_Lu_clean * coeff_Lu
-        activity_Lu = conc_Lu * volume
-        conc_Lu_upper = limits_Lu["upper"] * coeff_Lu
-        conc_Lu_lower = limits_Lu["lower"] * coeff_Lu
-        activity_Lu_upper = conc_Lu_upper * volume
-        activity_Lu_lower = conc_Lu_lower * volume
-        
-        if limits_Lu["upper"] > 0 and limits_Lu["lower"] > 0:
-            detected_Lu = "Є"
-        elif limits_Lu["upper"] > 0 and limits_Lu["lower"] <= 0:
-            detected_Lu = "МОЖЕ БУТИ"
-        else:
-            detected_Lu = "НЕМАЄ"
-        
-        # --- 5. Розрахунок для фтору (18F) ---
-        isotope_F = "18F"
-        window_F = self.GROUP_RESERVE_WINDOWS[isotope_F]
-        coeff_F = self.GROUP_RESERVE_COEFFICIENTS[isotope_F]
-        sigma_F = self.GROUP_RESERVE_SIGMA[isotope_F]
-        
-        sum_F_clean = self._calculate_window_sum(arr4, window_F[0], window_F[1])
-        sum_F_raw = self._calculate_window_sum(arr1, window_F[0], window_F[1])
-        limits_F = self._calculate_limits(sum_F_clean, sum_F_raw, real_time, sigma_F)
-        
-        conc_F = sum_F_clean * coeff_F
-        activity_F = conc_F * volume
-        conc_F_upper = limits_F["upper"] * coeff_F
-        conc_F_lower = limits_F["lower"] * coeff_F
-        activity_F_upper = conc_F_upper * volume
-        activity_F_lower = conc_F_lower * volume
-        
-        if limits_F["upper"] > 0 and limits_F["lower"] > 0:
-            detected_F = "Є"
-        elif limits_F["upper"] > 0 and limits_F["lower"] <= 0:
-            detected_F = "МОЖЕ БУТИ"
-        else:
-            detected_F = "НЕМАЄ"
-        
-        # --- 6. Розрахунок для технецію (99mTc) з динамікою ---
+
+        # ============================================================
+        # 0. КОНСТАНТИ РЕЗЕРВНОГО АЛГОРИТМУ
+        # ============================================================
+
+        # За відповіддю консультанта всі часові формули
+        # резервного алгоритму побудовані для одного
+        # годинного циклу.
+        calculation_time = 3600.0
+
+        # Періоди напіврозпаду, які використовуються
+        # саме у резервному алгоритмі.
+        #
+        # ВАЖЛИВО:
+        # для Tc тут 360 хвилин, а НЕ 360.1 з групи A.
+        tc_half_life_minutes = 360.0
+        lu_half_life_minutes = 9570.0
+        f_half_life_minutes = 110.0
+
+        delay_hours = self.GROUP_RESERVE_TC_DELAY_HOURS
+        extrapolation_coeff = (
+            self.GROUP_RESERVE_TC_EXTRAPOLATION_COEFF
+        )
+
         isotope_Tc = "99mTc"
-        window_Tc = self.GROUP_RESERVE_WINDOWS[isotope_Tc]
-        coeff_Tc = self.GROUP_RESERVE_COEFFICIENTS[isotope_Tc]
-        sigma_Tc = self.GROUP_RESERVE_SIGMA[isotope_Tc]  # 1 сигма
-        
-        sum_Tc_clean_current = self._calculate_window_sum(arr4, window_Tc[0], window_Tc[1])
-        sum_Tc_raw_current = self._calculate_window_sum(arr1, window_Tc[0], window_Tc[1])
-        
-        # Ініціалізація історії
-        if history is None:
+        coeff_Tc = self.GROUP_RESERVE_COEFFICIENTS[
+            isotope_Tc
+        ]
+
+        # ============================================================
+        # 1. ПЕРЕВІРКА ОБ'ЄМУ
+        # ============================================================
+
+        try:
+            volume = float(volume)
+
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "Reserve: об'єм цистерни повинен бути числовим."
+            ) from exc
+
+        if (
+            not math.isfinite(volume)
+            or volume <= 0.0
+        ):
+            raise ValueError(
+                f"Reserve: некоректний об'єм цистерни: {volume}."
+            )
+
+        # ============================================================
+        # 2. ФАКТИЧНИЙ ЧАС ПК — ТІЛЬКИ ДІАГНОСТИКА
+        # ============================================================
+
+        try:
+            diagnostic_real_time = float(real_time)
+
+        except (TypeError, ValueError):
+            diagnostic_real_time = 0.0
+
+        if not math.isfinite(diagnostic_real_time):
+            diagnostic_real_time = 0.0
+
+        # ============================================================
+        # 3. ПІДГОТОВКА / ПЕРЕВІРКА ІСТОРІЇ Tc
+        # ============================================================
+        #
+        # Старий формат history принципово відрізнявся від нового.
+        #
+        # Тому після оновлення програми стару або пошкоджену
+        # структуру не намагаємося "вгадувати".
+        #
+        # Безпечніше почати шестигодинний алгоритм заново.
+
+        history_valid = False
+
+        if isinstance(history, dict):
+
+            if history.get("algorithm") == "reserve":
+
+                try:
+                    hist_hour_index = int(
+                        history.get("hour_index", 0)
+                    )
+
+                    hist_entries = history.get(
+                        "tc_hours",
+                        []
+                    )
+
+                    hist_extrapolation = bool(
+                        history.get(
+                            "extrapolation_started",
+                            False
+                        )
+                    )
+
+                    history_valid = (
+                        hist_hour_index >= 0
+                        and isinstance(hist_entries, list)
+                    )
+
+                except (TypeError, ValueError):
+                    history_valid = False
+
+        if not history_valid:
+
             history = {
-                "hours": [],
+                "algorithm": "reserve",
+
+                # Номер поточного годинного циклу.
                 "hour_index": 0,
+
+                # Останні почасові початкові вимірювання Tc.
+                #
+                # Кожен запис містить:
+                #
+                #     hour
+                #     timestamp
+                #     valid
+                #     sum_clean
+                #     sum_raw
+                #     upper
+                #     lower
+                #
+                # upper/lower тут — ПОЧАТКОВІ межі площі Tc
+                # з ARR_4 до шестигодинного розділення.
+                "tc_hours": [],
+
+                # Незворотний режим екстраполяції.
                 "extrapolation_started": False,
-                "last_upper": 0.0,
-                "last_lower": 0.0
+
+                # Останні кінцеві межі ПИТОМОЇ активності Tc.
+                #
+                # Саме ці значення множаться на 0.890899.
+                "last_result_conc_upper": None,
+                "last_result_conc_lower": None,
+
+                # До якої старої години відносився останній
+                # виданий результат.
+                "last_result_reference_hour": None,
+                "last_result_reference_timestamp": None
             }
-        
-        # Поточна година (1-based)
-        current_hour = history.get("hour_index", 0) + 1
+
+        # ============================================================
+        # 4. НОВИЙ ГОДИННИЙ ЦИКЛ
+        # ============================================================
+
+        current_hour = (
+            int(history.get("hour_index", 0))
+            + 1
+        )
+
         history["hour_index"] = current_hour
-        
-        # --- Обробка Tc ---
-        if current_hour <= 6:
-            # Години 1–6: просто накопичуємо площі
-            history["hours"].append(sum_Tc_clean_current)
-            
-            # Поки що використовуємо пряму площу
-            sum_Tc_clean = sum_Tc_clean_current
-            sum_Tc_raw = sum_Tc_raw_current
-            limits_Tc = self._calculate_limits(sum_Tc_clean, sum_Tc_raw, real_time, sigma_Tc)
-            
-            detected_Tc = "НЕМАЄ"  # ідентифікація поки не виконується
-            delay_hours = 0
-            history_updated = history
-            
-        elif current_hour == 7:
-            # 7-ма година: перехід до динаміки
-            # Беремо площу з 1-ї години
-            if len(history["hours"]) >= 1:
-                sum_Tc_1st = history["hours"][0]
+
+        # Час завершення саме цього спектрального циклу.
+        #
+        # Це не T алгоритму.
+        current_timestamp = (
+            QDateTime.currentDateTime().toString(
+                Qt.DateFormat.ISODate
+            )
+        )
+
+        # ============================================================
+        # 5. ДОПОМІЖНІ ЛОКАЛЬНІ ФУНКЦІЇ
+        # ============================================================
+
+        def make_unavailable_isotope():
+            """
+            Формує результат ізотопу, який для поточного
+            годинного циклу неможливо коректно розрахувати.
+            """
+
+            return {
+                "available": False,
+                "activity": None,
+                "concentration": None,
+                "activity_upper": None,
+                "activity_lower": None,
+                "conc_upper": None,
+                "conc_lower": None,
+                "detected": None,
+                "sum_clean": None,
+                "sum_raw": None,
+                "limits": None
+            }
+
+        def tc_status(upper, lower):
+            """
+            Єдине погоджене правило ідентифікації ізотопу.
+            """
+
+            if upper > 0.0 and lower > 0.0:
+                return "Є"
+
+            if upper > 0.0 and lower <= 0.0:
+                return "МОЖЕ БУТИ"
+
+            return "НЕМАЄ"
+
+        def get_reference_entry(reference_hour):
+            """
+            Повертає початковий запис Tc рівно шестигодинної
+            давності.
+            """
+
+            for entry in history.get("tc_hours", []):
+
+                if entry.get("hour") == reference_hour:
+                    return entry
+
+            return None
+
+        def trim_history():
+            """
+            Для 24/7 роботи не дозволяємо списку tc_hours
+            рости нескінченно.
+
+            Для наступного циклу необхідні тільки останні
+            сім годинних записів.
+            """
+
+            min_hour_to_keep = max(
+                1,
+                current_hour - delay_hours
+            )
+
+            history["tc_hours"] = [
+                entry
+                for entry in history.get("tc_hours", [])
+                if entry.get("hour", 0) >= min_hour_to_keep
+            ]
+
+        def build_tc_unavailable(
+            reason=None,
+            reference_hour=None,
+            reference_timestamp=None
+        ):
+            """
+            Формує стан "остаточного результату Tc ще немає".
+            """
+
+            data = make_unavailable_isotope()
+
+            data.update({
+                "delay_hours": delay_hours,
+                "reference_hour": reference_hour,
+                "reference_timestamp": reference_timestamp,
+                "extrapolated": False,
+                "ratio": None,
+                "reason": reason
+            })
+
+            return data
+
+        def extrapolate_previous_tc(
+            reference_hour,
+            reference_timestamp,
+            reason
+        ):
+            """
+            Екстраполює ПОПЕРЕДНІ КІНЦЕВІ межі питомої
+            активності Tc.
+
+            Цей шлях використовується:
+
+            1. після остаточного переходу в режим екстраполяції;
+            2. як резервна обробка одного невдалого годинного циклу.
+
+            ВАЖЛИВО:
+            разова помилка години сама по собі НЕ переводить
+            алгоритм назавжди в extrapolation_started.
+            """
+
+            try:
+                previous_upper = float(
+                    history.get(
+                        "last_result_conc_upper"
+                    )
+                )
+
+                previous_lower = float(
+                    history.get(
+                        "last_result_conc_lower"
+                    )
+                )
+
+            except (TypeError, ValueError):
+
+                return build_tc_unavailable(
+                    reason=reason,
+                    reference_hour=reference_hour,
+                    reference_timestamp=reference_timestamp
+                )
+
+            if (
+                not math.isfinite(previous_upper)
+                or not math.isfinite(previous_lower)
+            ):
+                return build_tc_unavailable(
+                    reason=reason,
+                    reference_hour=reference_hour,
+                    reference_timestamp=reference_timestamp
+                )
+
+            # --------------------------------------------------------
+            # ЕКСТРАПОЛЯЦІЯ ПИТОМОЇ АКТИВНОСТІ
+            # --------------------------------------------------------
+
+            conc_upper = (
+                previous_upper
+                * extrapolation_coeff
+            )
+
+            conc_lower = (
+                previous_lower
+                * extrapolation_coeff
+            )
+
+            concentration = (
+                conc_upper + conc_lower
+            ) / 2.0
+
+            # Загальна активність.
+            activity = (
+                concentration
+                * volume
+            )
+
+            activity_upper = (
+                conc_upper
+                * volume
+            )
+
+            activity_lower = (
+                conc_lower
+                * volume
+            )
+
+            # Для сумісності result["limits"] з рештою
+            # алгоритмів переводимо питомі межі назад
+            # у еквівалентні межі площі.
+            upper_area = (
+                conc_upper / coeff_Tc
+            )
+
+            lower_area = (
+                conc_lower / coeff_Tc
+            )
+
+            central_area = (
+                concentration / coeff_Tc
+            )
+
+            detected = tc_status(
+                conc_upper,
+                conc_lower
+            )
+
+            # Цей результат стає основою для наступної
+            # екстраполяції.
+            history[
+                "last_result_conc_upper"
+            ] = conc_upper
+
+            history[
+                "last_result_conc_lower"
+            ] = conc_lower
+
+            history[
+                "last_result_reference_hour"
+            ] = reference_hour
+
+            history[
+                "last_result_reference_timestamp"
+            ] = reference_timestamp
+
+            return {
+                "available": True,
+
+                "activity": activity,
+                "concentration": concentration,
+
+                "activity_upper": activity_upper,
+                "activity_lower": activity_lower,
+
+                "conc_upper": conc_upper,
+                "conc_lower": conc_lower,
+
+                "detected": detected,
+
+                "sum_clean": central_area,
+                "sum_raw": None,
+
+                "limits": {
+                    "upper": upper_area,
+                    "lower": lower_area
+                },
+
+                "delay_hours": delay_hours,
+                "reference_hour": reference_hour,
+                "reference_timestamp": reference_timestamp,
+
+                "extrapolated": True,
+                "ratio": None,
+                "reason": reason
+            }
+
+        def make_invalid_hour_result(reason):
+            """
+            Обробляє повністю невдалий годинний цикл ZB3.
+
+            Інші чотири ізотопи в такому циклі недоступні.
+
+            Для Tc:
+                - години 1...6: результату ще немає;
+                - після 6-ї години за наявності попереднього
+                результату виконуємо погоджену екстраполяцію.
+            """
+
+            # --------------------------------------------------------
+            # Зберігаємо сам факт існування цієї години.
+            # --------------------------------------------------------
+
+            history["tc_hours"].append({
+                "hour": current_hour,
+                "timestamp": current_timestamp,
+                "valid": False,
+                "sum_clean": None,
+                "sum_raw": None,
+                "upper": None,
+                "lower": None
+            })
+
+            reference_hour = (
+                current_hour - delay_hours
+            )
+
+            reference_entry = (
+                get_reference_entry(reference_hour)
+                if reference_hour >= 1
+                else None
+            )
+
+            reference_timestamp = (
+                reference_entry.get("timestamp")
+                if isinstance(reference_entry, dict)
+                else None
+            )
+
+            # --------------------------------------------------------
+            # Перші 6 годин — фінального Tc ще немає.
+            # --------------------------------------------------------
+
+            if current_hour <= delay_hours:
+
+                tc_data = build_tc_unavailable(
+                    reason=reason
+                )
+
             else:
-                sum_Tc_1st = sum_Tc_clean_current
-            
-            # Обчислюємо відношення
-            ratio = sum_Tc_1st / sum_Tc_clean_current if sum_Tc_clean_current > 0 else float('inf')
-            
-            # Коефіцієнти розпаду за 6 годин
-            K_Tc = self._calculate_decay_coefficient(real_time * 6, self.GROUP_A_HALF_LIFE[isotope_Tc])
-            K_Lu = self._calculate_decay_coefficient(real_time * 6, 9570.0)  # період Lu
-            K_F = self._calculate_decay_coefficient(real_time * 6, self.GROUP_A_HALF_LIFE[isotope_F])
-            
-            if ratio < 1.5:
-                # Варіант C: одразу екстраполяція
-                # Беремо межі з поточної площі (1 сигма)
-                limits_Tc = self._calculate_limits(sum_Tc_clean_current, sum_Tc_raw_current, real_time, sigma_Tc)
-                last_upper = limits_Tc["upper"]
-                last_lower = limits_Tc["lower"]
-                
-                history["extrapolation_started"] = True
-                history["last_upper"] = last_upper
-                history["last_lower"] = last_lower
-                
-                sum_Tc_clean = sum_Tc_clean_current
-                sum_Tc_raw = sum_Tc_raw_current
-                delay_hours = 0
-                
-            elif ratio <= 2:
-                # Варіант A: Tc + Lu
-                upper = (limits_Tc["lower"] - K_Lu * limits_Y["upper"]) / (K_Tc - K_Lu)
-                lower = (limits_Tc["upper"] - K_Lu * limits_Y["lower"]) / (K_Tc - K_Lu)
-                
-                limits_Tc = {"upper": upper, "lower": lower}
-                sum_Tc_clean = (sum_Tc_clean_current - K_Lu * sum_Y_clean) / (K_Tc - K_Lu)
-                sum_Tc_raw = sum_Tc_raw_current
-                
-                # Встановлюємо межі для екстраполяції
-                history["last_upper"] = upper
-                history["last_lower"] = lower
-                delay_hours = 6
-                
-            else:
-                # Варіант B: Tc + F
-                upper = (limits_Tc["lower"] - K_F * limits_F["upper"]) / (K_Tc - K_F)
-                lower = (limits_Tc["upper"] - K_F * limits_F["lower"]) / (K_Tc - K_F)
-                
-                limits_Tc = {"upper": upper, "lower": lower}
-                sum_Tc_clean = (sum_Tc_clean_current - K_F * sum_F_clean) / (K_Tc - K_F)
-                sum_Tc_raw = sum_Tc_raw_current
-                
-                history["last_upper"] = upper
-                history["last_lower"] = lower
-                delay_hours = 6
-            
-            # Ідентифікація Tc
-            if limits_Tc["upper"] > 0 and limits_Tc["lower"] > 0:
-                detected_Tc = "Є"
-            elif limits_Tc["upper"] > 0 and limits_Tc["lower"] <= 0:
-                detected_Tc = "МОЖЕ БУТИ"
-            else:
-                detected_Tc = "НЕМАЄ"
-            
-            history_updated = history
-            
+
+                # Після 6-ї години при помилці використовуємо
+                # погоджену екстраполяцію попереднього
+                # кінцевого результату.
+                tc_data = extrapolate_previous_tc(
+                    reference_hour,
+                    reference_timestamp,
+                    reason
+                )
+
+            trim_history()
+
+            unavailable = make_unavailable_isotope()
+
+            return {
+                "group": "reserve",
+
+                "isotopes": [
+                    "18F",
+                    "99mTc",
+                    "133I",
+                    "177Lu",
+                    "90Y"
+                ],
+
+                "18F": dict(unavailable),
+
+                "99mTc": tc_data,
+
+                "133I": dict(unavailable),
+                "177Lu": dict(unavailable),
+                "90Y": dict(unavailable),
+
+                "real_time": diagnostic_real_time,
+                "calculation_time": calculation_time,
+
+                # Поточний годинний спектр повністю
+                # розрахувати не вдалося.
+                "measurement_valid": False,
+
+                "invalid_reason": reason,
+
+                "history_updated": history
+            }
+
+        # ============================================================
+        # 6. ЯКЩО ПОТОЧНА ГОДИНА ВЖЕ ПОЗНАЧЕНА ЯК НЕВАЛІДНА
+        # ============================================================
+
+        if not hour_valid:
+
+            return make_invalid_hour_result(
+                invalid_reason
+                or
+                "Некоректний годинний спектральний цикл."
+            )
+
+        # ============================================================
+        # 7. ПЕРЕВІРКА ARR_1 / ARR_2
+        # ============================================================
+
+        if (
+            not isinstance(
+                arr1,
+                (list, tuple, np.ndarray)
+            )
+            or
+            not isinstance(
+                arr2,
+                (list, tuple, np.ndarray)
+            )
+        ):
+            return make_invalid_hour_result(
+                "ARR_1 або ARR_2 мають некоректний тип."
+            )
+
+        if (
+            len(arr1) != 1023
+            or
+            len(arr2) != 1023
+        ):
+            return make_invalid_hour_result(
+                "ARR_1 або ARR_2 мають некоректну довжину."
+            )
+
+        # ============================================================
+        # 8. 90Y
+        # ============================================================
+
+        isotope_Y = "90Y"
+
+        window_Y = self.GROUP_RESERVE_WINDOWS[
+            isotope_Y
+        ]
+
+        coeff_Y = self.GROUP_RESERVE_COEFFICIENTS[
+            isotope_Y
+        ]
+
+        sigma_Y = self.GROUP_RESERVE_SIGMA[
+            isotope_Y
+        ]
+
+        # Центральна площа після віднімання фону.
+        sum_Y_clean = self._calculate_window_sum(
+            arr2,
+            window_Y[0],
+            window_Y[1]
+        )
+
+        # Статистична складова — з ARR_1.
+        sum_Y_raw = self._calculate_window_sum(
+            arr1,
+            window_Y[0],
+            window_Y[1]
+        )
+
+        limits_Y = self._calculate_limits(
+            sum_Y_clean,
+            sum_Y_raw,
+            calculation_time,
+            sigma_Y
+        )
+
+        conc_Y = (
+            sum_Y_clean
+            * coeff_Y
+        )
+
+        activity_Y = (
+            conc_Y
+            * volume
+        )
+
+        conc_Y_upper = (
+            limits_Y["upper"]
+            * coeff_Y
+        )
+
+        conc_Y_lower = (
+            limits_Y["lower"]
+            * coeff_Y
+        )
+
+        activity_Y_upper = (
+            conc_Y_upper
+            * volume
+        )
+
+        activity_Y_lower = (
+            conc_Y_lower
+            * volume
+        )
+
+        detected_Y = tc_status(
+            limits_Y["upper"],
+            limits_Y["lower"]
+        )
+
+        # ============================================================
+        # 9. 133I — БАЗОВИЙ СПЕКТР
+        # ============================================================
+
+        isotope_I = "133I"
+
+        # Кінцеве вікно активності I.
+        window_I = self.GROUP_RESERVE_WINDOWS[
+            isotope_I
+        ]
+
+        # Окреме вікно для масштабування базового I.
+        base_window_I = (
+            self.GROUP_RESERVE_BASE_I_WINDOW
+        )
+
+        coeff_I = self.GROUP_RESERVE_COEFFICIENTS[
+            isotope_I
+        ]
+
+        sigma_I = self.GROUP_RESERVE_SIGMA[
+            isotope_I
+        ]
+
+        # Базовий I-131 є обов'язковим.
+        base_spectrum = self._load_base_spectrum(
+            "base_I"
+        )
+
+        if base_spectrum is None:
+
+            return make_invalid_hour_result(
+                "Базовий спектр I-131.txt відсутній "
+                "або пошкоджений."
+            )
+
+        if len(base_spectrum) != 1023:
+
+            return make_invalid_hour_result(
+                "Базовий спектр I-131 має некоректну "
+                "довжину."
+            )
+
+        # ============================================================
+        # 10. МАСШТАБУВАННЯ I — 115...150
+        # ============================================================
+
+        sum_I_arr2_base = (
+            self._calculate_window_sum(
+                arr2,
+                base_window_I[0],
+                base_window_I[1]
+            )
+        )
+
+        sum_base_I = (
+            self._calculate_window_sum(
+                base_spectrum,
+                base_window_I[0],
+                base_window_I[1]
+            )
+        )
+
+        # За інформацією консультанта базовий спектр
+        # незмінний і ця площа у штатному стані
+        # не повинна бути <= 0.
+        #
+        # Якщо це сталося, вважаємо поточний цикл
+        # нерозрахованим, а НЕ змінюємо формулу.
+        if (
+            not math.isfinite(sum_base_I)
+            or
+            sum_base_I <= 0.0
+        ):
+            return make_invalid_hour_result(
+                "Некоректна площа базового спектра "
+                "I-131 у каналах 115-150."
+            )
+
+        # Поточна площа ARR_2 може бути навіть
+        # нульовою або від'ємною.
+        scale_I = (
+            sum_I_arr2_base
+            / sum_base_I
+        )
+
+        if not math.isfinite(scale_I):
+
+            return make_invalid_hour_result(
+                "Некоректний коефіцієнт "
+                "масштабування I-131."
+            )
+
+        # ============================================================
+        # 11. ARR_3
+        # ============================================================
+
+        arr3 = [
+            value * scale_I
+            for value in base_spectrum
+        ]
+
+        if any(
+            not math.isfinite(value)
+            for value in arr3
+        ):
+            return make_invalid_hour_result(
+                "ARR_3 містить некоректні значення."
+            )
+
+        # ============================================================
+        # 12. КІНЦЕВИЙ 133I — 90...150
+        # ============================================================
+
+        sum_I_clean = (
+            self._calculate_window_sum(
+                arr3,
+                window_I[0],
+                window_I[1]
+            )
+        )
+
+        # За уточненням консультанта:
+        #
+        # під квадратним коренем для I
+        # використовується ARR_1[90..150].
+        sum_I_raw = (
+            self._calculate_window_sum(
+                arr1,
+                window_I[0],
+                window_I[1]
+            )
+        )
+
+        limits_I = self._calculate_limits(
+            sum_I_clean,
+            sum_I_raw,
+            calculation_time,
+            sigma_I
+        )
+
+        conc_I = (
+            sum_I_clean
+            * coeff_I
+        )
+
+        activity_I = (
+            conc_I
+            * volume
+        )
+
+        conc_I_upper = (
+            limits_I["upper"]
+            * coeff_I
+        )
+
+        conc_I_lower = (
+            limits_I["lower"]
+            * coeff_I
+        )
+
+        activity_I_upper = (
+            conc_I_upper
+            * volume
+        )
+
+        activity_I_lower = (
+            conc_I_lower
+            * volume
+        )
+
+        detected_I = tc_status(
+            limits_I["upper"],
+            limits_I["lower"]
+        )
+
+        # ============================================================
+        # 13. ARR_4 = ARR_2 - ARR_3
+        # ============================================================
+
+        arr4 = [
+            arr2[i] - arr3[i]
+            for i in range(1023)
+        ]
+
+        # Від'ємні значення ARR_4 ДОПУСТИМІ.
+        #
+        # Перевіряємо тільки NaN / inf.
+        if any(
+            not math.isfinite(value)
+            for value in arr4
+        ):
+            return make_invalid_hour_result(
+                "ARR_4 містить некоректні значення."
+            )
+
+        # ============================================================
+        # 14. 177Lu
+        # ============================================================
+
+        isotope_Lu = "177Lu"
+
+        window_Lu = self.GROUP_RESERVE_WINDOWS[
+            isotope_Lu
+        ]
+
+        coeff_Lu = self.GROUP_RESERVE_COEFFICIENTS[
+            isotope_Lu
+        ]
+
+        sigma_Lu = self.GROUP_RESERVE_SIGMA[
+            isotope_Lu
+        ]
+
+        sum_Lu_clean = (
+            self._calculate_window_sum(
+                arr4,
+                window_Lu[0],
+                window_Lu[1]
+            )
+        )
+
+        sum_Lu_raw = (
+            self._calculate_window_sum(
+                arr1,
+                window_Lu[0],
+                window_Lu[1]
+            )
+        )
+
+        limits_Lu = self._calculate_limits(
+            sum_Lu_clean,
+            sum_Lu_raw,
+            calculation_time,
+            sigma_Lu
+        )
+
+        conc_Lu = (
+            sum_Lu_clean
+            * coeff_Lu
+        )
+
+        activity_Lu = (
+            conc_Lu
+            * volume
+        )
+
+        conc_Lu_upper = (
+            limits_Lu["upper"]
+            * coeff_Lu
+        )
+
+        conc_Lu_lower = (
+            limits_Lu["lower"]
+            * coeff_Lu
+        )
+
+        activity_Lu_upper = (
+            conc_Lu_upper
+            * volume
+        )
+
+        activity_Lu_lower = (
+            conc_Lu_lower
+            * volume
+        )
+
+        detected_Lu = tc_status(
+            limits_Lu["upper"],
+            limits_Lu["lower"]
+        )
+
+        # ============================================================
+        # 15. 18F
+        # ============================================================
+
+        isotope_F = "18F"
+
+        window_F = self.GROUP_RESERVE_WINDOWS[
+            isotope_F
+        ]
+
+        coeff_F = self.GROUP_RESERVE_COEFFICIENTS[
+            isotope_F
+        ]
+
+        sigma_F = self.GROUP_RESERVE_SIGMA[
+            isotope_F
+        ]
+
+        sum_F_clean = (
+            self._calculate_window_sum(
+                arr4,
+                window_F[0],
+                window_F[1]
+            )
+        )
+
+        sum_F_raw = (
+            self._calculate_window_sum(
+                arr1,
+                window_F[0],
+                window_F[1]
+            )
+        )
+
+        limits_F = self._calculate_limits(
+            sum_F_clean,
+            sum_F_raw,
+            calculation_time,
+            sigma_F
+        )
+
+        conc_F = (
+            sum_F_clean
+            * coeff_F
+        )
+
+        activity_F = (
+            conc_F
+            * volume
+        )
+
+        conc_F_upper = (
+            limits_F["upper"]
+            * coeff_F
+        )
+
+        conc_F_lower = (
+            limits_F["lower"]
+            * coeff_F
+        )
+
+        activity_F_upper = (
+            conc_F_upper
+            * volume
+        )
+
+        activity_F_lower = (
+            conc_F_lower
+            * volume
+        )
+
+        detected_F = tc_status(
+            limits_F["upper"],
+            limits_F["lower"]
+        )
+
+        # ============================================================
+        # 16. ПОТОЧНИЙ ПОЧАТКОВИЙ РОЗРАХУНОК 99mTc
+        # ============================================================
+
+        window_Tc = self.GROUP_RESERVE_WINDOWS[
+            isotope_Tc
+        ]
+
+        sigma_Tc = self.GROUP_RESERVE_SIGMA[
+            isotope_Tc
+        ]
+
+        # Поточна площа Tc після вилучення I.
+        sum_Tc_clean_current = (
+            self._calculate_window_sum(
+                arr4,
+                window_Tc[0],
+                window_Tc[1]
+            )
+        )
+
+        # Статистична складова Tc з ARR_1.
+        sum_Tc_raw_current = (
+            self._calculate_window_sum(
+                arr1,
+                window_Tc[0],
+                window_Tc[1]
+            )
+        )
+
+        current_limits_Tc = (
+            self._calculate_limits(
+                sum_Tc_clean_current,
+                sum_Tc_raw_current,
+                calculation_time,
+                sigma_Tc
+            )
+        )
+
+        # ============================================================
+        # 17. ЗБЕРІГАЄМО ПОТОЧНУ ГОДИНУ Tc
+        # ============================================================
+
+        current_tc_entry = {
+            "hour": current_hour,
+            "timestamp": current_timestamp,
+            "valid": True,
+
+            "sum_clean": sum_Tc_clean_current,
+            "sum_raw": sum_Tc_raw_current,
+
+            "upper": current_limits_Tc["upper"],
+            "lower": current_limits_Tc["lower"]
+        }
+
+        history["tc_hours"].append(
+            current_tc_entry
+        )
+
+        # ============================================================
+        # 18. ПЕРШІ ШІСТЬ ГОДИН
+        # ============================================================
+        #
+        # Ми вже зберегли:
+        #
+        #     - площу;
+        #     - upper;
+        #     - lower;
+        #     - timestamp.
+        #
+        # Але фінального результату Tc ще немає.
+
+        if current_hour <= delay_hours:
+
+            tc_data = build_tc_unavailable(
+                reason=(
+                    "Для розрахунку 99mTc необхідно "
+                    "накопичити 6 годин історії."
+                )
+            )
+
+            trim_history()
+
+            result = {
+                "group": "reserve",
+
+                "isotopes": [
+                    "18F",
+                    "99mTc",
+                    "133I",
+                    "177Lu",
+                    "90Y"
+                ],
+
+                "18F": {
+                    "available": True,
+                    "activity": activity_F,
+                    "concentration": conc_F,
+                    "activity_upper": activity_F_upper,
+                    "activity_lower": activity_F_lower,
+                    "conc_upper": conc_F_upper,
+                    "conc_lower": conc_F_lower,
+                    "detected": detected_F,
+                    "sum_clean": sum_F_clean,
+                    "sum_raw": sum_F_raw,
+                    "limits": limits_F
+                },
+
+                "99mTc": tc_data,
+
+                "133I": {
+                    "available": True,
+                    "activity": activity_I,
+                    "concentration": conc_I,
+                    "activity_upper": activity_I_upper,
+                    "activity_lower": activity_I_lower,
+                    "conc_upper": conc_I_upper,
+                    "conc_lower": conc_I_lower,
+                    "detected": detected_I,
+                    "sum_clean": sum_I_clean,
+                    "sum_raw": sum_I_raw,
+                    "limits": limits_I
+                },
+
+                "177Lu": {
+                    "available": True,
+                    "activity": activity_Lu,
+                    "concentration": conc_Lu,
+                    "activity_upper": activity_Lu_upper,
+                    "activity_lower": activity_Lu_lower,
+                    "conc_upper": conc_Lu_upper,
+                    "conc_lower": conc_Lu_lower,
+                    "detected": detected_Lu,
+                    "sum_clean": sum_Lu_clean,
+                    "sum_raw": sum_Lu_raw,
+                    "limits": limits_Lu
+                },
+
+                "90Y": {
+                    "available": True,
+                    "activity": activity_Y,
+                    "concentration": conc_Y,
+                    "activity_upper": activity_Y_upper,
+                    "activity_lower": activity_Y_lower,
+                    "conc_upper": conc_Y_upper,
+                    "conc_lower": conc_Y_lower,
+                    "detected": detected_Y,
+                    "sum_clean": sum_Y_clean,
+                    "sum_raw": sum_Y_raw,
+                    "limits": limits_Y
+                },
+
+                "real_time": diagnostic_real_time,
+                "calculation_time": calculation_time,
+
+                "measurement_valid": True,
+
+                "components": {
+                    "iodine_scaled": arr3,
+                    "after_iodine_subtraction": arr4
+                },
+
+                "history_updated": history
+            }
+
+            return result
+
+        # ============================================================
+        # 19. ВИЗНАЧАЄМО ГОДИНУ 6 ГОДИН ТОМУ
+        # ============================================================
+
+        reference_hour = (
+            current_hour
+            - delay_hours
+        )
+
+        reference_entry = get_reference_entry(
+            reference_hour
+        )
+
+        reference_timestamp = (
+            reference_entry.get("timestamp")
+            if isinstance(reference_entry, dict)
+            else None
+        )
+
+        # ============================================================
+        # 20. ЯКЩО МИ ВЖЕ У ПОСТІЙНІЙ ЕКСТРАПОЛЯЦІЇ
+        # ============================================================
+        #
+        # Після ratio < 1.5 повернення до ratio / p17 / p18
+        # більше немає до нового заповнення цистерни.
+
+        if history.get(
+            "extrapolation_started",
+            False
+        ):
+
+            tc_data = extrapolate_previous_tc(
+                reference_hour,
+                reference_timestamp,
+                "Постійний режим екстраполяції 99mTc."
+            )
+
+            trim_history()
+
         else:
-            # Години 8+: екстраполяція
-            if history.get("extrapolation_started", False) or current_hour > 7:
-                history["extrapolation_started"] = True
-                # Множимо попередні значення на коефіцієнт 0.890899
-                last_upper = history.get("last_upper", 0.0)
-                last_lower = history.get("last_lower", 0.0)
-                
-                new_upper = last_upper * self.GROUP_RESERVE_TC_EXTRAPOLATION_COEFF
-                new_lower = last_lower * self.GROUP_RESERVE_TC_EXTRAPOLATION_COEFF
-                
-                history["last_upper"] = new_upper
-                history["last_lower"] = new_lower
-                
-                limits_Tc = {"upper": new_upper, "lower": new_lower}
-                
-                # Для активності використовуємо екстрапольовані межі
-                sum_Tc_clean = (new_upper + new_lower) / 2  # середнє
-                sum_Tc_raw = sum_Tc_raw_current
-                
-                if limits_Tc["upper"] > 0 and limits_Tc["lower"] > 0:
-                    detected_Tc = "Є"
-                elif limits_Tc["upper"] > 0 and limits_Tc["lower"] <= 0:
-                    detected_Tc = "МОЖЕ БУТИ"
-                else:
-                    detected_Tc = "НЕМАЄ"
-                
-                delay_hours = 6
-                history_updated = history
+
+            # ========================================================
+            # 21. ПЕРЕВІРЯЄМО ШЕСТИГОДИННИЙ ОПОРНИЙ ЗАПИС
+            # ========================================================
+
+            reference_valid = (
+                isinstance(reference_entry, dict)
+                and reference_entry.get("valid") is True
+            )
+
+            if not reference_valid:
+
+                # Немає коректного вимірювання рівно 6 годин тому.
+                #
+                # За погодженим правилом використовуємо
+                # екстраполяцію попереднього кінцевого результату,
+                # якщо він уже існує.
+                tc_data = extrapolate_previous_tc(
+                    reference_hour,
+                    reference_timestamp,
+                    (
+                        "Відсутній коректний Tc-запис "
+                        "рівно 6 годин тому."
+                    )
+                )
+
+                trim_history()
+
             else:
-                # Запасний варіант
-                sum_Tc_clean = sum_Tc_clean_current
-                sum_Tc_raw = sum_Tc_raw_current
-                limits_Tc = self._calculate_limits(sum_Tc_clean, sum_Tc_raw, real_time, sigma_Tc)
-                detected_Tc = "НЕМАЄ"
-                delay_hours = 0
-                history_updated = history
-        
-        # Розрахунок активності Tc
-        conc_Tc = sum_Tc_clean * coeff_Tc
-        activity_Tc = conc_Tc * volume
-        conc_Tc_upper = limits_Tc["upper"] * coeff_Tc
-        conc_Tc_lower = limits_Tc["lower"] * coeff_Tc
-        activity_Tc_upper = conc_Tc_upper * volume
-        activity_Tc_lower = conc_Tc_lower * volume
-        
-        # --- Результат ---
+
+                # ====================================================
+                # 22. ОТРИМУЄМО СТАРІ ДАНІ Tc
+                # ====================================================
+
+                try:
+                    old_sum = float(
+                        reference_entry["sum_clean"]
+                    )
+
+                    old_upper = float(
+                        reference_entry["upper"]
+                    )
+
+                    old_lower = float(
+                        reference_entry["lower"]
+                    )
+
+                except (
+                    KeyError,
+                    TypeError,
+                    ValueError
+                ):
+
+                    tc_data = extrapolate_previous_tc(
+                        reference_hour,
+                        reference_timestamp,
+                        "Пошкоджений шестигодинний Tc-запис."
+                    )
+
+                    trim_history()
+
+                else:
+
+                    # ================================================
+                    # 23. RATIO
+                    # ================================================
+                    #
+                    # Порівнюємо площу шестигодинної давності
+                    # з поточною:
+                    #
+                    #     ratio = OLD / CURRENT
+                    #
+                    # Для Tc з періодом близько 6 годин таке
+                    # відношення природно знаходиться біля 2.
+
+                    if (
+                        not math.isfinite(
+                            sum_Tc_clean_current
+                        )
+                        or
+                        abs(
+                            sum_Tc_clean_current
+                        ) < 1e-12
+                    ):
+
+                        # Ділення на нуль або практично нуль
+                        # неможливе.
+                        #
+                        # Алгоритм не підміняємо вигаданим ratio.
+                        tc_data = extrapolate_previous_tc(
+                            reference_hour,
+                            reference_timestamp,
+                            (
+                                "Неможливо визначити ratio Tc: "
+                                "поточна площа дорівнює нулю."
+                            )
+                        )
+
+                        trim_history()
+
+                    else:
+
+                        ratio = (
+                            old_sum
+                            / sum_Tc_clean_current
+                        )
+
+                        if not math.isfinite(ratio):
+
+                            tc_data = extrapolate_previous_tc(
+                                reference_hour,
+                                reference_timestamp,
+                                "Отримано некоректний ratio Tc."
+                            )
+
+                            trim_history()
+
+                        else:
+
+                            # ========================================
+                            # 24. КОЕФІЦІЄНТИ РОЗПАДУ ЗА 6 ГОДИН
+                            # ========================================
+
+                            six_hours_seconds = (
+                                calculation_time
+                                * delay_hours
+                            )
+
+                            K_Tc = (
+                                self._calculate_decay_coefficient(
+                                    six_hours_seconds,
+                                    tc_half_life_minutes
+                                )
+                            )
+
+                            K_Lu = (
+                                self._calculate_decay_coefficient(
+                                    six_hours_seconds,
+                                    lu_half_life_minutes
+                                )
+                            )
+
+                            K_F = (
+                                self._calculate_decay_coefficient(
+                                    six_hours_seconds,
+                                    f_half_life_minutes
+                                )
+                            )
+
+                            if (
+                                not math.isfinite(K_Tc)
+                                or
+                                not math.isfinite(K_Lu)
+                                or
+                                not math.isfinite(K_F)
+                            ):
+                                tc_data = extrapolate_previous_tc(
+                                    reference_hour,
+                                    reference_timestamp,
+                                    (
+                                        "Некоректні коефіцієнти "
+                                        "розпаду Tc/Lu/F."
+                                    )
+                                )
+
+                                trim_history()
+
+                            else:
+
+                                # ====================================
+                                # 25. ВИБІР p17 / p18
+                                # ====================================
+                                #
+                                # ratio < 1.5:
+                                #
+                                #     ПОТОЧНИЙ результат все одно
+                                #     рахуємо за p17 Tc+Lu;
+                                #
+                                #     тільки НАСТУПНІ години
+                                #     переходять на екстраполяцію.
+                                #
+                                # ratio == 1.5:
+                                #
+                                #     звичайний режим.
+                                #
+                                # ratio <= 2:
+                                #
+                                #     p17 Tc+Lu.
+                                #
+                                # ratio > 2:
+                                #
+                                #     p18 Tc+F.
+
+                                use_p17 = (
+                                    ratio <= 2.0
+                                )
+
+                                start_extrapolation_after_this = (
+                                    ratio < 1.5
+                                )
+
+                                if use_p17:
+
+                                    denominator = (
+                                        K_Tc - K_Lu
+                                    )
+
+                                    if abs(denominator) < 1e-12:
+
+                                        tc_data = (
+                                            extrapolate_previous_tc(
+                                                reference_hour,
+                                                reference_timestamp,
+                                                (
+                                                    "K_Tc - K_Lu "
+                                                    "занадто малий."
+                                                )
+                                            )
+                                        )
+
+                                        trim_history()
+
+                                    else:
+
+                                        # ============================
+                                        # p17 — Tc + Lu
+                                        # ============================
+                                        #
+                                        # Перехресні upper/lower
+                                        # підтверджені консультантом.
+                                        #
+                                        # ВАЖЛИВО:
+                                        # old_upper / old_lower —
+                                        # це СТАРІ МЕЖІ Tc,
+                                        # а не межі Lu або Y.
+
+                                        dynamic_upper = (
+                                            current_limits_Tc["lower"]
+                                            - K_Lu * old_upper
+                                        ) / denominator
+
+                                        dynamic_lower = (
+                                            current_limits_Tc["upper"]
+                                            - K_Lu * old_lower
+                                        ) / denominator
+
+                                        # Межі ПИТОМОЇ активності.
+                                        conc_Tc_upper = (
+                                            dynamic_upper
+                                            * coeff_Tc
+                                        )
+
+                                        conc_Tc_lower = (
+                                            dynamic_lower
+                                            * coeff_Tc
+                                        )
+
+                                        # Центральна питома активність
+                                        # за прямою вказівкою консультанта.
+                                        conc_Tc = (
+                                            conc_Tc_upper
+                                            + conc_Tc_lower
+                                        ) / 2.0
+
+                                        activity_Tc = (
+                                            conc_Tc
+                                            * volume
+                                        )
+
+                                        activity_Tc_upper = (
+                                            conc_Tc_upper
+                                            * volume
+                                        )
+
+                                        activity_Tc_lower = (
+                                            conc_Tc_lower
+                                            * volume
+                                        )
+
+                                        detected_Tc = tc_status(
+                                            conc_Tc_upper,
+                                            conc_Tc_lower
+                                        )
+
+                                        history[
+                                            "last_result_conc_upper"
+                                        ] = conc_Tc_upper
+
+                                        history[
+                                            "last_result_conc_lower"
+                                        ] = conc_Tc_lower
+
+                                        history[
+                                            "last_result_reference_hour"
+                                        ] = reference_hour
+
+                                        history[
+                                            "last_result_reference_timestamp"
+                                        ] = reference_timestamp
+
+                                        # Перехід у постійну
+                                        # екстраполяцію відбудеться
+                                        # вже з НАСТУПНОЇ години.
+                                        if (
+                                            start_extrapolation_after_this
+                                        ):
+                                            history[
+                                                "extrapolation_started"
+                                            ] = True
+
+                                        tc_data = {
+                                            "available": True,
+
+                                            "activity": activity_Tc,
+                                            "concentration": conc_Tc,
+
+                                            "activity_upper":
+                                                activity_Tc_upper,
+
+                                            "activity_lower":
+                                                activity_Tc_lower,
+
+                                            "conc_upper":
+                                                conc_Tc_upper,
+
+                                            "conc_lower":
+                                                conc_Tc_lower,
+
+                                            "detected":
+                                                detected_Tc,
+
+                                            # Центральний еквівалент
+                                            # площі.
+                                            "sum_clean": (
+                                                dynamic_upper
+                                                + dynamic_lower
+                                            ) / 2.0,
+
+                                            # Для діагностики
+                                            # залишаємо стару raw-площу,
+                                            # до якої відноситься результат.
+                                            "sum_raw":
+                                                reference_entry.get(
+                                                    "sum_raw"
+                                                ),
+
+                                            "limits": {
+                                                "upper":
+                                                    dynamic_upper,
+                                                "lower":
+                                                    dynamic_lower
+                                            },
+
+                                            "delay_hours":
+                                                delay_hours,
+
+                                            "reference_hour":
+                                                reference_hour,
+
+                                            "reference_timestamp":
+                                                reference_timestamp,
+
+                                            "ratio": ratio,
+
+                                            "algorithm":
+                                                "Tc+Lu",
+
+                                            "extrapolated": False,
+
+                                            "extrapolation_starts_next":
+                                                start_extrapolation_after_this
+                                        }
+
+                                        trim_history()
+
+                                else:
+
+                                    denominator = (
+                                        K_Tc - K_F
+                                    )
+
+                                    if abs(denominator) < 1e-12:
+
+                                        tc_data = (
+                                            extrapolate_previous_tc(
+                                                reference_hour,
+                                                reference_timestamp,
+                                                (
+                                                    "K_Tc - K_F "
+                                                    "занадто малий."
+                                                )
+                                            )
+                                        )
+
+                                        trim_history()
+
+                                    else:
+
+                                        # ============================
+                                        # p18 — Tc + F
+                                        # ============================
+                                        #
+                                        # Як і у p17,
+                                        # old_upper / old_lower —
+                                        # це СТАРІ МЕЖІ Tc.
+
+                                        dynamic_upper = (
+                                            current_limits_Tc["lower"]
+                                            - K_F * old_upper
+                                        ) / denominator
+
+                                        dynamic_lower = (
+                                            current_limits_Tc["upper"]
+                                            - K_F * old_lower
+                                        ) / denominator
+
+                                        conc_Tc_upper = (
+                                            dynamic_upper
+                                            * coeff_Tc
+                                        )
+
+                                        conc_Tc_lower = (
+                                            dynamic_lower
+                                            * coeff_Tc
+                                        )
+
+                                        conc_Tc = (
+                                            conc_Tc_upper
+                                            + conc_Tc_lower
+                                        ) / 2.0
+
+                                        activity_Tc = (
+                                            conc_Tc
+                                            * volume
+                                        )
+
+                                        activity_Tc_upper = (
+                                            conc_Tc_upper
+                                            * volume
+                                        )
+
+                                        activity_Tc_lower = (
+                                            conc_Tc_lower
+                                            * volume
+                                        )
+
+                                        detected_Tc = tc_status(
+                                            conc_Tc_upper,
+                                            conc_Tc_lower
+                                        )
+
+                                        history[
+                                            "last_result_conc_upper"
+                                        ] = conc_Tc_upper
+
+                                        history[
+                                            "last_result_conc_lower"
+                                        ] = conc_Tc_lower
+
+                                        history[
+                                            "last_result_reference_hour"
+                                        ] = reference_hour
+
+                                        history[
+                                            "last_result_reference_timestamp"
+                                        ] = reference_timestamp
+
+                                        tc_data = {
+                                            "available": True,
+
+                                            "activity":
+                                                activity_Tc,
+
+                                            "concentration":
+                                                conc_Tc,
+
+                                            "activity_upper":
+                                                activity_Tc_upper,
+
+                                            "activity_lower":
+                                                activity_Tc_lower,
+
+                                            "conc_upper":
+                                                conc_Tc_upper,
+
+                                            "conc_lower":
+                                                conc_Tc_lower,
+
+                                            "detected":
+                                                detected_Tc,
+
+                                            "sum_clean": (
+                                                dynamic_upper
+                                                + dynamic_lower
+                                            ) / 2.0,
+
+                                            "sum_raw":
+                                                reference_entry.get(
+                                                    "sum_raw"
+                                                ),
+
+                                            "limits": {
+                                                "upper":
+                                                    dynamic_upper,
+                                                "lower":
+                                                    dynamic_lower
+                                            },
+
+                                            "delay_hours":
+                                                delay_hours,
+
+                                            "reference_hour":
+                                                reference_hour,
+
+                                            "reference_timestamp":
+                                                reference_timestamp,
+
+                                            "ratio":
+                                                ratio,
+
+                                            "algorithm":
+                                                "Tc+F",
+
+                                            "extrapolated":
+                                                False,
+
+                                            "extrapolation_starts_next":
+                                                False
+                                        }
+
+                                        trim_history()
+
+        # ============================================================
+        # 26. ФОРМУЄМО ЗАГАЛЬНИЙ РЕЗУЛЬТАТ
+        # ============================================================
+
         result = {
             "group": "reserve",
-            "isotopes": ["18F", "99mTc", "133I", "177Lu", "90Y"],
+
+            # Порядок залишаємо стабільним для GUI / Bridge.
+            "isotopes": [
+                "18F",
+                "99mTc",
+                "133I",
+                "177Lu",
+                "90Y"
+            ],
+
             "18F": {
+                "available": True,
+
                 "activity": activity_F,
                 "concentration": conc_F,
+
                 "activity_upper": activity_F_upper,
                 "activity_lower": activity_F_lower,
+
                 "conc_upper": conc_F_upper,
                 "conc_lower": conc_F_lower,
+
                 "detected": detected_F,
+
                 "sum_clean": sum_F_clean,
                 "sum_raw": sum_F_raw,
+
                 "limits": limits_F
             },
-            "99mTc": {
-                "activity": activity_Tc,
-                "concentration": conc_Tc,
-                "activity_upper": activity_Tc_upper,
-                "activity_lower": activity_Tc_lower,
-                "conc_upper": conc_Tc_upper,
-                "conc_lower": conc_Tc_lower,
-                "detected": detected_Tc,
-                "sum_clean": sum_Tc_clean,
-                "sum_raw": sum_Tc_raw,
-                "limits": limits_Tc,
-                "delay_hours": delay_hours
-            },
+
+            "99mTc": tc_data,
+
             "133I": {
+                "available": True,
+
                 "activity": activity_I,
                 "concentration": conc_I,
+
                 "activity_upper": activity_I_upper,
                 "activity_lower": activity_I_lower,
+
                 "conc_upper": conc_I_upper,
                 "conc_lower": conc_I_lower,
+
                 "detected": detected_I,
+
                 "sum_clean": sum_I_clean,
                 "sum_raw": sum_I_raw,
+
                 "limits": limits_I
             },
+
             "177Lu": {
+                "available": True,
+
                 "activity": activity_Lu,
                 "concentration": conc_Lu,
+
                 "activity_upper": activity_Lu_upper,
                 "activity_lower": activity_Lu_lower,
+
                 "conc_upper": conc_Lu_upper,
                 "conc_lower": conc_Lu_lower,
+
                 "detected": detected_Lu,
+
                 "sum_clean": sum_Lu_clean,
                 "sum_raw": sum_Lu_raw,
+
                 "limits": limits_Lu
             },
+
             "90Y": {
+                "available": True,
+
                 "activity": activity_Y,
                 "concentration": conc_Y,
+
                 "activity_upper": activity_Y_upper,
                 "activity_lower": activity_Y_lower,
+
                 "conc_upper": conc_Y_upper,
                 "conc_lower": conc_Y_lower,
+
                 "detected": detected_Y,
+
                 "sum_clean": sum_Y_clean,
                 "sum_raw": sum_Y_raw,
+
                 "limits": limits_Y
             },
-            "real_time": real_time,
-            "history_updated": history_updated
+
+            # Фактичне ПК-часове значення.
+            "real_time": diagnostic_real_time,
+
+            # Реальне математичне T алгоритму.
+            "calculation_time": calculation_time,
+
+            "measurement_valid": True,
+
+            "components": {
+                "iodine_scaled": arr3,
+                "after_iodine_subtraction": arr4
+            },
+
+            "history_updated": history
         }
-        
+
         return result
 
-   
 
-   
 
-    def identify_isotopes_alim(self, spectrum, cistern_position, history=None):
+
+
+    def identify_isotopes_alim(
+        self,
+        spectrum,
+        cistern_position,
+        history=None
+    ):
         """
-        Головний метод ідентифікації ізотопів (ALIM).
-        
-        Вхід:
-            spectrum - list[float] масив 1024 елементів (1023 спектра + час набора в кінці)
-            cistern_position - int номер цистерни
-            history - dict або None, історія для груп A та reserve
-        
-        Вихід:
-            (result, updated_history) - кортеж:
-                result - dict з результатами (структура залежить від групи)
-                updated_history - dict оновлена історія для наступного виклику
+        Головний вхід у алгоритм ідентифікації ALIM.
+
+        Формат spectrum:
+
+            1023 спектральні канали
+            +
+            фактичний час спектрального циклу ПК.
+
+        ================================================================
+        ЧАСОВА СЕМАНТИКА
+        ================================================================
+
+        actual_cycle_time:
+            фактичний час циклу, виміряний ПК.
+
+        calculation_time:
+            час T, який використовується у математичному алгоритмі.
+
+        За відповідями консультанта:
+
+            група B:
+                T = 3600 с
+
+            reserve / ZB3:
+                T = 3600 с
+
+        Отже для цих алгоритмів:
+
+            T1 = 3600 - DEAD_TIME_COEFF * sum(k)
+
+        Фактичний час ПК залишається тільки діагностичною
+        інформацією і не впливає на математичне T.
+
+        Для групи A на цьому етапі залишаємо поточну поведінку.
         """
-        # ------------------------------------------------------------
-        # 1. Витягуємо час набора та спектр
-        # ------------------------------------------------------------
-        real_time = spectrum[-1] if len(spectrum) > 0 else 3600.0
-        if real_time <= 0:
-            real_time = 3600.0
-        
-        # Відокремлюємо спектр (1023 канали)
-        raw_spectrum = spectrum[:1023]
-        
-        # ------------------------------------------------------------
-        # 2. Нормалізація спектру (ARR_1)
-        # ------------------------------------------------------------
-        arr1 = self._normalize_spectrum(raw_spectrum, real_time)
-        
-        # ------------------------------------------------------------
-        # 3. Віднімання фону (ARR_2)
-        # ------------------------------------------------------------
-        arr2 = self._subtract_background(arr1)
-        
-        # ------------------------------------------------------------
-        # 4. Визначаємо групу та отримуємо об'єм
-        # ------------------------------------------------------------
-        group = self.cistern_groups.get(cistern_position, "A")
-        volume = self._get_cistern_volume(cistern_position)
-        
-        # ------------------------------------------------------------
-        # 5. Виклик відповідного алгоритму
-        # ------------------------------------------------------------
-        if group == "A":
-            result = self._identify_group_A(arr1, arr2, real_time, volume, history)
-            updated_history = result.pop("history_updated", {})
-        elif group == "B":
-            result = self._identify_group_B(arr1, arr2, real_time, volume)
-            updated_history = {}  # для групи B історія не потрібна
-        elif group == "reserve":
-            result = self._identify_group_reserve(arr1, arr2, real_time, volume, history)
-            updated_history = result.pop("history_updated", {})
+
+        # ============================================================
+        # 1. БЕЗПЕЧНА ПОЧАТКОВА ІСТОРІЯ
+        # ============================================================
+
+        safe_history = (
+            history
+            if isinstance(history, dict)
+            else {}
+        )
+
+        # ============================================================
+        # 2. ПЕРЕВІРЯЄМО ФОРМАТ СПЕКТРУ
+        # ============================================================
+
+        if not isinstance(
+            spectrum,
+            (list, tuple, np.ndarray)
+        ):
+            self.ui.textEdit.append(
+                "Помилка ALIM: спектр має некоректний тип."
+            )
+            return None, safe_history
+
+        if len(spectrum) != 1024:
+            self.ui.textEdit.append(
+                f"Помилка ALIM: очікується 1024 значення "
+                f"(1023 канали + T), отримано {len(spectrum)}."
+            )
+            return None, safe_history
+
+        # ============================================================
+        # 3. ФАКТИЧНИЙ ЧАС ЦИКЛУ ПК
+        # ============================================================
+
+        try:
+            actual_cycle_time = float(
+                spectrum[1023]
+            )
+
+        except (TypeError, ValueError):
+
+            self.ui.textEdit.append(
+                "Помилка ALIM: фактичний час накопичення "
+                "не є числом."
+            )
+
+            return None, safe_history
+
+        if (
+            not math.isfinite(actual_cycle_time)
+            or
+            actual_cycle_time <= 0.0
+        ):
+            self.ui.textEdit.append(
+                f"Помилка ALIM: некоректний фактичний "
+                f"час циклу={actual_cycle_time}."
+            )
+
+            return None, safe_history
+
+        # ============================================================
+        # 4. ВИЗНАЧАЄМО ГРУПУ ДО НОРМУВАННЯ
+        # ============================================================
+        #
+        # Це принципово важливо.
+        #
+        # Для B та reserve необхідно знати групу ДО створення ARR_1,
+        # тому що для них T1 повинен розраховуватися від T=3600.
+
+        if cistern_position not in self.cistern_groups:
+
+            self.ui.textEdit.append(
+                f"Помилка ALIM: невідомий номер цистерни "
+                f"{cistern_position}."
+            )
+
+            return None, safe_history
+
+        group = self.cistern_groups[
+            cistern_position
+        ]
+
+        # ============================================================
+        # 5. ОТРИМУЄМО ОБ'ЄМ ЦИСТЕРНИ
+        # ============================================================
+
+        volume = self._get_cistern_volume(
+            cistern_position
+        )
+
+        try:
+            volume = float(volume)
+
+        except (TypeError, ValueError):
+
+            self.ui.textEdit.append(
+                f"Помилка ALIM: некоректний об'єм "
+                f"цистерни {cistern_position}."
+            )
+
+            return None, safe_history
+
+        if (
+            not math.isfinite(volume)
+            or
+            volume <= 0.0
+        ):
+            self.ui.textEdit.append(
+                f"Помилка ALIM: некоректний об'єм "
+                f"цистерни {cistern_position}: {volume}."
+            )
+
+            return None, safe_history
+
+        # ============================================================
+        # 6. ВИЗНАЧАЄМО РОЗРАХУНКОВИЙ T
+        # ============================================================
+
+        if group in ("B", "reserve"):
+
+            # --------------------------------------------------------
+            # Для трьохізотопного алгоритму групи B
+            # та п'ятиізотопного резервного алгоритму ZB3
+            # консультант підтвердив:
+            #
+            #               T = 3600 секунд.
+            # --------------------------------------------------------
+
+            calculation_time = 3600.0
+
         else:
-            # Невідома група — повертаємо порожній результат
-            result = {
-                "group": "unknown",
-                "isotopes": [],
-                "real_time": real_time
-            }
+
+            # --------------------------------------------------------
+            # Групу A зараз не змінюємо в рамках п.15.
+            # --------------------------------------------------------
+
+            calculation_time = actual_cycle_time
+
+        # ============================================================
+        # 7. ДОПОМІЖНА ОБРОБКА НЕВАЛІДНОЇ ГОДИНИ RESERVE
+        # ============================================================
+        #
+        # У резервному алгоритмі важливо не просто пропустити
+        # невдалий спектр.
+        #
+        # Якщо пропустити годину, послідовність:
+        #
+        #       7 ↔ 1
+        #       8 ↔ 2
+        #       9 ↔ 3
+        #
+        # буде порушена.
+        #
+        # Тому резервний алгоритм повинен знати, що фізично
+        # годинний цикл відбувся, але результат спектру невалідний.
+
+        def process_invalid_reserve_hour(reason):
+            """
+            Передає невалідну годину в алгоритм ZB3.
+
+            Сам _identify_group_reserve() вирішує:
+
+            - якщо кінцевого Tc ще немає -> available=False;
+            - якщо попередній Tc вже є -> екстраполяція;
+            - інші ізотопи поточного невалідного спектру
+            залишаються unavailable.
+            """
+
+            if group != "reserve":
+                return None, safe_history
+
+            self.ui.textEdit.append(
+                f"ZB3: поточний спектральний цикл "
+                f"позначено як невалідний: {reason}"
+            )
+
+            result = self._identify_group_reserve(
+                None,
+                None,
+                actual_cycle_time,
+                volume,
+                safe_history,
+                hour_valid=False,
+                invalid_reason=reason
+            )
+
+            if not result:
+                return None, safe_history
+
+            updated_history = result.pop(
+                "history_updated",
+                safe_history
+            )
+
+            return result, updated_history
+
+        # ============================================================
+        # 8. ПЕРЕВІРЯЄМО СИРІ 1023 КАНАЛИ
+        # ============================================================
+
+        raw_spectrum = []
+
+        for index, value in enumerate(
+            spectrum[:1023]
+        ):
+
+            try:
+                value_f = float(value)
+
+            except (TypeError, ValueError):
+
+                reason = (
+                    f"канал {index} не є числом"
+                )
+
+                if group == "reserve":
+                    return process_invalid_reserve_hour(
+                        reason
+                    )
+
+                self.ui.textEdit.append(
+                    f"Помилка ALIM: {reason}."
+                )
+
+                return None, safe_history
+
+            # --------------------------------------------------------
+            # Сирі відліки детектора повинні бути:
+            #
+            #     - скінченними;
+            #     - не від'ємними.
+            #
+            # Від'ємні значення дозволяються вже пізніше,
+            # після віднімання фону в ARR_2 / ARR_4.
+            # --------------------------------------------------------
+
+            if (
+                not math.isfinite(value_f)
+                or
+                value_f < 0.0
+            ):
+
+                reason = (
+                    f"некоректне значення каналу "
+                    f"{index}: {value_f}"
+                )
+
+                if group == "reserve":
+                    return process_invalid_reserve_hour(
+                        reason
+                    )
+
+                self.ui.textEdit.append(
+                    f"Помилка ALIM: {reason}."
+                )
+
+                return None, safe_history
+
+            raw_spectrum.append(
+                value_f
+            )
+
+        # ============================================================
+        # 9. ARR_1 — НОРМУВАННЯ З УРАХУВАННЯМ МЕРТВОГО ЧАСУ
+        # ============================================================
+        #
+        # Для B / reserve:
+        #
+        #     calculation_time = 3600
+        #
+        # тому всередині _normalize_spectrum():
+        #
+        #     T1 = 3600 - DEAD_TIME_COEFF * sum(k)
+        #
+        # Для A поки використовується фактичний час.
+
+        arr1 = self._normalize_spectrum(
+            raw_spectrum,
+            calculation_time
+        )
+
+        if arr1 is None:
+
+            sum_k = math.fsum(
+                raw_spectrum
+            )
+
+            corrected_time = (
+                calculation_time
+                - self.DEAD_TIME_COEFF * sum_k
+            )
+
+            reason = (
+                "неможливо виконати нормування спектру "
+                f"(T={calculation_time:.6f} с, "
+                f"T1={corrected_time:.6f} с)"
+            )
+
+            if group == "reserve":
+
+                return process_invalid_reserve_hour(
+                    reason
+                )
+
+            self.ui.textEdit.append(
+                f"Помилка ALIM: {reason}."
+            )
+
+            return None, safe_history
+
+        # ============================================================
+        # 10. ARR_2 — ВІДНІМАННЯ ФОНУ
+        # ============================================================
+
+        arr2 = self._subtract_background(
+            arr1
+        )
+
+        if arr2 is None:
+
+            reason = (
+                "коректний background.txt недоступний; "
+                "розрахунок без віднімання фону заборонено"
+            )
+
+            if group == "reserve":
+
+                return process_invalid_reserve_hour(
+                    reason
+                )
+
+            self.ui.textEdit.append(
+                f"Помилка ALIM: {reason}."
+            )
+
+            return None, safe_history
+
+        # ============================================================
+        # 11. ВИКЛИКАЄМО АЛГОРИТМ ПОТРІБНОЇ ГРУПИ
+        # ============================================================
+
+        if group == "A":
+
+            result = self._identify_group_A(
+                arr1,
+                arr2,
+                calculation_time,
+                volume,
+                safe_history
+            )
+
+            if not result:
+                return None, safe_history
+
+            updated_history = result.pop(
+                "history_updated",
+                {}
+            )
+
+        elif group == "B":
+
+            result = self._identify_group_B(
+                arr1,
+                arr2,
+
+                # Фактичний час передається тільки
+                # як діагностичне значення.
+                actual_cycle_time,
+
+                volume
+            )
+
+            if not result:
+                return None, safe_history
+
             updated_history = {}
-        
-        # ------------------------------------------------------------
-        # 6. Повертаємо результат та оновлену історію
-        # ------------------------------------------------------------
-        return result, updated_history
+
+        elif group == "reserve":
+
+            result = self._identify_group_reserve(
+                arr1,
+                arr2,
+
+                # Усередині reserve T вже жорстко 3600.
+                # actual_cycle_time потрібен для діагностики.
+                actual_cycle_time,
+
+                volume,
+                safe_history,
+
+                hour_valid=True
+            )
+
+            if not result:
+                return None, safe_history
+
+            updated_history = result.pop(
+                "history_updated",
+                safe_history
+            )
+
+        else:
+
+            self.ui.textEdit.append(
+                f"Помилка ALIM: невідома група "
+                f"цистерни '{group}'."
+            )
+
+            return None, safe_history
+
+        # ============================================================
+        # 12. ДІАГНОСТИЧНА ІНФОРМАЦІЯ ПРО ЧАС
+        # ============================================================
+
+        if isinstance(result, dict):
+
+            # Фактичний час ПК.
+            result["real_time"] = (
+                actual_cycle_time
+            )
+
+            # Час, використаний математичним алгоритмом.
+            result["calculation_time"] = (
+                calculation_time
+            )
+
+        # ============================================================
+        # 13. ПОВЕРТАЄМО РЕЗУЛЬТАТ
+        # ============================================================
+
+        return result, updated_history  
+
+    
 
 
 
@@ -4622,137 +9069,338 @@ class App(QObject):
             self.ui.textEdit.append(f"[CZ] Виняток при відправці: {e}")
 
 
-    def _calculate_ready_to_drain(self, posit_number, activity_dict, concentration_dict):
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    def _calculate_ready_to_drain(
+        self,
+        posit_number,
+        activity_upper_dict,
+        concentration_upper_dict
+    ):
         """
-        Розраховує готовність до сливу для цистерни на основі активностей та концентрацій.
-        
-        Вхід:
-            posit_number - номер цистерни (1..9)
-            activity_dict - словник {назва_ізотопу: активність_Бк}
-            concentration_dict - словник {назва_ізотопу: концентрація_Бк_л}
-        
-        Вихід:
-            1 - якщо умови сливу виконані
-            0 - якщо умови не виконані
+        Розрахунок готовності цистерни до зливу відповідно до
+        прийнятої для проєкту інтерпретації вимог Закону / постанови 1320.
+
+        ================================================================
+        ПРИЙНЯТІ ПРАВИЛА
+        ================================================================
+
+        1. Для концентрації приймаємо:
+
+                1 кг рідини == 1 літр
+
+        Тому результати програми:
+
+                Бк/л
+
+        переводимо у нормативні:
+
+                кБк/кг
+
+        за формулою:
+
+                C_kBq_kg = C_Bq_l / 1000
+
+        2. Для перестраховки при ready_to_drain використовуємо
+        НЕ центральні значення, а ВЕРХНІ статистичні межі:
+
+                activity_upper
+                conc_upper
+
+        3. Якщо верхня статистична межа вийшла від'ємною,
+        її нормативний внесок приймаємо рівним нулю:
+
+                max(value, 0)
+
+        4. Для суміші ізотопів обчислюємо:
+
+                activity_ratio_sum =
+                    Σ(A_upper_i / A0_i)
+
+                concentration_ratio_sum =
+                    Σ(C_upper_i / C0_i)
+
+        5. Злив дозволяється тільки якщо ОБИДВІ умови виконані:
+
+                concentration_ratio_sum <= 1
+
+                activity_ratio_sum <= 1000
+
+        6. Якщо хоча б одного необхідного результату немає,
+        він має неправильний тип, NaN або inf:
+
+                ready_to_drain = 0
+
+        Тобто будь-яка невизначеність трактується безпечно.
         """
-        if not activity_dict or not concentration_dict:
+
+        # ============================================================
+        # 1. ПЕРЕВІРКА ВХІДНИХ СЛОВНИКІВ
+        # ============================================================
+
+        if not isinstance(activity_upper_dict, dict):
             return 0
-        
-        group = self.cistern_groups.get(posit_number, "A")
-        
+
+        if not isinstance(concentration_upper_dict, dict):
+            return 0
+
+        # ============================================================
+        # 2. ВИЗНАЧАЄМО ГРУПУ ЦИСТЕРНИ
+        # ============================================================
+
+        group = self.cistern_groups.get(
+            posit_number
+        )
+
+        if group not in (
+            "A",
+            "B",
+            "reserve"
+        ):
+            return 0
+
+        # ============================================================
+        # 3. НОРМАТИВНІ ЗНАЧЕННЯ
+        # ============================================================
+        #
+        # activity_limit:
+        #     Бк
+        #
+        # concentration_limit:
+        #     кБк/кг
+        #
+        # Для концентрації програма передає Бк/л,
+        # тому перед порівнянням виконується / 1000.
+        #
+        # I-133:
+        #     10 кБк/кг,
+        # а НЕ 100 кБк/кг.
+
+        limits = {
+            "18F": {
+                "activity": 1_000_000.0,
+                "concentration": 10.0
+            },
+
+            "99mTc": {
+                "activity": 10_000_000.0,
+                "concentration": 100.0
+            },
+
+            "133I": {
+                "activity": 1_000_000.0,
+                "concentration": 10.0
+            },
+
+            "177Lu": {
+                "activity": 10_000_000.0,
+                "concentration": 1000.0
+            },
+
+            "90Y": {
+                "activity": 100_000.0,
+                "concentration": 1000.0
+            }
+        }
+
+        # ============================================================
+        # 4. ЯКІ ІЗОТОПИ ПОВИННІ БУТИ ДЛЯ КОЖНОЇ ГРУПИ
+        # ============================================================
+
         if group == "A":
-            return self._check_ready_to_drain_group_a(activity_dict, concentration_dict)
+
+            required_isotopes = (
+                "18F",
+                "99mTc"
+            )
+
         elif group == "B":
-            return self._check_ready_to_drain_group_b(activity_dict, concentration_dict)
-        elif group == "reserve":
-            return self._check_ready_to_drain_reserve(activity_dict, concentration_dict)
-        
-        return 0
 
-    def _check_ready_to_drain_group_a(self, activity_dict, concentration_dict):
-        """
-        Перевіряє умови сливу для групи A (ZB1, ZB2).
-        """
-        A_F = activity_dict.get("18F", 0.0)
-        A_Tc = activity_dict.get("99mTc", 0.0)
-        S_F = concentration_dict.get("18F", 0.0)
-        S_Tc = concentration_dict.get("99mTc", 0.0)
-        
-        # Якщо активностей немає — не готово
-        if A_F == 0 and A_Tc == 0:
+            required_isotopes = (
+                "133I",
+                "177Lu",
+                "90Y"
+            )
+
+        else:
+
+            # ZB3 — одна суміш усіх п'яти ізотопів.
+            #
+            # Не ділимо її штучно на групу A + групу B.
+            required_isotopes = (
+                "18F",
+                "99mTc",
+                "133I",
+                "177Lu",
+                "90Y"
+            )
+
+        # ============================================================
+        # 5. РОЗРАХОВУЄМО НОРМОВАНІ СУМИ
+        # ============================================================
+
+        activity_ratio_sum = 0.0
+        concentration_ratio_sum = 0.0
+
+        for isotope in required_isotopes:
+
+            # --------------------------------------------------------
+            # Відсутність хоча б одного обов'язкового результату
+            # означає, що рішення про злив приймати не можна.
+            # --------------------------------------------------------
+
+            if isotope not in activity_upper_dict:
+                return 0
+
+            if isotope not in concentration_upper_dict:
+                return 0
+
+            try:
+                activity_upper = float(
+                    activity_upper_dict[isotope]
+                )
+
+                concentration_upper_bq_l = float(
+                    concentration_upper_dict[isotope]
+                )
+
+            except (TypeError, ValueError):
+                return 0
+
+            # --------------------------------------------------------
+            # NaN / inf категорично не допускаємо.
+            # --------------------------------------------------------
+
+            if not math.isfinite(activity_upper):
+                return 0
+
+            if not math.isfinite(
+                concentration_upper_bq_l
+            ):
+                return 0
+
+            # --------------------------------------------------------
+            # За погодженим правилом негативний статистичний
+            # результат не повинен компенсувати позитивний внесок
+            # іншого ізотопу.
+            #
+            # Тому:
+            #
+            #     negative -> 0
+            # --------------------------------------------------------
+
+            activity_upper = max(
+                activity_upper,
+                0.0
+            )
+
+            concentration_upper_bq_l = max(
+                concentration_upper_bq_l,
+                0.0
+            )
+
+            # --------------------------------------------------------
+            # Переведення:
+            #
+            #     Бк/л -> кБк/кг
+            #
+            # при прийнятому:
+            #
+            #     1 кг == 1 л
+            # --------------------------------------------------------
+
+            concentration_upper_kbq_kg = (
+                concentration_upper_bq_l
+                / 1000.0
+            )
+
+            isotope_limits = limits[
+                isotope
+            ]
+
+            activity_limit = float(
+                isotope_limits["activity"]
+            )
+
+            concentration_limit = float(
+                isotope_limits["concentration"]
+            )
+
+            # Додатковий захист від помилки констант.
+            if (
+                activity_limit <= 0.0
+                or
+                concentration_limit <= 0.0
+            ):
+                return 0
+
+            activity_ratio_sum += (
+                activity_upper
+                / activity_limit
+            )
+
+            concentration_ratio_sum += (
+                concentration_upper_kbq_kg
+                / concentration_limit
+            )
+
+        # ============================================================
+        # 6. ФІНАЛЬНА ПЕРЕВІРКА
+        # ============================================================
+
+        if (
+            not math.isfinite(activity_ratio_sum)
+            or
+            not math.isfinite(
+                concentration_ratio_sum
+            )
+        ):
             return 0
-        
-        # Тільки 18F
-        if A_F > 0 and A_Tc == 0:
-            return 1 if (A_F < self.READY_TO_DRAIN_A_F_ACTIVITY_LIMIT and
-                        S_F < self.READY_TO_DRAIN_A_F_CONCENTRATION_LIMIT) else 0
-        
-        # Тільки 99mTc
-        if A_Tc > 0 and A_F == 0:
-            return 1 if (A_Tc < self.READY_TO_DRAIN_A_TC_ACTIVITY_LIMIT and
-                        S_Tc < self.READY_TO_DRAIN_A_TC_CONCENTRATION_LIMIT) else 0
-        
-        # Обидва ізотопи
-        activity_sum = A_F / self.READY_TO_DRAIN_A_F_ACTIVITY_LIMIT + \
-                    A_Tc / self.READY_TO_DRAIN_A_TC_ACTIVITY_LIMIT
-        concentration_sum = S_F / self.READY_TO_DRAIN_A_F_CONCENTRATION_LIMIT + \
-                            S_Tc / self.READY_TO_DRAIN_A_TC_CONCENTRATION_LIMIT
-        
-        if (self.READY_TO_DRAIN_ACTIVITY_SUM_MIN < activity_sum < self.READY_TO_DRAIN_ACTIVITY_SUM_MAX and
-            concentration_sum <= 1):
+
+        # ============================================================
+        # 7. READY_TO_DRAIN
+        # ============================================================
+        #
+        # Для дозволу зливу обидві умови повинні
+        # виконуватися одночасно.
+        #
+        # Межові значення допускаємо:
+        #
+        #     concentration_ratio_sum == 1
+        #     activity_ratio_sum == 1000
+        #
+        # оскільки нормативне перевищення починається
+        # саме ПОНАД відповідною межею.
+
+        if (
+            concentration_ratio_sum <= 1.0
+            and
+            activity_ratio_sum <= 1000.0
+        ):
             return 1
+
         return 0
 
-
-    def _check_ready_to_drain_group_b(self, activity_dict, concentration_dict):
-        """
-        Перевіряє умови сливу для групи B (ZB4-ZB9).
-        """
-        A_I = activity_dict.get("133I", 0.0)
-        A_Lu = activity_dict.get("177Lu", 0.0)
-        A_Y = activity_dict.get("90Y", 0.0)
-        S_I = concentration_dict.get("133I", 0.0)
-        S_Lu = concentration_dict.get("177Lu", 0.0)
-        S_Y = concentration_dict.get("90Y", 0.0)
-        
-        # Якщо активностей немає — не готово
-        if A_I == 0 and A_Lu == 0 and A_Y == 0:
-            return 0
-        
-        # Підраховуємо кількість присутніх ізотопів
-        present = []
-        if A_I > 0: present.append("I")
-        if A_Lu > 0: present.append("Lu")
-        if A_Y > 0: present.append("Y")
-        
-        # Тільки один ізотоп
-        if len(present) == 1:
-            if "I" in present:
-                return 1 if (A_I < self.READY_TO_DRAIN_B_I_ACTIVITY_LIMIT and
-                            S_I < self.READY_TO_DRAIN_B_I_CONCENTRATION_LIMIT) else 0
-            if "Lu" in present:
-                return 1 if (A_Lu < self.READY_TO_DRAIN_B_LU_ACTIVITY_LIMIT and
-                            S_Lu < self.READY_TO_DRAIN_B_LU_CONCENTRATION_LIMIT) else 0
-            if "Y" in present:
-                return 1 if (A_Y < self.READY_TO_DRAIN_B_Y_ACTIVITY_LIMIT and
-                            S_Y < self.READY_TO_DRAIN_B_Y_CONCENTRATION_LIMIT) else 0
-            return 0
-        
-        # Декілька ізотопів
-        activity_sum = A_I / self.READY_TO_DRAIN_B_I_ACTIVITY_LIMIT + \
-                    A_Lu / self.READY_TO_DRAIN_B_LU_ACTIVITY_LIMIT + \
-                    A_Y / self.READY_TO_DRAIN_B_Y_ACTIVITY_LIMIT
-        concentration_sum = S_I / self.READY_TO_DRAIN_B_I_CONCENTRATION_LIMIT + \
-                            S_Lu / self.READY_TO_DRAIN_B_LU_CONCENTRATION_LIMIT + \
-                            S_Y / self.READY_TO_DRAIN_B_Y_CONCENTRATION_LIMIT
-        
-        if (self.READY_TO_DRAIN_ACTIVITY_SUM_MIN < activity_sum < self.READY_TO_DRAIN_ACTIVITY_SUM_MAX and
-            concentration_sum <= 1):
-            return 1
-        return 0
-
-    def _check_ready_to_drain_reserve(self, activity_dict, concentration_dict):
-        """
-        Перевіряє умови сливу для резервної цистерни (ZB3).
-        """
-        # Перевіряємо групу A (якщо є відповідні ізотопи)
-        ready_a = 1
-        A_F = activity_dict.get("18F", 0.0)
-        A_Tc = activity_dict.get("99mTc", 0.0)
-        
-        if A_F > 0 or A_Tc > 0:
-            ready_a = self._check_ready_to_drain_group_a(activity_dict, concentration_dict)
-        
-        # Перевіряємо групу B (якщо є відповідні ізотопи)
-        ready_b = 1
-        A_I = activity_dict.get("133I", 0.0)
-        A_Lu = activity_dict.get("177Lu", 0.0)
-        A_Y = activity_dict.get("90Y", 0.0)
-        
-        if A_I > 0 or A_Lu > 0 or A_Y > 0:
-            ready_b = self._check_ready_to_drain_group_b(activity_dict, concentration_dict)
-        
-        return 1 if (ready_a == 1 and ready_b == 1) else 0
 
     def _send_ready_to_drain_update(self, posit_number, ready_to_drain):
         """

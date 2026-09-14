@@ -109,7 +109,7 @@
         </sizepolicy>
        </property>
        <property name="text">
-        <string>Час накоплення спектру, с</string>
+        <string>Час накопичення спектру, с</string>
        </property>
        <property name="alignment">
         <set>Qt::AlignmentFlag::AlignCenter</set>
