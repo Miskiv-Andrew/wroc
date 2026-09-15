@@ -4665,28 +4665,80 @@ class App(QObject):
             Слот выведения текстовых данных
         """
         self.ui.textEdit.append(info)   
-  
+
+
+
     def stop_system(self):
         """
-            Остановка опроса приборов
+        Останавливает циклический опрос приборов.
+
+        DeviceManager работает в отдельном QThread, поэтому его
+        stop_all() вызывается через queued-вызов.
         """
-        if self.device_manager:
-            self.device_manager.stop_all()
-            self.ui.textEdit.append("Систему зупинено")
-            
-            # Разблокируем кнопку замены
-            if self.butt_replace_device:
-                self.butt_replace_device.setEnabled(True)
-            
-            # Возвращаем состояние кнопок
-            if self.butt_system_start:
-                self.butt_system_start.setEnabled(True)
-            if self.butt_system_stop:
-                self.butt_system_stop.setEnabled(False)
-            
-            # Разблокируем кнопку поиска
-            if hasattr(self, 'butt_search_dev'):
-                self.butt_search_dev.setEnabled(True)
+
+        # ============================================================
+        # 1. ПРОВЕРЯЕМ DEVICEMANAGER
+        # ============================================================
+
+        if self.device_manager is None:
+            return
+
+        # ============================================================
+        # 2. ПЕРЕДАЁМ STOP В ПОТОК DEVICEMANAGER
+        # ============================================================
+
+        try:
+
+            invoked = QMetaObject.invokeMethod(
+                self.device_manager,
+                "stop_all",
+                Qt.ConnectionType.QueuedConnection
+            )
+
+        except Exception as e:
+
+            self.ui.textEdit.append(
+                (
+                    "Помилка зупинки системи: "
+                    f"{e}"
+                )
+            )
+
+            return
+
+        # ============================================================
+        # 3. ПРОВЕРЯЕМ, ЧТО QT ПРИНЯЛ КОМАНДУ
+        # ============================================================
+
+        if not invoked:
+
+            self.ui.textEdit.append(
+                "Помилка: не вдалося передати команду "
+                "зупинки в потік DeviceManager"
+            )
+
+            return
+
+        # ============================================================
+        # 4. ОБНОВЛЯЕМ GUI
+        # ============================================================
+
+        self.ui.textEdit.append(
+            "Систему зупинено"
+        )
+
+        if self.butt_replace_device:
+            self.butt_replace_device.setEnabled(True)
+
+        if self.butt_system_start:
+            self.butt_system_start.setEnabled(True)
+
+        if self.butt_system_stop:
+            self.butt_system_stop.setEnabled(False)
+
+        if hasattr(self, "butt_search_dev"):
+            self.butt_search_dev.setEnabled(True)
+
 
 
     def on_device_packet(self, packet):
@@ -6611,18 +6663,49 @@ class App(QObject):
 
                 continue
 
-    
+
     def cleanup(self):
         """
-        Корректно завершает приложение.
+        Корректно и последовательно завершает приложение.
 
-        Перед остановкой Bridge обязательно запрещаем все механизмы
-        автоматического восстановления, чтобы finished/errorOccurred
-        во время shutdown не смогли повторно запустить Bridge.
+        Порядок завершения:
+
+            1. Запрещаем автоматическое восстановление Bridge/PLC.
+            2. Останавливаем служебные GUI-таймеры PLC.
+            3. Завершаем ModBusBridgeClient.
+            4. Останавливаем процесс ModBusBridgeService.
+            5. Гарантированно выполняем DeviceManager.stop_all()
+               в собственном потоке DeviceManager.
+            6. Завершаем QThread DeviceManager.
+            7. Записываем событие app_stop.
+            8. Сохраняем оставшиеся буферы БД и закрываем SQLite.
+
+        ВАЖНО:
+            DeviceManager должен быть полностью остановлен ДО закрытия БД,
+            потому что он содержит ссылку на DatabaseManager.
+
+            Повторный вызов cleanup() безопасно игнорируется.
         """
 
         # ============================================================
-        # 1. ЗАПРЕЩАЕМ ЛЮБОЕ АВТОМАТИЧЕСКОЕ ВОССТАНОВЛЕНИЕ
+        # 1. ЗАЩИТА ОТ ПОВТОРНОГО ВХОДА
+        # ============================================================
+        #
+        # cleanup() является процедурой полного завершения программы.
+        # Она не должна выполняться параллельно или повторно.
+        # ============================================================
+
+        if getattr(self, "_cleanup_started", False):
+            return
+
+        self._cleanup_started = True
+
+        # ============================================================
+        # 2. ЗАПРЕЩАЕМ АВТОМАТИЧЕСКОЕ ВОССТАНОВЛЕНИЕ BRIDGE
+        # ============================================================
+        #
+        # После начала shutdown никакое завершение Bridge
+        # не должно восприниматься как авария с последующим restart.
         # ============================================================
 
         self._plc_connection_requested = False
@@ -6637,11 +6720,10 @@ class App(QObject):
             restart_timer is not None
             and restart_timer.isActive()
         ):
-
             restart_timer.stop()
 
         # ============================================================
-        # 2. ОСТАНАВЛИВАЕМ МОНИТОР АКТУАЛЬНОСТИ PLC
+        # 3. ОСТАНАВЛИВАЕМ МОНИТОР АКТУАЛЬНОСТИ PLC
         # ============================================================
 
         plc_monitor_timer = getattr(
@@ -6654,18 +6736,22 @@ class App(QObject):
             plc_monitor_timer is not None
             and plc_monitor_timer.isActive()
         ):
-
             plc_monitor_timer.stop()
 
         # ============================================================
-        # 3. ЗАКРЫВАЕМ PYTHON -> BRIDGE
+        # 4. ЗАВЕРШАЕМ PYTHON -> BRIDGE
+        # ============================================================
+        #
+        # shutdown():
+        #
+        #   - запрещает reconnect;
+        #   - закрывает socket;
+        #   - останавливает reader/reconnect threads;
+        #   - ожидает их завершения.
         # ============================================================
 
         if (
-            hasattr(
-                self,
-                "modbus_client"
-            )
+            hasattr(self, "modbus_client")
             and self.modbus_client is not None
         ):
 
@@ -6691,7 +6777,11 @@ class App(QObject):
                 )
 
         # ============================================================
-        # 4. ОСТАНАВЛИВАЕМ C++ BRIDGE
+        # 5. ОСТАНАВЛИВАЕМ C++ BRIDGE
+        # ============================================================
+        #
+        # Сначала остановлен Python-клиент, поэтому никакого нового
+        # сетевого обмена с Bridge уже возникнуть не должно.
         # ============================================================
 
         try:
@@ -6708,17 +6798,51 @@ class App(QObject):
             )
 
         # ============================================================
-        # 5. ОСТАНАВЛИВАЕМ DEVICEMANAGER
+        # 6. ОСТАНАВЛИВАЕМ DEVICEMANAGER
+        # ============================================================
+        #
+        # КРИТИЧЕСКИЙ МОМЕНТ.
+        #
+        # DeviceManager принадлежит отдельному QThread.
+        # Поэтому напрямую вызывать:
+        #
+        #     self.device_manager.stop_all()
+        #
+        # нельзя.
+        #
+        # Но обычный QueuedConnection здесь тоже недостаточен:
+        # cleanup() должен ДОСТОВЕРНО знать, что stop_all()
+        # завершился, прежде чем выполнять thread.quit()
+        # и закрывать БД.
+        #
+        # Поэтому при работающем потоке используется
+        # BlockingQueuedConnection.
         # ============================================================
 
-        if self.device_manager is not None:
+        device_thread = getattr(
+            self,
+            "device_manager_thread",
+            None
+        )
+
+        device_manager = getattr(
+            self,
+            "device_manager",
+            None
+        )
+
+        if (
+            device_manager is not None
+            and device_thread is not None
+            and device_thread.isRunning()
+        ):
 
             try:
 
                 QMetaObject.invokeMethod(
-                    self.device_manager,
+                    device_manager,
                     "stop_all",
-                    Qt.ConnectionType.QueuedConnection
+                    Qt.ConnectionType.BlockingQueuedConnection
                 )
 
             except Exception as e:
@@ -6731,47 +6855,136 @@ class App(QObject):
                 )
 
         # ============================================================
-        # 6. ЗАВЕРШАЕМ ПОТОК DEVICEMANAGER
+        # 7. ЗАВЕРШАЕМ ПОТОК DEVICEMANAGER
+        # ============================================================
+        #
+        # После BlockingQueuedConnection мы уже знаем, что:
+        #
+        #   running = False;
+        #   poll_timer остановлен;
+        #   error_timer остановлен;
+        #   COM-порт закрыт;
+        #   текущий запрос сброшен.
+        #
+        # Теперь можно завершать event loop самого QThread.
         # ============================================================
 
         if (
-            self.device_manager_thread is not None
-            and self.device_manager_thread.isRunning()
+            device_thread is not None
+            and device_thread.isRunning()
         ):
 
-            self.device_manager_thread.quit()
+            device_thread.quit()
 
-            if not self.device_manager_thread.wait(
-                2000
-            ):
+            # В нормальной ситуации поток должен завершиться быстро.
+            #
+            # Даём ему достаточно времени для штатного выхода.
+            if not device_thread.wait(5000):
 
-                self.device_manager_thread.terminate()
+                # ----------------------------------------------------
+                # АВАРИЙНЫЙ РЕЗЕРВ
+                # ----------------------------------------------------
+                #
+                # terminate() небезопасен и поэтому НЕ является
+                # нормальным способом остановки потока.
+                #
+                # Здесь он используется только как последний резерв,
+                # если поток вопреки штатной процедуре не завершился.
+                #
+                # Это лучше, чем позволить уничтожить работающий
+                # QThread при завершении QApplication.
+                # ----------------------------------------------------
 
-                self.device_manager_thread.wait(
-                    1000
+                self.ui.textEdit.append(
+                    (
+                        "Попередження: потік DeviceManager "
+                        "не завершився штатно. "
+                        "Виконується аварійна зупинка."
+                    )
                 )
 
+                device_thread.terminate()
+                device_thread.wait()
+
         # ============================================================
-        # 7. БАЗА ДАННЫХ
+        # 8. СОХРАНЯЕМ СОБЫТИЕ О ЗАВЕРШЕНИИ ПРОГРАММЫ
+        # ============================================================
+        #
+        # Это выполняется ДО DatabaseManager.close(), пока SQLite
+        # гарантированно ещё доступен.
+        #
+        # Ошибка записи события не должна помешать последующей
+        # попытке сохранить измерительные буферы.
         # ============================================================
 
-        if self.db_manager is not None:
+        db_manager = getattr(
+            self,
+            "db_manager",
+            None
+        )
+
+        if db_manager is not None:
 
             try:
 
-                self.db_manager.save_system_event(
+                db_manager.save_system_event(
                     None,
                     "app_stop",
                     "Програма зупинена"
                 )
 
-            finally:
+            except Exception as e:
 
-                self.db_manager.close()
+                self.ui.textEdit.append(
+                    (
+                        "[DB] Помилка збереження події "
+                        f"app_stop: {e}"
+                    )
+                )
+
+            # ========================================================
+            # 9. СОХРАНЯЕМ БУФЕРЫ И ЗАКРЫВАЕМ БД
+            # ========================================================
+            #
+            # DatabaseManager.close() самостоятельно:
+            #
+            #   - останавливает wall_timer;
+            #   - останавливает cistern_timer;
+            #   - останавливает cleanup_timer;
+            #   - сохраняет wall_buffer;
+            #   - сохраняет cistern_buffer;
+            #   - закрывает SQLite.
+            #
+            # Даже если app_stop сохранить не удалось, close()
+            # всё равно обязательно выполняется.
+            # ========================================================
+
+            try:
+
+                db_manager.close()
+
+            except Exception as e:
+
+                # На данном этапе программа уже завершается,
+                # поэтому ошибку нельзя исправить повторным запуском
+                # рабочего цикла.
+                #
+                # Но обязательно фиксируем её для оператора/лога.
+                self.ui.textEdit.append(
+                    (
+                        "[DB] Помилка при завершенні "
+                        f"роботи бази даних: {e}"
+                    )
+                )
+
+        # ============================================================
+        # 10. ЗАВЕРШЕНИЕ CLEANUP
+        # ============================================================
 
         self.ui.textEdit.append(
             "Програма завершена"
         )
+
 
 
     def is_bridge_connected(self) -> bool:
@@ -6785,28 +6998,83 @@ class App(QObject):
         if hasattr(self, 'modbus_client') and self.modbus_client is not None:
             return self.modbus_client.is_connected()
         return False
-        
+
 
     def start_polling_and_test_system(self):
         """
-        Запуск опроса приборов.
-        Блокирует кнопки, чтобы предотвратить повторный запуск.
+        Запускает циклический опрос приборов.
+
+        DeviceManager работает в отдельном QThread,
+        поэтому запуск выполняется через queued-вызов start_all().
         """
+
+        # ============================================================
+        # 1. ПРОВЕРЯЕМ DEVICEMANAGER
+        # ============================================================
+
+        if self.device_manager is None:
+
+            self.ui.textEdit.append(
+                "Помилка: DeviceManager не створено"
+            )
+
+            return
+
+        # ============================================================
+        # 2. ПЕРЕДАЁМ КОМАНДУ START В ПОТОК DEVICEMANAGER
+        # ============================================================
+
+        try:
+
+            invoked = QMetaObject.invokeMethod(
+                self.device_manager,
+                "start_all",
+                Qt.ConnectionType.QueuedConnection
+            )
+
+        except Exception as e:
+
+            self.ui.textEdit.append(
+                (
+                    "Помилка запуску системи: "
+                    f"{e}"
+                )
+            )
+
+            return
+
+        # ============================================================
+        # 3. ПРОВЕРЯЕМ, ЧТО QT ПРИНЯЛ КОМАНДУ
+        # ============================================================
+
+        if not invoked:
+
+            self.ui.textEdit.append(
+                "Помилка: не вдалося передати команду "
+                "запуску в потік DeviceManager"
+            )
+
+            return
+
+        # ============================================================
+        # 4. ОБНОВЛЯЕМ GUI
+        # ============================================================
+
         if self.butt_replace_device:
             self.butt_replace_device.setEnabled(False)
-        
-        if hasattr(self, 'butt_search_dev'):
+
+        if hasattr(self, "butt_search_dev"):
             self.butt_search_dev.setEnabled(False)
-        
+
         if self.butt_system_start:
             self.butt_system_start.setEnabled(False)
+
         if self.butt_system_stop:
             self.butt_system_stop.setEnabled(True)
-        
-        # Запуск опроса
-        self.start_polling.emit()
 
-
+        self.ui.textEdit.append(
+            "Систему запущено"
+        )
                    
     def on_device_connection_status(
         self,
