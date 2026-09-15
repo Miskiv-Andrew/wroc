@@ -108,95 +108,240 @@ class DeviceReplaceDialog(QDialog):
             self.ui.label_status.setStyleSheet("background-color: #f8d7da; color: #721c24;")
         
         self.ui.btn_find_new.setEnabled(True)
+
   
 
     def replace_device(self):
         """
-        Выполняет замену прибора.
+        Выполняет замену неисправного прибора.
+
+        Процедура используется как для детекторов цистерн ZB,
+        так и для настенных детекторов CZ.
+
+        ВАЖНО:
+        Специальная команда replacement в Bridge предназначена
+        только для детекторов цистерн ZB.
+
+        Для настенных детекторов CZ новый серийный номер
+        передаётся в Bridge обычным CZ-пакетом после перезапуска
+        программы и возобновления работы системы.
         """
-        # Получаем данные старого прибора
+
+        # ============================================================
+        # 1. ПОЛУЧАЕМ СТАРЫЙ ПРИБОР
+        # ============================================================
+
         old_sn = self.ui.combo_old_device.currentData()
+
         if not old_sn:
-            QMessageBox.warning(self, "Ошибка", "Не выбран старый прибор")
+            QMessageBox.warning(
+                self,
+                "Ошибка",
+                "Не выбран старый прибор"
+            )
             return
-        
-        # Находим старый прибор в active_devices
+
+        # ============================================================
+        # 2. НАХОДИМ ДАННЫЕ СТАРОГО ПРИБОРА
+        # ============================================================
+
         old_device = None
+
         for dev in self.active_devices:
-            if dev['serial_number'] == old_sn:
+            if dev["serial_number"] == old_sn:
                 old_device = dev
                 break
-        
+
         if not old_device:
-            QMessageBox.warning(self, "Ошибка", "Старый прибор не найден в конфигурации")
+            QMessageBox.warning(
+                self,
+                "Ошибка",
+                "Старый прибор не найден в конфигурации"
+            )
             return
-        
-        # Получаем данные нового прибора
+
+        # ============================================================
+        # 3. ПРОВЕРЯЕМ НОВЫЙ ПРИБОР
+        # ============================================================
+
         if not self.new_device_info:
-            QMessageBox.warning(self, "Ошибка", "Не найден новый прибор")
+            QMessageBox.warning(
+                self,
+                "Ошибка",
+                "Не найден новый прибор"
+            )
             return
-        
+
         port, new_sn, old_addr = self.new_device_info
 
-        # Проверка на одинаковые серийные номера
+        # ------------------------------------------------------------
+        # Новый и заменяемый приборы не могут иметь одинаковый SN.
+        # ------------------------------------------------------------
+
         if old_sn == new_sn:
-            QMessageBox.warning(self, "Ошибка", "Старый и новый приборы имеют одинаковый серийный номер. Замена невозможна.")
-            self.ui.label_status.setText("Ошибка: одинаковые SN")
+            QMessageBox.warning(
+                self,
+                "Ошибка",
+                (
+                    "Старый и новый приборы имеют одинаковый "
+                    "серийный номер. Замена невозможна."
+                )
+            )
+
+            self.ui.label_status.setText(
+                "Ошибка: одинаковые SN"
+            )
+
             self.ui.btn_replace.setEnabled(True)
+
             return
-        
-        # Получаем целевой адрес из config.txt (по старому SN)
-        target_address = self._get_address_from_config(old_sn)
+
+        # ============================================================
+        # 4. ПОЛУЧАЕМ РАБОЧИЙ АДРЕС СТАРОГО ПРИБОРА
+        # ============================================================
+
+        target_address = self._get_address_from_config(
+            old_sn
+        )
+
         if target_address is None:
-            QMessageBox.warning(self, "Ошибка", f"Не удалось найти адрес для {old_sn} в config.txt")
+            QMessageBox.warning(
+                self,
+                "Ошибка",
+                (
+                    f"Не удалось найти адрес для "
+                    f"{old_sn} в config.txt"
+                )
+            )
             return
-        
-        # Меняем адрес нового прибора
+
+        # ============================================================
+        # 5. ИЗМЕНЯЕМ АДРЕС НОВОГО ПРИБОРА
+        # ============================================================
+
         self.ui.btn_replace.setEnabled(False)
-        self.ui.label_status.setText("Изменение адреса прибора...")
-        self.ui.label_status.setStyleSheet("background-color: #fff3cd; color: #856404;")
-        
-        QMessageBox.information(self, "Внимание", f"Будет изменен адрес прибора {new_sn} с {old_addr} на {target_address}")
-        
-        success = self.address_changer.change_address(port, old_addr, target_address, new_sn)
-        
+
+        self.ui.label_status.setText(
+            "Изменение адреса прибора..."
+        )
+
+        self.ui.label_status.setStyleSheet(
+            "background-color: #fff3cd; color: #856404;"
+        )
+
+        QMessageBox.information(
+            self,
+            "Внимание",
+            (
+                f"Будет изменен адрес прибора {new_sn} "
+                f"с {old_addr} на {target_address}"
+            )
+        )
+
+        success = self.address_changer.change_address(
+            port,
+            old_addr,
+            target_address,
+            new_sn
+        )
+
         if not success:
-            self.ui.label_status.setText("Ошибка при изменении адреса. Попробуйте еще раз.")
-            self.ui.label_status.setStyleSheet("background-color: #f8d7da; color: #721c24;")
+            self.ui.label_status.setText(
+                "Ошибка при изменении адреса. Попробуйте еще раз."
+            )
+
+            self.ui.label_status.setStyleSheet(
+                "background-color: #f8d7da; color: #721c24;"
+            )
+
             self.ui.btn_replace.setEnabled(True)
+
             return
-        
-        # Обновляем конфигурационные файлы и БД
+
+        # ============================================================
+        # 6. ОБНОВЛЯЕМ КОНФИГУРАЦИЮ И БД
+        # ============================================================
+
         try:
-            self._update_config_files(old_sn, new_sn, old_device)
-            self._update_database(old_sn, new_sn, old_device)
-            
-            # ------------------------------------------------------------
-            # Отправка замены в Bridge
-            # ------------------------------------------------------------
-            if self.app is not None:
+
+            self._update_config_files(
+                old_sn,
+                new_sn,
+                old_device
+            )
+
+            self._update_database(
+                old_sn,
+                new_sn,
+                old_device
+            )
+
+            # ========================================================
+            # 7. УВЕДОМЛЯЕМ BRIDGE О ЗАМЕНЕ
+            # ========================================================
+            #
+            # Специальная команда replacement существует ТОЛЬКО
+            # для детекторов цистерн ZB.
+            #
+            # Для настенного CZ вызывать её нельзя:
+            #
+            #     position_number CZ1
+            #
+            # иначе был бы интерпретирован Bridge как номер ZB1.
+            #
+            # Новый SN настенного детектора после перезапуска
+            # передаётся обычным CZ-пакетом.
+            # ========================================================
+
+            if (
+                self.app is not None
+                and old_device["location_type"] == "cistern"
+            ):
                 self.app._send_replacement_to_bridge(
-                    old_device['position_number'],
+                    old_device["position_number"],
                     int(new_sn)
                 )
-            
-            self.ui.label_status.setText("Замена выполнена. Необходимо перезапустить программу.")
-            self.ui.label_status.setStyleSheet("background-color: #d4edda; color: #155724;")
+
+            # ========================================================
+            # 8. ЗАМЕНА ЗАВЕРШЕНА
+            # ========================================================
+
+            self.ui.label_status.setText(
+                "Замена выполнена. Необходимо перезапустить программу."
+            )
+
+            self.ui.label_status.setStyleSheet(
+                "background-color: #d4edda; color: #155724;"
+            )
+
+            # Повторная замена в этом экземпляре диалога запрещается.
             self.ui.btn_replace.setEnabled(False)
-            
-            QMessageBox.information(self, "Успех", 
-                f"Замена прибора выполнена успешно.\n"
-                f"Старый SN: {old_sn}\n"
-                f"Новый SN: {new_sn}\n\n"
-                f"Необходимо перезапустить программу.")
-            
+
+            QMessageBox.information(
+                self,
+                "Успех",
+                (
+                    f"Замена прибора выполнена успешно.\n"
+                    f"Старый SN: {old_sn}\n"
+                    f"Новый SN: {new_sn}\n\n"
+                    f"Необходимо перезапустить программу."
+                )
+            )
+
         except Exception as e:
-            self.ui.label_status.setText(f"Ошибка при обновлении конфигурации: {e}")
-            self.ui.label_status.setStyleSheet("background-color: #f8d7da; color: #721c24;")
+
+            self.ui.label_status.setText(
+                f"Ошибка при обновлении конфигурации: {e}"
+            )
+
+            self.ui.label_status.setStyleSheet(
+                "background-color: #f8d7da; color: #721c24;"
+            )
+
             self.ui.btn_replace.setEnabled(True)
 
 
-    
+
     def _get_address_from_config(self, serial_number):
         """Читає address з config.txt по SN"""
         config_path = "config/config.txt"
@@ -289,31 +434,39 @@ class DeviceReplaceDialog(QDialog):
             
             # Записуємо оновлений cistern.json
             with open(cistern_path, "w", encoding="utf-8") as f:
-                json.dump(cistern_data, f, ensure_ascii=False, indent=4)    
-   
+                json.dump(cistern_data, f, ensure_ascii=False, indent=4)   
+
+
 
     def _update_database(self, old_sn, new_sn, old_device):
         """
         Обновляет БД при замене прибора.
 
-        Выполняется следующая последовательность:
+        Последовательность:
 
             1. старый прибор становится неактивным;
+
             2. новый прибор:
-                - либо активируется, если уже существует в БД;
-                - либо создаётся как новый;
+                - если уже существует в БД, повторно активируется
+                И привязывается к позиции заменяемого прибора;
+                - если раньше в БД не существовал, создаётся;
+
             3. изменения фиксируются в БД;
+
             4. перечитывается кеш активных приборов;
-            5. событие device_replaced связывается именно
-            с НОВЫМ прибором.
+
+            5. событие device_replaced связывается
+            с новым прибором.
 
         ВАЖНО:
 
-        system_events.device_id для события device_replaced
-        должен указывать на новый прибор.
+        Старые записи измерений не изменяются.
+        Старый прибор остаётся в таблице devices с is_active = 0.
 
-        Старый серийный номер при этом не теряется —
-        он остаётся в текстовом описании события.
+        Если новый прибор ранее уже использовался в системе,
+        его старая позиция не должна сохраняться: теперь он физически
+        установлен вместо old_device и поэтому должен получить
+        location_type и position_number заменяемого прибора.
         """
 
         # ============================================================
@@ -345,26 +498,45 @@ class DeviceReplaceDialog(QDialog):
             if self.db_manager.device_exists(new_sn):
 
                 # ----------------------------------------------------
-                # Прибор уже известен БД.
+                # Прибор уже известен системе.
                 #
-                # Например, он мог ранее использоваться в системе,
-                # затем быть снят, отремонтирован и установлен снова.
+                # Например:
+                #   - ранее использовался на другой позиции;
+                #   - был снят;
+                #   - был отремонтирован;
+                #   - теперь устанавливается вместо неисправного.
+                #
+                # Поэтому недостаточно только is_active = 1.
+                #
+                # Его логическое расположение в БД обязательно
+                # должно соответствовать позиции прибора,
+                # который сейчас заменяется.
                 # ----------------------------------------------------
 
                 cursor.execute(
                     """
                     UPDATE devices
-                    SET is_active = 1
+                    SET
+                        device_type = ?,
+                        location_type = ?,
+                        position_number = ?,
+                        is_active = 1
                     WHERE serial_number = ?
                     """,
-                    (new_sn,)
+                    (
+                        "БДБГ-09S-23",
+                        old_device["location_type"],
+                        old_device["position_number"],
+                        new_sn
+                    )
                 )
 
             else:
 
                 # ----------------------------------------------------
-                # Новый серийный номер раньше в системе не встречался.
-                # Создаём новую запись прибора.
+                # Новый SN раньше в системе не встречался.
+                # Создаём новую запись сразу на позиции
+                # заменяемого прибора.
                 # ----------------------------------------------------
 
                 cursor.execute(
@@ -390,20 +562,13 @@ class DeviceReplaceDialog(QDialog):
             # ========================================================
             # 4. ФИКСИРУЕМ ИЗМЕНЕНИЯ ПРИБОРОВ
             # ========================================================
-            #
-            # Сначала приборы должны быть гарантированно записаны
-            # в devices.
-            #
-            # Только после этого можно связывать system_event
-            # с device_id нового прибора.
-            # ========================================================
 
             conn.commit()
 
         except Exception:
 
             # ========================================================
-            # 5. ПРИ ОШИБКЕ ОТКАТЫВАЕМ ИЗМЕНЕНИЯ
+            # 5. ПРИ ОШИБКЕ ОТКАТЫВАЕМ ИЗМЕНЕНИЯ БД
             # ========================================================
 
             try:
@@ -416,16 +581,11 @@ class DeviceReplaceDialog(QDialog):
         # ============================================================
         # 6. ОБНОВЛЯЕМ КЕШ АКТИВНЫХ ПРИБОРОВ
         # ============================================================
-        #
-        # get_device_id() работает через devices_map.
-        #
-        # Поэтому новый прибор сначала должен попасть в этот кеш.
-        # ============================================================
 
         self.db_manager._load_devices_map()
 
         # ============================================================
-        # 7. ПОЛУЧАЕМ device_id НОВОГО ПРИБОРА
+        # 7. ПОЛУЧАЕМ ID НОВОГО ПРИБОРА
         # ============================================================
 
         new_device_id = self.db_manager.get_device_id(
@@ -436,11 +596,10 @@ class DeviceReplaceDialog(QDialog):
         # 8. СОХРАНЯЕМ СОБЫТИЕ ЗАМЕНЫ
         # ============================================================
         #
-        # По принятой нами семантике:
+        # Событие относится к новому установленному прибору.
         #
-        #     system_events.device_id = ID нового прибора.
-        #
-        # Старый прибор остаётся указанным в description.
+        # Старый и новый SN дополнительно сохраняются
+        # в текстовом описании события.
         # ============================================================
 
         self.db_manager.save_system_event(

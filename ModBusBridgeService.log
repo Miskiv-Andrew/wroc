@@ -218,3 +218,91 @@
 2026-09-14 19:00:04 [LOG] Disconnected from PLC
 2026-09-14 19:00:04 Server stopped
 2026-09-14 19:00:04 [SYSTEM] Application stopped
+2026-09-15 12:54:58 [SYSTEM] Starting ModBusBridgeService
+2026-09-15 12:54:58 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-09-15 12:54:58 [LOG] Attempting to connect to PLC...
+2026-09-15 12:54:58 Server is running on port 12345
+2026-09-15 12:54:58 [SYSTEM] Starting event loop
+2026-09-15 12:54:59 Client connected: 127.0.0.1:56667
+2026-09-15 12:54:59 Received 16 bytes
+2026-09-15 12:55:00 Client disconnected
+2026-09-15 12:55:00 [LOG] Disconnected from PLC
+2026-09-15 12:55:00 Server stopped
+2026-09-15 12:55:00 [SYSTEM] Application stopped
+2026-09-15 13:15:16 [SYSTEM] Starting ModBusBridgeService
+2026-09-15 13:15:16 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-09-15 13:15:16 [LOG] Attempting to connect to PLC...
+2026-09-15 13:15:16 Server is running on port 12345
+2026-09-15 13:15:16 [SYSTEM] Starting event loop
+2026-09-15 13:15:16 Client connected: 127.0.0.1:57286
+2026-09-15 13:15:16 Received 16 bytes
+2026-09-15 13:15:18 Client disconnected
+2026-09-15 13:15:18 [LOG] Disconnected from PLC
+2026-09-15 13:15:18 Server stopped
+2026-09-15 13:15:18 [SYSTEM] Application stopped
+2026-09-15 13:58:45 [SYSTEM] Starting ModBusBridgeService
+2026-09-15 13:58:45 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-09-15 13:58:45 [LOG] Attempting to connect to PLC...
+2026-09-15 13:58:45 Server is running on port 12345
+2026-09-15 13:58:45 [SYSTEM] Starting event loop
+2026-09-15 13:58:45 Client connected: 127.0.0.1:58512
+2026-09-15 13:58:45 Received 16 bytes
+2026-09-15 13:58:46 Client disconnected
+2026-09-15 13:58:46 [LOG] Disconnected from PLC
+2026-09-15 13:58:46 Server stopped
+2026-09-15 13:58:46 [SYSTEM] Application stopped
+2026-09-15 14:12:05 [SYSTEM] Starting ModBusBridgeService
+2026-09-15 14:12:05 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-09-15 14:12:05 [LOG] Attempting to connect to PLC...
+2026-09-15 14:12:05 Server is running on port 12345
+2026-09-15 14:12:05 [SYSTEM] Starting event loop
+2026-09-15 14:12:05 Client connected: 127.0.0.1:58965
+2026-09-15 14:12:05 Received 16 bytes
+2026-09-15 14:12:06 Client disconnected
+2026-09-15 14:12:06 [LOG] Disconnected from PLC
+2026-09-15 14:12:06 Server stopped
+2026-09-15 14:12:06 [SYSTEM] Application stopped
+2026-09-15 14:59:18 [SYSTEM] Starting ModBusBridgeService
+2026-09-15 14:59:18 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-09-15 14:59:18 [LOG] Attempting to connect to PLC...
+2026-09-15 14:59:18 Server is running on port 12345
+2026-09-15 14:59:18 [SYSTEM] Starting event loop
+2026-09-15 14:59:18 Client connected: 127.0.0.1:60208
+2026-09-15 14:59:18 Received 16 bytes
+2026-09-15 14:59:19 Client disconnected
+2026-09-15 14:59:19 [LOG] Disconnected from PLC
+2026-09-15 14:59:19 Server stopped
+2026-09-15 14:59:19 [SYSTEM] Application stopped
+2026-09-15 15:29:31 [SYSTEM] Starting ModBusBridgeService
+2026-09-15 15:29:31 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-09-15 15:29:31 [LOG] Attempting to connect to PLC...
+2026-09-15 15:29:31 Server is running on port 12345
+2026-09-15 15:29:31 [SYSTEM] Starting event loop
+2026-09-15 15:29:31 Client connected: 127.0.0.1:60822
+2026-09-15 15:29:31 Received 16 bytes
+2026-09-15 15:29:32 Client disconnected
+2026-09-15 15:29:32 [LOG] Disconnected from PLC
+2026-09-15 15:29:32 Server stopped
+2026-09-15 15:29:32 [SYSTEM] Application stopped
+2026-09-15 15:29:32 [SYSTEM] Starting ModBusBridgeService
+2026-09-15 15:29:32 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-09-15 15:29:32 [LOG] Attempting to connect to PLC...
+2026-09-15 15:29:32 Server is running on port 12345
+2026-09-15 15:29:32 [SYSTEM] Starting event loop
+2026-09-15 15:29:33 Client connected: 127.0.0.1:60825
+2026-09-15 15:29:33 Received 16 bytes
+2026-09-15 15:29:33 Client disconnected
+2026-09-15 15:29:33 [LOG] Disconnected from PLC
+2026-09-15 15:29:33 Server stopped
+2026-09-15 15:29:33 [SYSTEM] Application stopped
+2026-09-15 16:21:53 [SYSTEM] Starting ModBusBridgeService
+2026-09-15 16:21:53 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-09-15 16:21:53 [LOG] Attempting to connect to PLC...
+2026-09-15 16:21:53 Server is running on port 12345
+2026-09-15 16:21:53 [SYSTEM] Starting event loop
+2026-09-15 16:21:53 Client connected: 127.0.0.1:62338
+2026-09-15 16:21:53 Received 16 bytes
+2026-09-15 16:21:54 Client disconnected
+2026-09-15 16:21:54 [LOG] Disconnected from PLC
+2026-09-15 16:21:54 Server stopped
+2026-09-15 16:21:54 [SYSTEM] Application stopped

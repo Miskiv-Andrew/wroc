@@ -116,61 +116,206 @@ class DBViewWindow(QMainWindow):
         elif index == 2:
             self.current_tab = "events"
             self.load_events_data()
+
     
     def load_devices_lists(self):
-        """Загружает списки приборов из БД"""
-        devices = self.db_manager.get_all_active_devices()
-        
-        # Сортируем по типу расположения
-        cisterns = [d for d in devices if d["location_type"] == "cistern"]
-        rooms = [d for d in devices if d["location_type"] == "room"]
-        
-        # Вкладка ПАЕД - словарь для быстрого доступа
+        """
+        Загружает в окно просмотра БД список всех приборов,
+        включая ранее заменённые.
+
+        Это необходимо для просмотра полной истории измерений
+        за весь срок хранения БД.
+        """
+
+        # ------------------------------------------------------------
+        # 1. ПОЛУЧАЕМ ВСЕ ПРИБОРЫ
+        # ------------------------------------------------------------
+
+        devices = self.db_manager.get_all_devices_for_history()
+
+        cisterns = [
+            d for d in devices
+            if d["location_type"] == "cistern"
+        ]
+
+        rooms = [
+            d for d in devices
+            if d["location_type"] == "room"
+        ]
+
+        # ------------------------------------------------------------
+        # 2. СОХРАНЯЕМ СЛОВАРЬ ПРИБОРОВ
+        # ------------------------------------------------------------
+
         self.devices_dict = {}
-        for d in cisterns + rooms:
-            self.devices_dict[d["serial_number"]] = d
-        
-        # Вкладка Активность (только цистерны)
-        self.ui.combo_device_activity.clear()
-        self.ui.combo_device_activity.addItem("-- Виберіть цистерну --")
-        for d in cisterns:
-            self.ui.combo_device_activity.addItem(
-                f"Цистерна №{d['position_number']} (SN: {d['serial_number']})",
-                d["serial_number"]
-            )
-        
-        # Вкладка События
-        self.ui.combo_device_events.clear()
-        self.ui.combo_device_events.addItem("-- Всі прилади --")
-        for d in cisterns + rooms:
-            self.ui.combo_device_events.addItem(
-                f"{d['location_type']} №{d['position_number']} (SN: {d['serial_number']})",
-                d["serial_number"]
-            )
-    
-    def on_location_type_changed(self, index):
-        """Обновляет список приборов при смене типа расположения"""
+
+        for device in cisterns + rooms:
+            self.devices_dict[device["serial_number"]] = device
+
+        # ------------------------------------------------------------
+        # 3. ВКЛАДКА ПАЕД
+        # ------------------------------------------------------------
+        #
+        # Сам список приборов будет формироваться методом
+        # on_location_type_changed().
+        # ------------------------------------------------------------
+
         self.ui.combo_device_paed.clear()
-        self.ui.combo_device_paed.addItem("-- Виберіть прилад --")
-        
-        location_type = self.ui.combo_location_type_paed.currentText()
-        devices = self.db_manager.get_all_active_devices()
-        
-        if location_type == "Цистерна":
-            filtered = [d for d in devices if d["location_type"] == "cistern"]
-            self.ui.combo_device_paed.setEnabled(True)
-        elif location_type == "Кімната":
-            filtered = [d for d in devices if d["location_type"] == "room"]
-            self.ui.combo_device_paed.setEnabled(True)
-        else:
-            filtered = []
-            self.ui.combo_device_paed.setEnabled(False)
-        
-        for d in filtered:
-            self.ui.combo_device_paed.addItem(
-                f"{d['location_type']} №{d['position_number']} (SN: {d['serial_number']})",
-                d["serial_number"]
+        self.ui.combo_device_paed.addItem(
+            "-- Виберіть прилад --"
+        )
+
+        # ------------------------------------------------------------
+        # 4. ВКЛАДКА АКТИВНОСТИ
+        # ------------------------------------------------------------
+        #
+        # Активность относится только к детекторам цистерн.
+        # ------------------------------------------------------------
+
+        self.ui.combo_device_activity.clear()
+        self.ui.combo_device_activity.addItem(
+            "-- Виберіть цистерну --"
+        )
+
+        for device in cisterns:
+
+            active_text = (
+                ""
+                if device["is_active"]
+                else " [замінений]"
             )
+
+            self.ui.combo_device_activity.addItem(
+                (
+                    f"Цистерна №{device['position_number']} "
+                    f"(SN: {device['serial_number']})"
+                    f"{active_text}"
+                ),
+                device["serial_number"]
+            )
+
+        # ------------------------------------------------------------
+        # 5. ВКЛАДКА СИСТЕМНЫХ СОБЫТИЙ
+        # ------------------------------------------------------------
+
+        self.ui.combo_device_events.clear()
+        self.ui.combo_device_events.addItem(
+            "-- Всі прилади --"
+        )
+
+        for device in cisterns + rooms:
+
+            active_text = (
+                ""
+                if device["is_active"]
+                else " [замінений]"
+            )
+
+            location_name = (
+                "Цистерна"
+                if device["location_type"] == "cistern"
+                else "Кімната"
+            )
+
+            self.ui.combo_device_events.addItem(
+                (
+                    f"{location_name} "
+                    f"№{device['position_number']} "
+                    f"(SN: {device['serial_number']})"
+                    f"{active_text}"
+                ),
+                device["serial_number"]
+            )
+
+
+
+    def on_location_type_changed(self, index):
+        """
+        Обновляет список приборов при изменении типа расположения.
+
+        При выборе "Всі" показываются все приборы.
+        """
+
+        self.ui.combo_device_paed.clear()
+        self.ui.combo_device_paed.addItem(
+            "-- Виберіть прилад --"
+        )
+
+        location_type = (
+            self.ui.combo_location_type_paed.currentText()
+        )
+
+        devices = (
+            self.db_manager.get_all_devices_for_history()
+        )
+
+        # ------------------------------------------------------------
+        # 1. ФИЛЬТР ПО ТИПУ РАСПОЛОЖЕНИЯ
+        # ------------------------------------------------------------
+
+        if location_type == "Цистерна":
+
+            filtered = [
+                d for d in devices
+                if d["location_type"] == "cistern"
+            ]
+
+            # Группа имеет смысл только для цистерн.
+            self.ui.combo_group_paed.setEnabled(True)
+
+        elif location_type == "Кімната":
+
+            filtered = [
+                d for d in devices
+                if d["location_type"] == "room"
+            ]
+
+            # Для комнатных детекторов группы A/B/reserve
+            # не используются.
+            self.ui.combo_group_paed.setCurrentIndex(0)
+            self.ui.combo_group_paed.setEnabled(False)
+
+        else:
+            # Выбрано "Всі".
+            filtered = devices
+
+            # При отображении одновременно цистерн и комнат
+            # фильтр группы не применяется.
+            self.ui.combo_group_paed.setCurrentIndex(0)
+            self.ui.combo_group_paed.setEnabled(False)
+
+        self.ui.combo_device_paed.setEnabled(True)
+
+        # ------------------------------------------------------------
+        # 2. ЗАПОЛНЯЕМ СПИСОК ПРИБОРОВ
+        # ------------------------------------------------------------
+
+        for device in filtered:
+
+            active_text = (
+                ""
+                if device["is_active"]
+                else " [замінений]"
+            )
+
+            location_name = (
+                "Цистерна"
+                if device["location_type"] == "cistern"
+                else "Кімната"
+            )
+
+            self.ui.combo_device_paed.addItem(
+                (
+                    f"{location_name} "
+                    f"№{device['position_number']} "
+                    f"(SN: {device['serial_number']})"
+                    f"{active_text}"
+                ),
+                device["serial_number"]
+            )
+
+
+
     
     def get_date_range(self, tab):
         """Возвращает (date_from, date_to) для указанной вкладки"""
@@ -183,387 +328,1182 @@ class DBViewWindow(QMainWindow):
         else:  # events
             date_from = self.ui.dateFrom_events.dateTime().toPython()
             date_to = self.ui.dateTo_events.dateTime().toPython()
-        return date_from, date_to
+        return date_from, date_to   
     
-    
-    # def load_paed_data(self):
-    #     """
-    #         Загружает данные ПАЕД из БД и строит график/таблицу
-    #     """
-    #     date_from, date_to = self.get_date_range("paed")
-        
-    #     device_sn = self.ui.combo_device_paed.currentData()
-    #     if not device_sn:
-    #         QMessageBox.warning(self, "Попередження", "Виберіть прилад")
-    #         return
-        
-    #     device_id = self.db_manager.get_device_id(device_sn)
-    #     if not device_id:
-    #         return
-        
-    #     location_type = self.ui.combo_location_type_paed.currentText()
-        
-    #     if location_type in ("Цистерна", "Всі"):
-    #         conn = self.db_manager._get_connection()
-    #         cursor = conn.cursor()
-    #         cursor.execute("""
-    #             SELECT timestamp, paed, temperature, low_status, high_status, valid
-    #             FROM measurements_cistern
-    #             WHERE device_id = ? AND timestamp BETWEEN ? AND ?
-    #             ORDER BY timestamp
-    #         """, (device_id, date_from, date_to))
-    #         rows = cursor.fetchall()
-    #     else:
-    #         conn = self.db_manager._get_connection()
-    #         cursor = conn.cursor()
-    #         cursor.execute("""
-    #             SELECT timestamp, paed, temperature, low_status, high_status, valid
-    #             FROM measurements_wall
-    #             WHERE device_id = ? AND timestamp BETWEEN ? AND ?
-    #             ORDER BY timestamp
-    #         """, (device_id, date_from, date_to))
-    #         rows = cursor.fetchall()
-        
-    #     if not rows:
-    #         self.ax_paed.clear()
-    #         self.ax_paed.text(0.5, 0.5, "Немає даних за вибраний період", transform=self.ax_paed.transAxes, ha='center')
-    #         self.canvas_paed.draw()
-    #         self.fill_paed_table([])
-    #         return
-        
-    #     # Строим график - конвертируем строки в datetime
-    #     self.ax_paed.clear()
-    #     timestamps = [datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S") for row in rows]
-    #     paed_values = [row[1] for row in rows]
-        
-    #     self.ax_paed.plot(timestamps, paed_values, 'b-', linewidth=1.5)
-    #     self.ax_paed.set_xlabel("Час")
-    #     self.ax_paed.set_ylabel("ПАЕД, мкЗв/год")
-    #     self.ax_paed.set_title(f"ПАЕД - {device_sn}")
-    #     self.ax_paed.grid(True, alpha=0.3)
-    #     self.figure_paed.autofmt_xdate()
-    #     self.canvas_paed.draw()
-        
-    #     self.fill_paed_table(rows)    
-
+   
+   
     def load_paed_data(self):
         """
-        Загружает данные ПАЕД из БД и строит график/таблицу.
+        Загружает ПАЕД выбранного прибора из БД
+        и отображает график и таблицу.
         """
+
         date_from, date_to = self.get_date_range("paed")
-        
+
+        # ------------------------------------------------------------
+        # 1. ПРОВЕРЯЕМ КОРРЕКТНОСТЬ ПЕРИОДА
+        # ------------------------------------------------------------
+
+        if date_from > date_to:
+            QMessageBox.warning(
+                self,
+                "Попередження",
+                "Початкова дата не може бути пізніше кінцевої."
+            )
+            return
+
+        # ------------------------------------------------------------
+        # 2. ПОЛУЧАЕМ ВЫБРАННЫЙ ПРИБОР
+        # ------------------------------------------------------------
+
         device_sn = self.ui.combo_device_paed.currentData()
+
         if not device_sn:
-            QMessageBox.warning(self, "Попередження", "Виберіть прилад")
+            QMessageBox.warning(
+                self,
+                "Попередження",
+                "Виберіть прилад"
+            )
             return
-        
-        device_id = self.db_manager.get_device_id(device_sn)
-        if not device_id:
+
+        device = self.devices_dict.get(device_sn)
+
+        if device is None:
+            QMessageBox.warning(
+                self,
+                "Помилка",
+                "Не вдалося визначити тип вибраного приладу."
+            )
             return
-        
-        location_type = self.ui.combo_location_type_paed.currentText()
-        group_filter = self.ui.combo_group_paed.currentText()  # Получаем выбранную группу
-        
+
+        # ------------------------------------------------------------
+        # 3. ПОЛУЧАЕМ DEVICE_ID
+        # ------------------------------------------------------------
+        #
+        # Используем специальный исторический метод, потому что
+        # выбранный прибор может быть уже заменён и иметь is_active = 0.
+        # ------------------------------------------------------------
+
+        device_id = (
+            self.db_manager.get_device_id_for_history(
+                device_sn
+            )
+        )
+
+        if device_id is None:
+            QMessageBox.warning(
+                self,
+                "Помилка",
+                "Прилад не знайдено в базі даних."
+            )
+            return
+
+        # ------------------------------------------------------------
+        # 4. ПОЛУЧАЕМ ФИЛЬТР ГРУППЫ
+        # ------------------------------------------------------------
+
+        group_filter = (
+            self.ui.combo_group_paed.currentText()
+        )
+
         conn = self.db_manager._get_connection()
         cursor = conn.cursor()
-        
-        # Если выбрана конкретная группа — работаем только с цистернами
-        if group_filter != "Всі":
-            # Принудительно устанавливаем тип расположения как "Цистерна"
-            # (для пользователя это не меняем, но в запросе используем цистерны)
-            query = """
-                SELECT timestamp, paed, temperature, low_status, high_status, valid
-                FROM measurements_cistern
-                WHERE device_id = ? AND timestamp BETWEEN ? AND ? AND group = ?
-                ORDER BY timestamp
-            """
-            cursor.execute(query, (device_id, date_from, date_to, group_filter))
-            rows = cursor.fetchall()
-        else:
-            # Если группа не выбрана — используем старую логику (в зависимости от типа расположения)
-            if location_type in ("Цистерна", "Всі"):
+
+        date_from_str = date_from.strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+
+        date_to_str = date_to.strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+
+        # ------------------------------------------------------------
+        # 5. ЧИТАЕМ ДАННЫЕ
+        # ------------------------------------------------------------
+
+        try:
+
+            if device["location_type"] == "cistern":
+
+                if group_filter != "Всі":
+
+                    query = """
+                        SELECT
+                            timestamp,
+                            paed,
+                            temperature,
+                            low_status,
+                            high_status,
+                            valid
+                        FROM measurements_cistern
+                        WHERE device_id = ?
+                          AND timestamp BETWEEN ? AND ?
+                          AND "group" = ?
+                        ORDER BY timestamp
+                    """
+
+                    cursor.execute(
+                        query,
+                        (
+                            device_id,
+                            date_from_str,
+                            date_to_str,
+                            group_filter
+                        )
+                    )
+
+                else:
+
+                    query = """
+                        SELECT
+                            timestamp,
+                            paed,
+                            temperature,
+                            low_status,
+                            high_status,
+                            valid
+                        FROM measurements_cistern
+                        WHERE device_id = ?
+                          AND timestamp BETWEEN ? AND ?
+                        ORDER BY timestamp
+                    """
+
+                    cursor.execute(
+                        query,
+                        (
+                            device_id,
+                            date_from_str,
+                            date_to_str
+                        )
+                    )
+
+            else:
+
                 query = """
-                    SELECT timestamp, paed, temperature, low_status, high_status, valid
-                    FROM measurements_cistern
-                    WHERE device_id = ? AND timestamp BETWEEN ? AND ?
-                    ORDER BY timestamp
-                """
-                cursor.execute(query, (device_id, date_from, date_to))
-                rows = cursor.fetchall()
-            else:  # Кімната
-                query = """
-                    SELECT timestamp, paed, temperature, low_status, high_status, valid
+                    SELECT
+                        timestamp,
+                        paed,
+                        temperature,
+                        low_status,
+                        high_status,
+                        valid
                     FROM measurements_wall
-                    WHERE device_id = ? AND timestamp BETWEEN ? AND ?
+                    WHERE device_id = ?
+                      AND timestamp BETWEEN ? AND ?
                     ORDER BY timestamp
                 """
-                cursor.execute(query, (device_id, date_from, date_to))
-                rows = cursor.fetchall()
-        
-        if not rows:
-            self.ax_paed.clear()
-            self.ax_paed.text(0.5, 0.5, "Немає даних за вибраний період", transform=self.ax_paed.transAxes, ha='center')
-            self.canvas_paed.draw()
-            self.fill_paed_table([])
+
+                cursor.execute(
+                    query,
+                    (
+                        device_id,
+                        date_from_str,
+                        date_to_str
+                    )
+                )
+
+            rows = cursor.fetchall()
+
+        except Exception as e:
+
+            QMessageBox.critical(
+                self,
+                "Помилка",
+                f"Не вдалося прочитати дані ПАЕД:\n{e}"
+            )
             return
-        
-        # Строим график
+
+        # ------------------------------------------------------------
+        # 6. ЕСЛИ ДАННЫХ НЕТ
+        # ------------------------------------------------------------
+
+        if not rows:
+
+            self.ax_paed.clear()
+
+            self.ax_paed.text(
+                0.5,
+                0.5,
+                "Немає даних за вибраний період",
+                transform=self.ax_paed.transAxes,
+                ha="center"
+            )
+
+            self.canvas_paed.draw()
+
+            self.fill_paed_table([])
+
+            return
+
+        # ------------------------------------------------------------
+        # 7. ГОТОВИМ ДАННЫЕ ДЛЯ ГРАФИКА
+        # ------------------------------------------------------------
+
+        timestamps = []
+        paed_values = []
+
+        for row in rows:
+
+            try:
+
+                timestamp = datetime.strptime(
+                    row[0],
+                    "%Y-%m-%d %H:%M:%S"
+                )
+
+                paed = float(row[1])
+
+            except (TypeError, ValueError):
+                # Одна повреждённая историческая запись
+                # не должна ломать просмотр остальных данных.
+                continue
+
+            timestamps.append(timestamp)
+            paed_values.append(paed)
+
+        # ------------------------------------------------------------
+        # 8. СТРОИМ ГРАФИК
+        # ------------------------------------------------------------
+
         self.ax_paed.clear()
-        timestamps = [datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S") for row in rows]
-        paed_values = [row[1] for row in rows]
-        
-        self.ax_paed.plot(timestamps, paed_values, 'b-', linewidth=1.5)
-        self.ax_paed.set_xlabel("Час")
-        self.ax_paed.set_ylabel("ПАЕД, мкЗв/год")
-        self.ax_paed.set_title(f"ПАЕД - {device_sn}")
-        self.ax_paed.grid(True, alpha=0.3)
-        self.figure_paed.autofmt_xdate()
+
+        if timestamps:
+
+            self.ax_paed.plot(
+                timestamps,
+                paed_values,
+                linewidth=1.5
+            )
+
+            self.ax_paed.set_xlabel("Час")
+
+            self.ax_paed.set_ylabel(
+                "ПАЕД, мкЗв/год"
+            )
+
+            self.ax_paed.set_title(
+                f"ПАЕД - {device_sn}"
+            )
+
+            self.ax_paed.grid(True)
+
+            self.figure_paed.autofmt_xdate()
+
+        else:
+
+            self.ax_paed.text(
+                0.5,
+                0.5,
+                "Немає коректних даних для графіка",
+                transform=self.ax_paed.transAxes,
+                ha="center"
+            )
+
         self.canvas_paed.draw()
-        
+
+        # ------------------------------------------------------------
+        # 9. ЗАПОЛНЯЕМ ТАБЛИЦУ
+        # ------------------------------------------------------------
+
         self.fill_paed_table(rows)
-    
+
+
 
     def fill_paed_table(self, rows):
         """
-            Заполняет таблицу ПАЕД
+        Заполняет таблицу ПАЕД.
+
+        Семантика полей БД:
+            low_status  = 1 -> отказ;
+            high_status = 1 -> отказ;
+            valid       = 1 -> результат валиден.
         """
+
         model = QStandardItemModel()
-        model.setHorizontalHeaderLabels(["Час", "ПАЕД, мкЗв/год", "Температура, °C", "Стан детекторів"])
-        
+
+        model.setHorizontalHeaderLabels(
+            [
+                "Час",
+                "ПАЕД, мкЗв/год",
+                "Температура, °C",
+                "Стан детекторів"
+            ]
+        )
+
         for row_idx, row in enumerate(rows):
-            timestamp = datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S").strftime("%d.%m.%Y %H:%M:%S")
-            paed = f"{row[1]:.2f}"
-            temp = f"{row[2]:.1f}"
 
-            # low_ok = "Низькочутл: Норма" if row[3] == 0 else "Низькочутл: Відмова"
-            # high_ok = "Високочутл: Норма" if row[4] == 0 else "Високочутл: Відмова"
+            # --------------------------------------------------------
+            # ВРЕМЯ
+            # --------------------------------------------------------
 
-            # инвертировали вывод данных исправности детекторов
-            low_ok = "Низькочутл: Норма" if row[3] == 1 else "Низькочутл: Відмова"
-            high_ok = "Високочутл: Норма" if row[4] == 1 else "Високочутл: Відмова"
+            try:
+                timestamp = datetime.strptime(
+                    row[0],
+                    "%Y-%m-%d %H:%M:%S"
+                ).strftime(
+                    "%d.%m.%Y %H:%M:%S"
+                )
+            except (TypeError, ValueError):
+                timestamp = str(row[0] or "—")
+
+            # --------------------------------------------------------
+            # ПАЕД
+            # --------------------------------------------------------
+
+            try:
+                paed = f"{float(row[1]):.2f}"
+            except (TypeError, ValueError):
+                paed = "—"
+
+            # --------------------------------------------------------
+            # ТЕМПЕРАТУРА
+            # --------------------------------------------------------
+
+            try:
+                temp = f"{float(row[2]):.1f}"
+            except (TypeError, ValueError):
+                temp = "—"
+
+            # --------------------------------------------------------
+            # СОСТОЯНИЕ ДЕТЕКТОРОВ
+            # --------------------------------------------------------
+            #
+            # В БД:
+            #
+            #     0 = отказа нет;
+            #     1 = отказ.
+            #
+            # --------------------------------------------------------
+
+            low_ok = (
+                "Низькочутл: Відмова"
+                if row[3] == 1
+                else "Низькочутл: Норма"
+            )
+
+            high_ok = (
+                "Високочутл: Відмова"
+                if row[4] == 1
+                else "Високочутл: Норма"
+            )
+
             status = f"{low_ok}, {high_ok}"
-            
-            model.setItem(row_idx, 0, QStandardItem(timestamp))
-            model.setItem(row_idx, 1, QStandardItem(paed))
-            model.setItem(row_idx, 2, QStandardItem(temp))
-            model.setItem(row_idx, 3, QStandardItem(status))
-        
+
+            # Если вся запись отмечена как невалидная,
+            # дополнительно показываем это оператору.
+            if row[5] != 1:
+                status += ", результат невалідний"
+
+            model.setItem(
+                row_idx,
+                0,
+                QStandardItem(timestamp)
+            )
+
+            model.setItem(
+                row_idx,
+                1,
+                QStandardItem(paed)
+            )
+
+            model.setItem(
+                row_idx,
+                2,
+                QStandardItem(temp)
+            )
+
+            model.setItem(
+                row_idx,
+                3,
+                QStandardItem(status)
+            )
+
         self.ui.tableView_paed.setModel(model)
-        self.ui.tableView_paed.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+
+        self.ui.tableView_paed.horizontalHeader().setSectionResizeMode(
+            QHeaderView.Stretch
+        )
 
 
-        
+
     def load_activity_data(self):
         """
-        Загружает данные активности из БД и строит график/таблицу.
-        Парсит JSON-поля activity и concentration, отображает изотопы.
+        Загружает исторические результаты активности цистерны,
+        строит график суммарной активности и заполняет таблицу.
         """
-        date_from, date_to = self.get_date_range("activity")
-        
-        device_sn = self.ui.combo_device_activity.currentData()
+
+        date_from, date_to = self.get_date_range(
+            "activity"
+        )
+
+        # ------------------------------------------------------------
+        # 1. ПРОВЕРЯЕМ ПЕРИОД
+        # ------------------------------------------------------------
+
+        if date_from > date_to:
+            QMessageBox.warning(
+                self,
+                "Попередження",
+                "Початкова дата не може бути пізніше кінцевої."
+            )
+            return
+
+        # ------------------------------------------------------------
+        # 2. ВЫБРАННАЯ ЦИСТЕРНА
+        # ------------------------------------------------------------
+
+        device_sn = (
+            self.ui.combo_device_activity.currentData()
+        )
+
         if not device_sn:
-            QMessageBox.warning(self, "Попередження", "Виберіть цистерну")
+            QMessageBox.warning(
+                self,
+                "Попередження",
+                "Виберіть цистерну"
+            )
             return
-        
-        device_id = self.db_manager.get_device_id(device_sn)
-        if not device_id:
+
+        # ------------------------------------------------------------
+        # 3. ПОЛУЧАЕМ ИСТОРИЧЕСКИЙ DEVICE_ID
+        # ------------------------------------------------------------
+
+        device_id = (
+            self.db_manager.get_device_id_for_history(
+                device_sn
+            )
+        )
+
+        if device_id is None:
+            QMessageBox.warning(
+                self,
+                "Помилка",
+                "Прилад не знайдено в базі даних."
+            )
             return
-        
-        group_filter = self.ui.combo_group_activity.currentText()  # Получаем выбранную группу
-        
+
+        group_filter = (
+            self.ui.combo_group_activity.currentText()
+        )
+
         conn = self.db_manager._get_connection()
         cursor = conn.cursor()
-        
-        # Если выбрана конкретная группа — добавляем условие
-        if group_filter != "Всі":
-            query = """
-                SELECT timestamp, paed, activity, concentration, fullness_status
-                FROM measurements_cistern
-                WHERE device_id = ? AND timestamp BETWEEN ? AND ? AND group = ?
-                ORDER BY timestamp
-            """
-            cursor.execute(query, (device_id, date_from, date_to, group_filter))
-            rows = cursor.fetchall()
-        else:
-            # Если группа не выбрана — запрос без фильтра по группе
-            query = """
-                SELECT timestamp, paed, activity, concentration, fullness_status
-                FROM measurements_cistern
-                WHERE device_id = ? AND timestamp BETWEEN ? AND ?
-                ORDER BY timestamp
-            """
-            cursor.execute(query, (device_id, date_from, date_to))
-            rows = cursor.fetchall()
-        
-        if not rows:
-            self.ax_activity.clear()
-            self.ax_activity.text(0.5, 0.5, "Немає даних за вибраний період", transform=self.ax_activity.transAxes, ha='center')
-            self.canvas_activity.draw()
-            self.fill_activity_table([])
-            return
-        
-        # Строим график (суммарная активность по всем изотопам)
-        self.ax_activity.clear()
-        timestamps = [datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S") for row in rows]
-        
-        # Парсим JSON из поля activity и суммируем активности
-        import json
-        total_activities = []
-        for row in rows:
-            activity_json = row[2]  # поле activity
-            if activity_json and activity_json != "{}":
-                try:
-                    act_dict = json.loads(activity_json)
-                    total_act = sum(act_dict.values()) if act_dict else 0
-                    total_activities.append(total_act)
-                except:
-                    total_activities.append(0.0)
+
+        date_from_str = date_from.strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+
+        date_to_str = date_to.strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+
+        # ------------------------------------------------------------
+        # 4. ЧИТАЕМ ДАННЫЕ
+        # ------------------------------------------------------------
+
+        try:
+
+            if group_filter != "Всі":
+
+                cursor.execute(
+                    """
+                    SELECT
+                        timestamp,
+                        paed,
+                        activity,
+                        concentration,
+                        fullness_status
+                    FROM measurements_cistern
+                    WHERE device_id = ?
+                      AND timestamp BETWEEN ? AND ?
+                      AND "group" = ?
+                    ORDER BY timestamp
+                    """,
+                    (
+                        device_id,
+                        date_from_str,
+                        date_to_str,
+                        group_filter
+                    )
+                )
+
             else:
-                total_activities.append(0.0)
-        
-        self.ax_activity.plot(timestamps, total_activities, 'g-', linewidth=1.5)
-        self.ax_activity.set_xlabel("Час")
-        self.ax_activity.set_ylabel("Активність, Бк")
-        self.ax_activity.set_title(f"Активність - {device_sn}")
-        self.ax_activity.grid(True, alpha=0.3)
-        self.figure_activity.autofmt_xdate()
+
+                cursor.execute(
+                    """
+                    SELECT
+                        timestamp,
+                        paed,
+                        activity,
+                        concentration,
+                        fullness_status
+                    FROM measurements_cistern
+                    WHERE device_id = ?
+                      AND timestamp BETWEEN ? AND ?
+                    ORDER BY timestamp
+                    """,
+                    (
+                        device_id,
+                        date_from_str,
+                        date_to_str
+                    )
+                )
+
+            rows = cursor.fetchall()
+
+        except Exception as e:
+
+            QMessageBox.critical(
+                self,
+                "Помилка",
+                f"Не вдалося прочитати дані активності:\n{e}"
+            )
+            return
+
+        # ------------------------------------------------------------
+        # 5. ЕСЛИ ДАННЫХ НЕТ
+        # ------------------------------------------------------------
+
+        if not rows:
+
+            self.ax_activity.clear()
+
+            self.ax_activity.text(
+                0.5,
+                0.5,
+                "Немає даних за вибраний період",
+                transform=self.ax_activity.transAxes,
+                ha="center"
+            )
+
+            self.canvas_activity.draw()
+
+            self.fill_activity_table([])
+
+            return
+
+        # ------------------------------------------------------------
+        # 6. ГОТОВИМ ДАННЫЕ ДЛЯ ГРАФИКА
+        # ------------------------------------------------------------
+
+        timestamps = []
+        total_activities = []
+
+        for row in rows:
+
+            try:
+                timestamp = datetime.strptime(
+                    row[0],
+                    "%Y-%m-%d %H:%M:%S"
+                )
+            except (TypeError, ValueError):
+                continue
+
+            total_activity = 0.0
+
+            activity_json = row[2]
+
+            if activity_json:
+
+                try:
+
+                    activity_dict = json.loads(
+                        activity_json
+                    )
+
+                    if isinstance(activity_dict, dict):
+
+                        for value in activity_dict.values():
+
+                            try:
+                                total_activity += float(value)
+                            except (TypeError, ValueError):
+                                continue
+
+                except (
+                    TypeError,
+                    ValueError,
+                    json.JSONDecodeError
+                ):
+                    # Повреждение JSON одной записи не должно
+                    # ломать весь просмотр истории.
+                    total_activity = 0.0
+
+            timestamps.append(timestamp)
+            total_activities.append(total_activity)
+
+        # ------------------------------------------------------------
+        # 7. СТРОИМ ГРАФИК
+        # ------------------------------------------------------------
+
+        self.ax_activity.clear()
+
+        if timestamps:
+
+            self.ax_activity.plot(
+                timestamps,
+                total_activities,
+                linewidth=1.5
+            )
+
+            self.ax_activity.set_xlabel("Час")
+
+            self.ax_activity.set_ylabel(
+                "Активність, Бк"
+            )
+
+            self.ax_activity.set_title(
+                f"Активність - {device_sn}"
+            )
+
+            self.ax_activity.grid(True)
+
+            self.figure_activity.autofmt_xdate()
+
+        else:
+
+            self.ax_activity.text(
+                0.5,
+                0.5,
+                "Немає коректних даних для графіка",
+                transform=self.ax_activity.transAxes,
+                ha="center"
+            )
+
         self.canvas_activity.draw()
-        
-        # Заполняем таблицу с детальной информацией
+
+        # ------------------------------------------------------------
+        # 8. ТАБЛИЦА
+        # ------------------------------------------------------------
+
         self.fill_activity_table(rows)
-    
+
+
     
     def fill_activity_table(self, rows):
         """
-        Заполняет таблицу активности с отображением изотопов и их активностей/концентраций.
-        rows — список кортежей (timestamp, paed, activity_json, concentration_json, fullness_status)
+        Заполняет таблицу результатов спектрального анализа.
+
+        Повреждение одной исторической записи не должно приводить
+        к ошибке всего окна просмотра БД.
         """
+
         model = QStandardItemModel()
-        # Заголовки: Время, ПАЕД, Состав (изотопы с активностями и концентрациями), Статус цистерны
-        model.setHorizontalHeaderLabels(["Час", "ПАЕД, мкЗв/год", "Склад (активність, концентрація)", "Стан цистерни"])
-        
+
+        model.setHorizontalHeaderLabels(
+            [
+                "Час",
+                "ПАЕД, мкЗв/год",
+                "Склад (активність, концентрація)",
+                "Стан цистерни"
+            ]
+        )
+
         for row_idx, row in enumerate(rows):
-            timestamp = datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S").strftime("%d.%m.%Y %H:%M:%S")
-            paed = f"{row[1]:.2f}"
-            fullness = "Повна" if row[4] == "full" else "Не повна"
-            
-            # Парсим JSON активностей и концентраций
+
+            # --------------------------------------------------------
+            # ВРЕМЯ
+            # --------------------------------------------------------
+
+            try:
+                timestamp = datetime.strptime(
+                    row[0],
+                    "%Y-%m-%d %H:%M:%S"
+                ).strftime(
+                    "%d.%m.%Y %H:%M:%S"
+                )
+            except (TypeError, ValueError):
+                timestamp = str(row[0] or "—")
+
+            # --------------------------------------------------------
+            # ПАЕД
+            # --------------------------------------------------------
+
+            try:
+                paed = f"{float(row[1]):.2f}"
+            except (TypeError, ValueError):
+                paed = "—"
+
+            # --------------------------------------------------------
+            # СОСТОЯНИЕ ЦИСТЕРНЫ
+            # --------------------------------------------------------
+
+            if row[4] == "full":
+                fullness = "Повна"
+
+            elif row[4] == "empty":
+                fullness = "Не повна"
+
+            else:
+                fullness = "—"
+
+            # --------------------------------------------------------
+            # ACTIVITY / CONCENTRATION
+            # --------------------------------------------------------
+
             activity_json = row[2]
             concentration_json = row[3]
-            
+
             composition_parts = []
-            if activity_json and activity_json != "{}":
-                try:
-                    act_dict = json.loads(activity_json)
-                    conc_dict = json.loads(concentration_json) if concentration_json and concentration_json != "{}" else {}
-                    for isotope, act in act_dict.items():
-                        conc = conc_dict.get(isotope, 0.0)
-                        composition_parts.append(f"{isotope}: {act:.2f} Бк, {conc:.2f} Бк/л")
-                except:
-                    composition_parts.append("помилка даних")
-            else:
-                composition_parts.append("немає даних")
-            
-            composition_str = "; ".join(composition_parts)
-            
-            model.setItem(row_idx, 0, QStandardItem(timestamp))
-            model.setItem(row_idx, 1, QStandardItem(paed))
-            model.setItem(row_idx, 2, QStandardItem(composition_str))
-            model.setItem(row_idx, 3, QStandardItem(fullness))
-        
+
+            try:
+
+                activity_dict = (
+                    json.loads(activity_json)
+                    if activity_json
+                    else {}
+                )
+
+                concentration_dict = (
+                    json.loads(concentration_json)
+                    if concentration_json
+                    else {}
+                )
+
+                if not isinstance(activity_dict, dict):
+                    raise ValueError(
+                        "activity не является словарём"
+                    )
+
+                if not isinstance(concentration_dict, dict):
+                    concentration_dict = {}
+
+                if activity_dict:
+
+                    for isotope, activity in activity_dict.items():
+
+                        concentration = (
+                            concentration_dict.get(
+                                isotope
+                            )
+                        )
+
+                        try:
+                            activity_text = (
+                                f"{float(activity):.2f}"
+                            )
+                        except (TypeError, ValueError):
+                            activity_text = "—"
+
+                        try:
+                            concentration_text = (
+                                f"{float(concentration):.2f}"
+                            )
+                        except (TypeError, ValueError):
+                            concentration_text = "—"
+
+                        composition_parts.append(
+                            (
+                                f"{isotope}: "
+                                f"{activity_text} Бк, "
+                                f"{concentration_text} Бк/л"
+                            )
+                        )
+
+                else:
+
+                    composition_parts.append(
+                        "немає даних"
+                    )
+
+            except (
+                TypeError,
+                ValueError,
+                json.JSONDecodeError
+            ):
+
+                composition_parts.append(
+                    "помилка даних"
+                )
+
+            composition_str = "; ".join(
+                composition_parts
+            )
+
+            # --------------------------------------------------------
+            # ЗАПОЛНЯЕМ СТРОКУ
+            # --------------------------------------------------------
+
+            model.setItem(
+                row_idx,
+                0,
+                QStandardItem(timestamp)
+            )
+
+            model.setItem(
+                row_idx,
+                1,
+                QStandardItem(paed)
+            )
+
+            model.setItem(
+                row_idx,
+                2,
+                QStandardItem(composition_str)
+            )
+
+            model.setItem(
+                row_idx,
+                3,
+                QStandardItem(fullness)
+            )
+
         self.ui.tableView_activity.setModel(model)
-        self.ui.tableView_activity.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+
+        self.ui.tableView_activity.horizontalHeader().setSectionResizeMode(
+            QHeaderView.Stretch
+        )
+
 
     
     def load_events_data(self):
-        """Загружает системные события"""
-        date_from, date_to = self.get_date_range("events")
-        
-        event_type = self.ui.combo_event_type.currentText()
+        """
+        Загружает системные события за выбранный период.
+
+        Поддерживает просмотр событий как активных,
+        так и ранее заменённых приборов.
+        """
+
+        date_from, date_to = self.get_date_range(
+            "events"
+        )
+
+        # ------------------------------------------------------------
+        # 1. ПРОВЕРКА ПЕРИОДА
+        # ------------------------------------------------------------
+
+        if date_from > date_to:
+            QMessageBox.warning(
+                self,
+                "Попередження",
+                "Початкова дата не може бути пізніше кінцевої."
+            )
+            return
+
+        # ------------------------------------------------------------
+        # 2. ТИП СОБЫТИЯ
+        # ------------------------------------------------------------
+
+        event_type = (
+            self.ui.combo_event_type.currentText()
+        )
+
         if event_type == "Всі":
             event_type = None
-        
-        device_sn = self.ui.combo_device_events.currentData()
-        device_id = self.db_manager.get_device_id(device_sn) if device_sn else None
-        
+
+        # ------------------------------------------------------------
+        # 3. ПРИБОР
+        # ------------------------------------------------------------
+
+        device_sn = (
+            self.ui.combo_device_events.currentData()
+        )
+
+        device_id = None
+
+        if device_sn:
+
+            device_id = (
+                self.db_manager.get_device_id_for_history(
+                    device_sn
+                )
+            )
+
+            if device_id is None:
+                QMessageBox.warning(
+                    self,
+                    "Помилка",
+                    "Прилад не знайдено в базі даних."
+                )
+                return
+
+        # ------------------------------------------------------------
+        # 4. SQL
+        # ------------------------------------------------------------
+        #
+        # Сразу соединяем system_events и devices через LEFT JOIN.
+        #
+        # Это исключает старую схему, при которой для каждой строки
+        # события выполнялся ещё один отдельный SELECT.
+        # ------------------------------------------------------------
+
         query = """
-            SELECT timestamp, event_type, description, device_id
+            SELECT
+                system_events.timestamp,
+                system_events.event_type,
+                system_events.description,
+                devices.serial_number
             FROM system_events
-            WHERE timestamp BETWEEN ? AND ?
+            LEFT JOIN devices
+                ON devices.id = system_events.device_id
+            WHERE system_events.timestamp BETWEEN ? AND ?
         """
-        params = [date_from, date_to]
-        
+
+        params = [
+            date_from.strftime(
+                "%Y-%m-%d %H:%M:%S"
+            ),
+            date_to.strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+        ]
+
         if event_type:
-            query += " AND event_type = ?"
+
+            query += """
+                AND system_events.event_type = ?
+            """
+
             params.append(event_type)
-        
-        if device_id:
-            query += " AND device_id = ?"
+
+        if device_id is not None:
+
+            query += """
+                AND system_events.device_id = ?
+            """
+
             params.append(device_id)
-        
-        query += " ORDER BY timestamp DESC"
-        
-        conn = self.db_manager._get_connection()
-        cursor = conn.cursor()
-        cursor.execute(query, params)
-        rows = cursor.fetchall()
-        
+
+        query += """
+            ORDER BY system_events.timestamp DESC
+        """
+
+        # ------------------------------------------------------------
+        # 5. ЧИТАЕМ СОБЫТИЯ
+        # ------------------------------------------------------------
+
+        try:
+
+            conn = self.db_manager._get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute(
+                query,
+                params
+            )
+
+            rows = cursor.fetchall()
+
+        except Exception as e:
+
+            QMessageBox.critical(
+                self,
+                "Помилка",
+                f"Не вдалося прочитати системні події:\n{e}"
+            )
+            return
+
+        # ------------------------------------------------------------
+        # 6. СОЗДАЕМ МОДЕЛЬ ТАБЛИЦЫ
+        # ------------------------------------------------------------
+
         model = QStandardItemModel()
-        model.setHorizontalHeaderLabels(["Час", "Тип події", "Прилад", "Опис"])
-        
+
+        model.setHorizontalHeaderLabels(
+            [
+                "Час",
+                "Тип події",
+                "Прилад",
+                "Опис"
+            ]
+        )
+
+        # ------------------------------------------------------------
+        # 7. ЗАПОЛНЯЕМ ТАБЛИЦУ
+        # ------------------------------------------------------------
+
         for row_idx, row in enumerate(rows):
-            timestamp = datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S").strftime("%d.%m.%Y %H:%M:%S")
-            event_type = row[1]
-            description = row[2] if row[2] else ""
-            
-            dev_id = row[3]
-            if dev_id:
-                cursor2 = conn.cursor()
-                cursor2.execute("SELECT serial_number FROM devices WHERE id = ?", (dev_id,))
-                sn_row = cursor2.fetchone()
-                device_sn_str = sn_row[0] if sn_row else f"ID:{dev_id}"
-            else:
-                device_sn_str = "—"
-            
-            model.setItem(row_idx, 0, QStandardItem(timestamp))
-            model.setItem(row_idx, 1, QStandardItem(event_type))
-            model.setItem(row_idx, 2, QStandardItem(device_sn_str))
-            model.setItem(row_idx, 3, QStandardItem(description))
-        
+
+            try:
+                timestamp = datetime.strptime(
+                    row[0],
+                    "%Y-%m-%d %H:%M:%S"
+                ).strftime(
+                    "%d.%m.%Y %H:%M:%S"
+                )
+            except (TypeError, ValueError):
+                timestamp = str(row[0] or "—")
+
+            event_type_text = (
+                str(row[1])
+                if row[1] is not None
+                else "—"
+            )
+
+            description = (
+                str(row[2])
+                if row[2] is not None
+                else ""
+            )
+
+            device_sn_text = (
+                str(row[3])
+                if row[3] is not None
+                else "—"
+            )
+
+            model.setItem(
+                row_idx,
+                0,
+                QStandardItem(timestamp)
+            )
+
+            model.setItem(
+                row_idx,
+                1,
+                QStandardItem(event_type_text)
+            )
+
+            model.setItem(
+                row_idx,
+                2,
+                QStandardItem(device_sn_text)
+            )
+
+            model.setItem(
+                row_idx,
+                3,
+                QStandardItem(description)
+            )
+
         self.ui.tableView_events.setModel(model)
-        self.ui.tableView_events.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        
+
+        self.ui.tableView_events.horizontalHeader().setSectionResizeMode(
+            QHeaderView.Stretch
+        )
+
+
+
     def reset_filters(self, tab):
-        """Сброс фильтров к значениям по умолчанию"""
-        self.set_default_dates()
-        
+        """
+        Сбрасывает фильтры только выбранной вкладки.
+
+        ВАЖНО:
+        Сброс одной вкладки не должен изменять период
+        или фильтры других вкладок.
+        """
+
+        # ------------------------------------------------------------
+        # ОБЩИЙ ПЕРИОД ПО УМОЛЧАНИЮ
+        # ------------------------------------------------------------
+
+        now = QDateTime.currentDateTime()
+        week_ago = now.addDays(-7)
+
+        # ------------------------------------------------------------
+        # ВКЛАДКА ПАЕД
+        # ------------------------------------------------------------
+
         if tab == "paed":
+
+            # Возвращаем период только этой вкладки
+            # к последним 7 дням.
+            self.ui.dateFrom_paed.setDateTime(
+                week_ago
+            )
+
+            self.ui.dateTo_paed.setDateTime(
+                now
+            )
+
+            # Возвращаем тип расположения к "Всі".
+            #
+            # Изменение индекса автоматически вызовет
+            # on_location_type_changed(), который сформирует
+            # правильный список всех приборов.
             self.ui.combo_location_type_paed.setCurrentIndex(0)
-            self.ui.combo_device_paed.setEnabled(False)
-            self.ui.combo_device_paed.clear()
-            self.ui.combo_device_paed.addItem("-- Виберіть прилад --")
-            self.ui.combo_group_paed.setCurrentIndex(0)  # Сброс группы на "Всі"
+
+            # Группа при режиме "Всі" не используется.
+            self.ui.combo_group_paed.setCurrentIndex(0)
+            self.ui.combo_group_paed.setEnabled(False)
+
+            # После вызова on_location_type_changed()
+            # список приборов уже заполнен.
+            # Возвращаем выбор на служебную первую строку.
+            self.ui.combo_device_paed.setCurrentIndex(0)
+
+            # В новой логике список приборов при "Всі"
+            # должен оставаться доступным.
+            self.ui.combo_device_paed.setEnabled(True)
+
+        # ------------------------------------------------------------
+        # ВКЛАДКА АКТИВНОСТИ
+        # ------------------------------------------------------------
+
         elif tab == "activity":
+
+            self.ui.dateFrom_activity.setDateTime(
+                week_ago
+            )
+
+            self.ui.dateTo_activity.setDateTime(
+                now
+            )
+
             self.ui.combo_device_activity.setCurrentIndex(0)
-            self.ui.combo_group_activity.setCurrentIndex(0)  # Сброс группы на "Всі"
+            self.ui.combo_group_activity.setCurrentIndex(0)
+
+        # ------------------------------------------------------------
+        # ВКЛАДКА СИСТЕМНЫХ СОБЫТИЙ
+        # ------------------------------------------------------------
+
         elif tab == "events":
+
+            self.ui.dateFrom_events.setDateTime(
+                week_ago
+            )
+
+            self.ui.dateTo_events.setDateTime(
+                now
+            )
+
             self.ui.combo_event_type.setCurrentIndex(0)
             self.ui.combo_device_events.setCurrentIndex(0)
+
+
     
     def set_all_period(self, tab):
-        """Устанавливает период за всё время (3 года назад)"""
+        """
+        Устанавливает период просмотра за весь нормативный
+        срок хранения данных — последние 5 лет.
+        """
+
         now = QDateTime.currentDateTime()
-        three_years_ago = now.addYears(-3)
-        
+
+        # Данные в БД хранятся 5 лет.
+        five_years_ago = now.addYears(-5)
+
         if tab == "paed":
-            self.ui.dateFrom_paed.setDateTime(three_years_ago)
-            self.ui.dateTo_paed.setDateTime(now)
+
+            self.ui.dateFrom_paed.setDateTime(
+                five_years_ago
+            )
+
+            self.ui.dateTo_paed.setDateTime(
+                now
+            )
+
         elif tab == "activity":
-            self.ui.dateFrom_activity.setDateTime(three_years_ago)
-            self.ui.dateTo_activity.setDateTime(now)
+
+            self.ui.dateFrom_activity.setDateTime(
+                five_years_ago
+            )
+
+            self.ui.dateTo_activity.setDateTime(
+                now
+            )
+
         elif tab == "events":
-            self.ui.dateFrom_events.setDateTime(three_years_ago)
-            self.ui.dateTo_events.setDateTime(now)
+
+            self.ui.dateFrom_events.setDateTime(
+                five_years_ago
+            )
+
+            self.ui.dateTo_events.setDateTime(
+                now
+            )
+
+
     
     def set_default_dates(self):
         """Устанавливает даты по умолчанию (последние 7 дней)"""

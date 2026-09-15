@@ -442,6 +442,82 @@ class DatabaseManager:
         return [dict(row) for row in rows]
 
 
+
+    def get_device_id_for_history(self, serial_number):
+        """
+        Возвращает device_id прибора по серийному номеру независимо
+        от того, является прибор активным или уже был заменён.
+
+        ВАЖНО:
+            Этот метод предназначен только для просмотра исторических
+            данных БД.
+
+            Для рабочего цикла системы по-прежнему должен использоваться
+            get_device_id(), который работает только с активными приборами.
+        """
+
+        # ------------------------------------------------------------
+        # 1. ПУСТОЙ СЕРИЙНЫЙ НОМЕР
+        # ------------------------------------------------------------
+
+        if not serial_number:
+            return None
+
+        # ------------------------------------------------------------
+        # 2. ИЩЕМ ПРИБОР НЕПОСРЕДСТВЕННО В ТАБЛИЦЕ DEVICES
+        # ------------------------------------------------------------
+        #
+        # Здесь намеренно НЕ используем devices_map.
+        #
+        # devices_map содержит только активные приборы, поэтому через него
+        # невозможно открыть историю прибора после его замены.
+        # ------------------------------------------------------------
+
+        rows = self._fetch_all(
+            """
+            SELECT id
+            FROM devices
+            WHERE serial_number = ?
+            LIMIT 1
+            """,
+            (serial_number,)
+        )
+
+        if not rows:
+            return None
+
+        return rows[0]["id"]
+
+
+    def get_all_devices_for_history(self):
+        """
+        Возвращает все приборы, которые когда-либо были зарегистрированы
+        в БД: как активные, так и заменённые.
+
+        Используется окном просмотра исторических данных.
+        """
+
+        rows = self._fetch_all(
+            """
+            SELECT
+                id,
+                serial_number,
+                device_type,
+                location_type,
+                position_number,
+                is_active
+            FROM devices
+            ORDER BY
+                location_type,
+                position_number,
+                is_active DESC,
+                id
+            """
+        )
+
+        return [dict(row) for row in rows]
+
+
     
     
     def cleanup_old_records(self):
