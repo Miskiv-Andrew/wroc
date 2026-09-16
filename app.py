@@ -258,6 +258,42 @@ class DeviceCardBarrel(QWidget):
         label = self.ui.findChild(QLabel, "positionValue")
         if label:
             label.setText(f"{position}")
+
+    def set_group(self, group):
+        """
+            Встановлюємо групу в GUI(A, B чи РЕЗЕРВ)
+        """
+        group_label = self.ui.findChild(QLabel, "groupLabel")
+        frame = self.ui.findChild(QWidget, "deviceCard")
+
+        group_names = {
+            "A": "Група A",
+            "B": "Група B",
+            "reserve": "РЕЗЕРВ"
+        }
+
+        group_colors = {
+            "A": "#4CAF50",
+            "B": "#2196F3",
+            "reserve": "#FF9800"
+        }
+
+        if group_label:
+            group_label.setText(
+                group_names.get(group, "Група невідома")
+            )
+
+        if frame:
+            color = group_colors.get(group, "#808080")
+            frame.setStyleSheet(
+                f"""
+                #deviceCard {{
+                    border: 2px solid {color};
+                    border-radius: 8px;
+                    background-color: rgb(248, 248, 249);
+                }}
+                """
+            )
     
     def set_barrel_image(self, full: bool):
         label = self.ui.findChild(QLabel, "barrelLabel")
@@ -1556,8 +1592,7 @@ class DeviceCardBarrel(QWidget):
         )
 
         self.update_isotopes_table(
-            result,
-            real_time
+            result
         )
 
         # ============================================================
@@ -1972,7 +2007,7 @@ class DeviceCardBarrel(QWidget):
                     QTableWidgetItem(str(value))
                 )
 
-        table.resizeColumnsToContents()
+        #table.resizeColumnsToContents()
 
 
     def plot_activity_histogram(self):
@@ -5905,6 +5940,15 @@ class App(QObject):
             card.set_position(
                 card.posit_number
             )
+
+            if isinstance(card, DeviceCardBarrel):
+                group = self.cistern_groups.get(
+                    int(card.posit_number),
+                    "A"
+                )
+
+                card.set_group(group)
+
 
             card.setMinimumSize(
                 0,

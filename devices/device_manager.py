@@ -3642,45 +3642,45 @@ class DeviceManager(QObject):
             # без документации прибора не изменяем.
             # ============================================================
 
-            expected_command_code = (
-                self.last_command.data[4]
-            )
+            # expected_command_code = (
+            #     self.last_command.data[4]
+            # )
 
-            received_command_code = (
-                packet_data[4]
-            )
+            # received_command_code = (
+            #     packet_data[4]
+            # )
 
-            if (
-                received_command_code
-                != expected_command_code
-            ):
+            # if (
+            #     received_command_code
+            #     != expected_command_code
+            # ):
 
-                self.device_error.emit(
-                    device.port,
-                    (
-                        "Отримано відповідь на іншу команду: "
-                        f"очікувалось "
-                        f"0x{expected_command_code:02X}, "
-                        f"отримано "
-                        f"0x{received_command_code:02X} "
-                        f"(SN: {device.serial_number})."
-                    )
-                )
+            #     self.device_error.emit(
+            #         device.port,
+            #         (
+            #             "Отримано відповідь на іншу команду: "
+            #             f"очікувалось "
+            #             f"0x{expected_command_code:02X}, "
+            #             f"отримано "
+            #             f"0x{received_command_code:02X} "
+            #             f"(SN: {device.serial_number})."
+            #         )
+            #     )
 
-                self.system_event.emit(
-                    device.serial_number,
-                    "response_command_mismatch",
-                    (
-                        "Невідповідність команди відповіді: "
-                        f"очікувалось "
-                        f"0x{expected_command_code:02X}, "
-                        f"отримано "
-                        f"0x{received_command_code:02X}."
-                    )
-                )
+            #     self.system_event.emit(
+            #         device.serial_number,
+            #         "response_command_mismatch",
+            #         (
+            #             "Невідповідність команди відповіді: "
+            #             f"очікувалось "
+            #             f"0x{expected_command_code:02X}, "
+            #             f"отримано "
+            #             f"0x{received_command_code:02X}."
+            #         )
+            #     )
 
-                self._finish_current_poll()
-                return
+            #     self._finish_current_poll()
+            #     return
 
             # ============================================================
             # 12. ОТВЕТ ПОЛНОСТЬЮ ПРОШЁЛ ТРАНСПОРТНУЮ ПРОВЕРКУ
