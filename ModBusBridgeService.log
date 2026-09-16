@@ -306,3 +306,241 @@
 2026-09-15 16:21:54 [LOG] Disconnected from PLC
 2026-09-15 16:21:54 Server stopped
 2026-09-15 16:21:54 [SYSTEM] Application stopped
+2026-09-16 09:40:38 [SYSTEM] Starting ModBusBridgeService
+2026-09-16 09:40:38 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-09-16 09:40:38 [LOG] Attempting to connect to PLC...
+2026-09-16 09:40:38 Server is running on port 12345
+2026-09-16 09:40:38 [SYSTEM] Starting event loop
+2026-09-16 09:40:38 Client connected: 127.0.0.1:50564
+2026-09-16 09:40:38 Received 16 bytes
+2026-09-16 09:40:42 [ERROR] Socket error: Connection refused
+2026-09-16 09:40:42 [LOG] Socket error: Connection refused
+2026-09-16 09:40:42 [LOG] PLC reconnect will be attempted every 3000 ms
+2026-09-16 09:40:45 [LOG] Trying to reconnect to PLC...
+2026-09-16 09:40:49 [ERROR] Socket error: Connection refused
+2026-09-16 09:40:49 [LOG] Socket error: Connection refused
+2026-09-16 09:40:51 [LOG] Trying to reconnect to PLC...
+2026-09-16 09:40:55 [LOG] PLC reconnect timer stopped
+2026-09-16 09:40:55 [LOG] Connection to PLC established
+2026-09-16 09:40:55 [SYSTEM] Connection to PLC established
+2026-09-16 09:40:58 [LOG] Request sent, transaction 1, function 0x03, 12 bytes
+2026-09-16 09:41:00 [ERROR] Socket error: Network operation timed out
+2026-09-16 09:41:00 [LOG] Socket error: Network operation timed out
+2026-09-16 09:41:00 [ERROR] Failed waiting for Modbus response: Network operation timed out
+2026-09-16 09:41:00 [LOG] Failed waiting for Modbus response: Network operation timed out
+2026-09-16 09:41:00 [LOG] PLC reconnect will be attempted every 3000 ms
+2026-09-16 09:41:00 [SYSTEM] Communication with PLC lost
+2026-09-16 09:41:00 [ERROR] No connection to PLC
+2026-09-16 09:41:00 [ERROR] No connection to PLC
+2026-09-16 09:41:00 [ERROR] No connection to PLC
+2026-09-16 09:41:00 [ERROR] No connection to PLC
+2026-09-16 09:41:00 [ERROR] No connection to PLC
+2026-09-16 09:41:00 [ERROR] No connection to PLC
+2026-09-16 09:41:00 [ERROR] No connection to PLC
+2026-09-16 09:41:00 [ERROR] No connection to PLC
+2026-09-16 09:41:00 Broadcast sent to client 127.0.0.1:50564, 33 bytes
+2026-09-16 09:41:03 [LOG] Trying to reconnect to PLC...
+2026-09-16 09:41:03 [LOG] PLC reconnect timer stopped
+2026-09-16 09:41:03 [LOG] Connection to PLC established
+2026-09-16 09:41:03 [SYSTEM] Connection to PLC established
+2026-09-16 09:41:07 [ERROR] Socket error: The remote host closed the connection
+2026-09-16 09:41:07 [LOG] Socket error: The remote host closed the connection
+2026-09-16 09:41:07 [LOG] Connection to PLC lost
+2026-09-16 09:41:07 [SYSTEM] Communication with PLC lost
+2026-09-16 09:41:07 [LOG] PLC reconnect will be attempted every 3000 ms
+2026-09-16 09:41:10 [LOG] Trying to reconnect to PLC...
+2026-09-16 09:41:10 [LOG] PLC reconnect timer stopped
+2026-09-16 09:41:10 [LOG] Connection to PLC established
+2026-09-16 09:41:10 [SYSTEM] Connection to PLC established
+2026-09-16 09:41:18 [LOG] Request sent, transaction 2, function 0x03, 12 bytes
+2026-09-16 09:41:20 [ERROR] Socket error: Network operation timed out
+2026-09-16 09:41:20 [LOG] Socket error: Network operation timed out
+2026-09-16 09:41:20 [ERROR] Failed waiting for Modbus response: Network operation timed out
+2026-09-16 09:41:20 [LOG] Failed waiting for Modbus response: Network operation timed out
+2026-09-16 09:41:20 [LOG] PLC reconnect will be attempted every 3000 ms
+2026-09-16 09:41:20 [SYSTEM] Communication with PLC lost
+2026-09-16 09:41:20 [ERROR] No connection to PLC
+2026-09-16 09:41:20 [ERROR] No connection to PLC
+2026-09-16 09:41:20 [ERROR] No connection to PLC
+2026-09-16 09:41:20 [ERROR] No connection to PLC
+2026-09-16 09:41:20 [ERROR] No connection to PLC
+2026-09-16 09:41:20 [ERROR] No connection to PLC
+2026-09-16 09:41:20 [ERROR] No connection to PLC
+2026-09-16 09:41:20 [ERROR] No connection to PLC
+2026-09-16 09:41:20 Broadcast sent to client 127.0.0.1:50564, 33 bytes
+2026-09-16 09:41:23 [LOG] Trying to reconnect to PLC...
+2026-09-16 09:41:23 [LOG] PLC reconnect timer stopped
+2026-09-16 09:41:23 [LOG] Connection to PLC established
+2026-09-16 09:41:23 [SYSTEM] Connection to PLC established
+2026-09-16 09:41:28 [LOG] Request sent, transaction 3, function 0x06, 12 bytes
+2026-09-16 09:41:30 [ERROR] Socket error: Network operation timed out
+2026-09-16 09:41:30 [LOG] Socket error: Network operation timed out
+2026-09-16 09:41:30 [ERROR] Failed waiting for Modbus response: Network operation timed out
+2026-09-16 09:41:30 [LOG] Failed waiting for Modbus response: Network operation timed out
+2026-09-16 09:41:30 [LOG] PLC reconnect will be attempted every 3000 ms
+2026-09-16 09:41:30 [SYSTEM] Communication with PLC lost
+2026-09-16 09:41:33 [LOG] Trying to reconnect to PLC...
+2026-09-16 09:41:33 [LOG] PLC reconnect timer stopped
+2026-09-16 09:41:33 [LOG] Connection to PLC established
+2026-09-16 09:41:33 [SYSTEM] Connection to PLC established
+2026-09-16 09:41:38 [LOG] Request sent, transaction 4, function 0x03, 12 bytes
+2026-09-16 09:41:40 [ERROR] Socket error: Network operation timed out
+2026-09-16 09:41:40 [LOG] Socket error: Network operation timed out
+2026-09-16 09:41:40 [ERROR] Failed waiting for Modbus response: Network operation timed out
+2026-09-16 09:41:40 [LOG] Failed waiting for Modbus response: Network operation timed out
+2026-09-16 09:41:40 [LOG] PLC reconnect will be attempted every 3000 ms
+2026-09-16 09:41:40 [SYSTEM] Communication with PLC lost
+2026-09-16 09:41:40 [ERROR] No connection to PLC
+2026-09-16 09:41:40 [ERROR] No connection to PLC
+2026-09-16 09:41:40 [ERROR] No connection to PLC
+2026-09-16 09:41:40 [ERROR] No connection to PLC
+2026-09-16 09:41:40 [ERROR] No connection to PLC
+2026-09-16 09:41:40 [ERROR] No connection to PLC
+2026-09-16 09:41:40 [ERROR] No connection to PLC
+2026-09-16 09:41:40 [ERROR] No connection to PLC
+2026-09-16 09:41:40 Broadcast sent to client 127.0.0.1:50564, 33 bytes
+2026-09-16 09:41:43 [LOG] Trying to reconnect to PLC...
+2026-09-16 09:41:43 [LOG] PLC reconnect timer stopped
+2026-09-16 09:41:43 [LOG] Connection to PLC established
+2026-09-16 09:41:43 [SYSTEM] Connection to PLC established
+2026-09-16 09:41:48 [LOG] Request sent, transaction 5, function 0x06, 12 bytes
+2026-09-16 09:41:50 [ERROR] Socket error: Network operation timed out
+2026-09-16 09:41:50 [LOG] Socket error: Network operation timed out
+2026-09-16 09:41:50 [ERROR] Failed waiting for Modbus response: Network operation timed out
+2026-09-16 09:41:50 [LOG] Failed waiting for Modbus response: Network operation timed out
+2026-09-16 09:41:50 [LOG] PLC reconnect will be attempted every 3000 ms
+2026-09-16 09:41:50 [SYSTEM] Communication with PLC lost
+2026-09-16 09:41:53 [LOG] Trying to reconnect to PLC...
+2026-09-16 09:41:53 [LOG] PLC reconnect timer stopped
+2026-09-16 09:41:53 [LOG] Connection to PLC established
+2026-09-16 09:41:53 [SYSTEM] Connection to PLC established
+2026-09-16 09:41:58 [LOG] Request sent, transaction 6, function 0x03, 12 bytes
+2026-09-16 09:42:00 [ERROR] Socket error: Network operation timed out
+2026-09-16 09:42:00 [LOG] Socket error: Network operation timed out
+2026-09-16 09:42:00 [ERROR] Failed waiting for Modbus response: Network operation timed out
+2026-09-16 09:42:00 [LOG] Failed waiting for Modbus response: Network operation timed out
+2026-09-16 09:42:00 [LOG] PLC reconnect will be attempted every 3000 ms
+2026-09-16 09:42:00 [SYSTEM] Communication with PLC lost
+2026-09-16 09:42:00 [ERROR] No connection to PLC
+2026-09-16 09:42:00 [ERROR] No connection to PLC
+2026-09-16 09:42:00 [ERROR] No connection to PLC
+2026-09-16 09:42:00 [ERROR] No connection to PLC
+2026-09-16 09:42:00 [ERROR] No connection to PLC
+2026-09-16 09:42:00 [ERROR] No connection to PLC
+2026-09-16 09:42:00 [ERROR] No connection to PLC
+2026-09-16 09:42:00 [ERROR] No connection to PLC
+2026-09-16 09:42:00 Broadcast sent to client 127.0.0.1:50564, 33 bytes
+2026-09-16 09:42:03 [LOG] Trying to reconnect to PLC...
+2026-09-16 09:42:03 [LOG] PLC reconnect timer stopped
+2026-09-16 09:42:03 [LOG] Connection to PLC established
+2026-09-16 09:42:03 [SYSTEM] Connection to PLC established
+2026-09-16 09:42:08 [LOG] Request sent, transaction 7, function 0x06, 12 bytes
+2026-09-16 09:42:10 [ERROR] Socket error: Network operation timed out
+2026-09-16 09:42:10 [LOG] Socket error: Network operation timed out
+2026-09-16 09:42:10 [ERROR] Failed waiting for Modbus response: Network operation timed out
+2026-09-16 09:42:10 [LOG] Failed waiting for Modbus response: Network operation timed out
+2026-09-16 09:42:10 [LOG] PLC reconnect will be attempted every 3000 ms
+2026-09-16 09:42:10 [SYSTEM] Communication with PLC lost
+2026-09-16 09:42:13 [LOG] Trying to reconnect to PLC...
+2026-09-16 09:42:13 [LOG] PLC reconnect timer stopped
+2026-09-16 09:42:13 [LOG] Connection to PLC established
+2026-09-16 09:42:13 [SYSTEM] Connection to PLC established
+2026-09-16 09:42:18 [LOG] Request sent, transaction 8, function 0x03, 12 bytes
+2026-09-16 09:42:20 [ERROR] Socket error: Network operation timed out
+2026-09-16 09:42:20 [LOG] Socket error: Network operation timed out
+2026-09-16 09:42:20 [ERROR] Failed waiting for Modbus response: Network operation timed out
+2026-09-16 09:42:20 [LOG] Failed waiting for Modbus response: Network operation timed out
+2026-09-16 09:42:20 [LOG] PLC reconnect will be attempted every 3000 ms
+2026-09-16 09:42:20 [SYSTEM] Communication with PLC lost
+2026-09-16 09:42:20 [ERROR] No connection to PLC
+2026-09-16 09:42:20 [ERROR] No connection to PLC
+2026-09-16 09:42:20 [ERROR] No connection to PLC
+2026-09-16 09:42:20 [ERROR] No connection to PLC
+2026-09-16 09:42:20 [ERROR] No connection to PLC
+2026-09-16 09:42:20 [ERROR] No connection to PLC
+2026-09-16 09:42:20 [ERROR] No connection to PLC
+2026-09-16 09:42:20 [ERROR] No connection to PLC
+2026-09-16 09:42:20 Broadcast sent to client 127.0.0.1:50564, 33 bytes
+2026-09-16 09:42:23 [LOG] Trying to reconnect to PLC...
+2026-09-16 09:42:23 [LOG] PLC reconnect timer stopped
+2026-09-16 09:42:23 [LOG] Connection to PLC established
+2026-09-16 09:42:23 [SYSTEM] Connection to PLC established
+2026-09-16 09:42:24 [ERROR] Socket error: The remote host closed the connection
+2026-09-16 09:42:24 [LOG] Socket error: The remote host closed the connection
+2026-09-16 09:42:24 [LOG] Connection to PLC lost
+2026-09-16 09:42:24 [SYSTEM] Communication with PLC lost
+2026-09-16 09:42:24 [LOG] PLC reconnect will be attempted every 3000 ms
+2026-09-16 09:42:27 [LOG] Trying to reconnect to PLC...
+2026-09-16 09:42:31 [ERROR] Socket error: Connection refused
+2026-09-16 09:42:31 [LOG] Socket error: Connection refused
+2026-09-16 09:42:33 [LOG] Trying to reconnect to PLC...
+2026-09-16 09:42:37 [ERROR] Socket error: Connection refused
+2026-09-16 09:42:37 [LOG] Socket error: Connection refused
+2026-09-16 09:42:39 [LOG] Trying to reconnect to PLC...
+2026-09-16 09:42:43 [ERROR] Socket error: Connection refused
+2026-09-16 09:42:43 [LOG] Socket error: Connection refused
+2026-09-16 09:42:45 [LOG] Trying to reconnect to PLC...
+2026-09-16 09:42:49 [ERROR] Socket error: Connection refused
+2026-09-16 09:42:49 [LOG] Socket error: Connection refused
+2026-09-16 09:42:51 [LOG] Trying to reconnect to PLC...
+2026-09-16 09:42:55 [ERROR] Socket error: Connection refused
+2026-09-16 09:42:55 [LOG] Socket error: Connection refused
+2026-09-16 09:42:57 [LOG] Trying to reconnect to PLC...
+2026-09-16 09:43:01 [ERROR] Socket error: Connection refused
+2026-09-16 09:43:01 [LOG] Socket error: Connection refused
+2026-09-16 09:43:03 [LOG] Trying to reconnect to PLC...
+2026-09-16 09:43:07 [ERROR] Socket error: Connection refused
+2026-09-16 09:43:07 [LOG] Socket error: Connection refused
+2026-09-16 09:43:09 [LOG] Trying to reconnect to PLC...
+2026-09-16 09:43:13 [ERROR] Socket error: Connection refused
+2026-09-16 09:43:13 [LOG] Socket error: Connection refused
+2026-09-16 09:43:15 [LOG] Trying to reconnect to PLC...
+2026-09-16 09:43:19 [ERROR] Socket error: Connection refused
+2026-09-16 09:43:19 [LOG] Socket error: Connection refused
+2026-09-16 09:43:21 [LOG] Trying to reconnect to PLC...
+2026-09-16 09:43:25 [ERROR] Socket error: Connection refused
+2026-09-16 09:43:25 [LOG] Socket error: Connection refused
+2026-09-16 09:43:27 [LOG] Trying to reconnect to PLC...
+2026-09-16 09:43:31 [ERROR] Socket error: Connection refused
+2026-09-16 09:43:31 [LOG] Socket error: Connection refused
+2026-09-16 09:43:33 [LOG] Trying to reconnect to PLC...
+2026-09-16 09:43:37 [ERROR] Socket error: Connection refused
+2026-09-16 09:43:37 [LOG] Socket error: Connection refused
+2026-09-16 09:43:39 [LOG] Trying to reconnect to PLC...
+2026-09-16 09:43:43 [ERROR] Socket error: Connection refused
+2026-09-16 09:43:43 [LOG] Socket error: Connection refused
+2026-09-16 09:43:45 [LOG] Trying to reconnect to PLC...
+2026-09-16 09:43:49 [ERROR] Socket error: Connection refused
+2026-09-16 09:43:49 [LOG] Socket error: Connection refused
+2026-09-16 09:43:51 [LOG] Trying to reconnect to PLC...
+2026-09-16 09:43:55 [ERROR] Socket error: Connection refused
+2026-09-16 09:43:55 [LOG] Socket error: Connection refused
+2026-09-16 09:43:57 [LOG] Trying to reconnect to PLC...
+2026-09-16 09:44:01 [ERROR] Socket error: Connection refused
+2026-09-16 09:44:01 [LOG] Socket error: Connection refused
+2026-09-16 09:44:03 [LOG] Trying to reconnect to PLC...
+2026-09-16 09:44:07 [ERROR] Socket error: Connection refused
+2026-09-16 09:44:07 [LOG] Socket error: Connection refused
+2026-09-16 09:44:09 [LOG] Trying to reconnect to PLC...
+2026-09-16 09:44:13 [ERROR] Socket error: Connection refused
+2026-09-16 09:44:13 [LOG] Socket error: Connection refused
+2026-09-16 09:44:15 [LOG] Trying to reconnect to PLC...
+2026-09-16 09:44:19 [ERROR] Socket error: Connection refused
+2026-09-16 09:44:19 [LOG] Socket error: Connection refused
+2026-09-16 09:44:21 [LOG] Trying to reconnect to PLC...
+2026-09-16 09:44:25 [ERROR] Socket error: Connection refused
+2026-09-16 09:44:25 [LOG] Socket error: Connection refused
+2026-09-16 09:44:27 [LOG] Trying to reconnect to PLC...
+2026-09-16 09:44:31 [ERROR] Socket error: Connection refused
+2026-09-16 09:44:31 [LOG] Socket error: Connection refused
+2026-09-16 09:44:33 [LOG] Trying to reconnect to PLC...
+2026-09-16 09:44:37 [ERROR] Socket error: Connection refused
+2026-09-16 09:44:37 [LOG] Socket error: Connection refused
+2026-09-16 09:44:39 [LOG] Trying to reconnect to PLC...
+2026-09-16 09:44:43 [ERROR] Socket error: Connection refused
+2026-09-16 09:44:43 [LOG] Socket error: Connection refused
+2026-09-16 09:44:45 [LOG] Trying to reconnect to PLC...
+2026-09-16 09:44:47 Client disconnected
+2026-09-16 09:44:47 [LOG] Disconnected from PLC
+2026-09-16 09:44:47 Server stopped
+2026-09-16 09:44:47 [SYSTEM] Application stopped

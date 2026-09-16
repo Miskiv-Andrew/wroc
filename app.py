@@ -1,7 +1,7 @@
 # app.py
 
 import sys
-from PySide6.QtWidgets import QApplication, QWidget, QGridLayout, QVBoxLayout, QPushButton, QLabel, QSizePolicy, QSpacerItem, QDialog, QLineEdit, QMessageBox, QHBoxLayout, QSpinBox, QMenu
+from PySide6.QtWidgets import QApplication, QWidget, QGridLayout, QVBoxLayout, QPushButton, QLabel, QSizePolicy, QSpacerItem, QDialog, QLineEdit, QMessageBox, QHBoxLayout, QSpinBox, QMenu, QTableWidget, QTableWidgetItem
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtCore import QFile, QThread, QMetaObject, QTimer , Qt, QObject, Signal, QDateTime, QProcess
 from devices.device_manager import DeviceManager
@@ -1519,6 +1519,11 @@ class DeviceCardBarrel(QWidget):
             "---"
         )
 
+        self.update_isotopes_table(
+            result,
+            real_time
+        )
+
         # ============================================================
         # 14. ЭКСПОРТ СПЕКТРОВ
         # ============================================================
@@ -1890,6 +1895,48 @@ class DeviceCardBarrel(QWidget):
 
         self.reset_spectrum()
 
+
+    def update_isotopes_table(self, result):
+        """
+            Вивід інформації про знайдені ізотопи в таблицю в GUI
+        """
+        table = self.ui.findChild(QTableWidget, "isotopesWidget")
+        if table is None:
+            return
+
+        isotopes = result.get("isotopes", [])
+
+        table.setRowCount(len(isotopes))  #кількість рядків
+
+        for row, isotope in enumerate(isotopes):
+            data = result.get(isotope, {})
+
+            available = data.get("available", True)
+
+            if not available:
+                values = [isotope, "—", "—", "Недоступно"]
+            else:
+                activity = data.get("activity")
+                concentration = data.get("concentration")
+                detected = data.get("detected", "—")
+
+                #підготовка значень
+                values = [
+                    isotope,
+                    f"{float(concentration):.2f}",
+                    f"{float(activity):.2f}",
+                    detected
+                ]
+
+            #вивід рядків
+            for column, value in enumerate(values):
+                table.setItem(
+                    row,
+                    column,
+                    QTableWidgetItem(str(value))
+                )
+
+        table.resizeColumnsToContents()
 
 
     def plot_activity_histogram(self):
@@ -2636,6 +2683,7 @@ class App(QObject):
         else:
             # Якщо меню не знайдено — створюємо його (запасний варіант)
             self.ui.textEdit.append("Увага: меню 'Прилади' не знайдено")
+
 
 
     def _schedule_bridge_restart(self):
@@ -3418,6 +3466,24 @@ class App(QObject):
         self.db_window_instance.resize(1200, 800)
         self.db_window_instance.show()
 
+    def show_about(self):
+        """
+            Вивід вікна "Про програму"
+        """
+        #ui_path = resource_path("_UI/about_dialog.ui")
+
+        loader = QUiLoader()
+        ui_file = QFile(
+                    "_UI/about_dialog.ui"
+                )
+        dialog = loader.load(ui_file)
+
+        if dialog is None:
+            raise RuntimeError(f"Failed to load About dialog: {ui_file}")
+
+        dialog.dialogClose.clicked.connect(dialog.close)
+
+        dialog.exec()
 
     def setup_device_manager(self):
         """
@@ -3490,6 +3556,11 @@ class App(QObject):
 
         # Кнопка подключения к PLC
         self.btn_connect_plc.clicked.connect(self.on_connect_plc_clicked)
+
+        # Кнопка підключення до вікна "Про програму"
+        self.open_about = self.ui.findChild(QAction, "open_about")
+        if self.open_about:
+            self.open_about.triggered.connect(self.show_about)
 
         # --------------------------------------------------------------------
         # Сигналы ModBusBridgeClient
