@@ -1,9 +1,9 @@
 {
     "1": {
-        "full": true,
+        "full": false,
         "isotopes": [
-            "I-131",
-            "Tc-99m"
+            "18F",
+            "99mTc"
         ],
         "group": "A"
     },

@@ -371,9 +371,22 @@ class DeviceCardBarrel(QWidget):
         
     def add_spectrum(self):
         self.spectrum = SpectrumWidget()
-        layout = self.ui.spectrumWidget.layout()
-        layout.setContentsMargins(0,0,0,0)
-        layout.addWidget(self.spectrum)    
+
+        spectrum_widget = self.ui.findChild(
+            QWidget,
+            "spectrumWidget"
+        )
+
+        if spectrum_widget is None:
+            raise RuntimeError("spectrumWidget не знайдено в dashboardbarrel.ui")
+
+        layout = spectrum_widget.layout()
+
+        if layout is None:
+            layout = QVBoxLayout(spectrum_widget)
+
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.spectrum)   
 
 
     def set_detector_status(self, low_failure: bool, high_failure: bool, result_valid: bool):
