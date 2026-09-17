@@ -756,7 +756,7 @@ border-radius: 8px
                 <item>
                  <widget class="QLabel" name="readyLabel">
                   <property name="text">
-                   <string>&lt;div style='line-height:80%'&gt;Готовність&lt;br&gt;до скиду:&lt;/div&gt;</string>
+                   <string>&lt;div style='line-height:90%'&gt;Готовність&lt;br&gt;до скиду:&lt;/div&gt;</string>
                   </property>
                   <property name="alignment">
                    <set>Qt::AlignmentFlag::AlignBottom|Qt::AlignmentFlag::AlignHCenter</set>
@@ -789,6 +789,9 @@ font: 600 11pt &quot;Segoe UI&quot;;</string>
 border: 1px solid #bbb;
 }</string>
              </property>
+             <property name="editTriggers">
+              <set>QAbstractItemView::EditTrigger::NoEditTriggers</set>
+             </property>
              <column>
               <property name="text">
                <string>Ізотоп</string>
@@ -796,12 +799,12 @@ border: 1px solid #bbb;
              </column>
              <column>
               <property name="text">
-               <string>Бк/л</string>
+               <string>Концентрація (Бк/л)</string>
               </property>
              </column>
              <column>
               <property name="text">
-               <string>Бк</string>
+               <string>Активність (Бк)</string>
               </property>
              </column>
              <column>

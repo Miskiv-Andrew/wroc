@@ -120,6 +120,7 @@ class SpectrumWidget(QWidget):
         if self.data and len(self.data) > 0:
             # Отрисовка спектра (гистограмма или линейный график)
             self.ax.plot(self.data, linewidth=0.5)
+            self.ax.grid(True)
             self.ax.set_ylim(bottom=0)
             self.ax.set_xlim(left=0)
             self.ax.set_xlabel("Канал")
@@ -312,6 +313,37 @@ class DeviceCardBarrel(QWidget):
         label1.setText(f"{text}")
         self.is_full = full
         self.set_spectrum_ui_enabled(full)
+
+    def set_ready_to_drain(self, ready_to_drain):
+        """
+            Метод готовність до скиду(результат з calculate_activity)
+        """
+        label = self.ui.findChild(QLabel, "readyValue")
+
+        if label is None:
+            return
+
+        if ready_to_drain == 1:
+            label.setText("Готовий")
+            label.setStyleSheet(
+                "color: green; font: 600 11pt 'Segoe UI';"
+            )
+        else:
+            label.setText("Не готовий")
+            label.setStyleSheet(
+                "color: red; font: 600 11pt 'Segoe UI';"
+            )
+
+    def reset_activity_display(self):
+        """
+            Після спорожнення цистерни, виставляємо "Готовність до скиду -> Не готовий" та очищуємо таблицю ізотопів
+        """
+        self.set_ready_to_drain(0)
+
+        table = self.ui.findChild(QTableWidget, "isotopesWidget")
+        if table is not None:
+            table.clearContents()
+            table.setRowCount(0)
     
     def set_barrel_icon(self):
         """Set the barrel detector icon"""
@@ -1737,6 +1769,7 @@ class DeviceCardBarrel(QWidget):
                     concentration_upper_dict
                 )
             )
+        self.set_ready_to_drain(ready_to_drain)
 
         # ============================================================
         # 16. СОХРАНЕНИЕ ПОЛНОГО СПЕКТРАЛЬНОГО РЕЗУЛЬТАТА В БД
@@ -2007,7 +2040,7 @@ class DeviceCardBarrel(QWidget):
                     QTableWidgetItem(str(value))
                 )
 
-        #table.resizeColumnsToContents()
+        table.resizeColumnsToContents()
 
 
     def plot_activity_histogram(self):
@@ -6677,6 +6710,13 @@ class App(QObject):
                 ):
 
                     card.reset_spectrum()
+                
+                if hasattr(
+                    card, 
+                    "reset_activity_display"
+                ):
+                    
+                    card.reset_activity_display()
 
                 # ====================================================
                 # 9. СБРАСЫВАЕМ ИСТОРИЮ АЛГОРИТМА
