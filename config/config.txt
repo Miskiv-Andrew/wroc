@@ -1,2 +1,2 @@
 # serial_number;location_type;posit_number;address
-2600022;cistern;1;1
+2600023;cistern;2;1

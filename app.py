@@ -4860,7 +4860,15 @@ class App(QObject):
             filepath = os.path.join(calib_dir, filename)
 
             try:
-                data = np.loadtxt(filepath, dtype=float)
+                with open(filepath, "r", encoding="utf-8") as file:
+                    values = [
+                        float(line.strip().replace(",", "."))
+                        for line in file
+                        if line.strip()
+                ]
+
+                data = np.asarray(values, dtype=float)
+                # data = np.loadtxt(filepath, dtype=float)
 
                 # За вимогами файл повинен бути одним стовпцем із
                 # рівно 1024 значень. Багатовимірну структуру також
@@ -4870,21 +4878,24 @@ class App(QObject):
                         f"очікується один стовпець, отримано ndim={data.ndim}"
                     )
 
-                if data.size != 1024:
+                if data.size != 1023:
                     raise ValueError(
-                        f"очікується 1024 значення, отримано {data.size}"
+                        f"очікується 1023 значення, отримано {data.size}"
                     )
 
                 # NaN/inf не повинні потрапляти в спектральні формули.
                 if not np.all(np.isfinite(data)):
                     raise ValueError("файл містить NaN або нескінченні значення")
 
+                if data.size == 1023:
+                    data = np.append(data, 0.0)
+
                 name = os.path.splitext(filename)[0]
                 self.calibration_spectra[name] = data.copy()
 
                 self.ui.textEdit.append(
-                    f"Завантажено еталон: {name}, "
-                    f"час набору: {data[1023]} сек"
+                    f"Завантажено еталон: {name} "
+                    #f"час набору: {data[1023]} сек"
                 )
 
             except (OSError, ValueError, TypeError) as e:
@@ -11165,7 +11176,7 @@ class App(QObject):
         # 6. ВИЗНАЧАЄМО РОЗРАХУНКОВИЙ T
         # ============================================================
 
-        if group in ("B", "reserve"):
+        if group in ("A", "B", "reserve"):
 
             # --------------------------------------------------------
             # Для трьохізотопного алгоритму групи B

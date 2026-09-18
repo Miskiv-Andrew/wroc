@@ -1,15 +1,15 @@
 {
     "1": {
         "full": false,
+        "isotopes": [],
+        "group": "A"
+    },
+    "2": {
+        "full": true,
         "isotopes": [
             "18F",
             "99mTc"
         ],
-        "group": "A"
-    },
-    "2": {
-        "full": false,
-        "isotopes": [],
         "group": "A"
     },
     "3": {
@@ -18,7 +18,7 @@
         "group": "reserve"
     },
     "4": {
-        "full": false,
+        "full": true,
         "isotopes": [],
         "group": "B"
     },
