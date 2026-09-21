@@ -6,15 +6,18 @@
     },
     "2": {
         "full": true,
-        "isotopes": [
-            "18F",
-            "99mTc"
-        ],
+        "isotopes": [],
         "group": "A"
     },
     "3": {
-        "full": false,
-        "isotopes": [],
+        "full": true,
+        "isotopes": [
+            "133I",
+            "177Lu",
+            "90Y",
+            "18F",
+            "99mTc"
+        ],
         "group": "reserve"
     },
     "4": {
