@@ -216,7 +216,7 @@ border-radius: 8px
                         </widget>
                        </item>
                        <item>
-                        <widget class="QLabel" name="label_9">
+                        <widget class="QLabel" name="spectrumStartedDate">
                          <property name="styleSheet">
                           <string notr="true">font: 600 9pt &quot;Segoe UI&quot;;</string>
                          </property>
@@ -246,7 +246,7 @@ border-radius: 8px
                         </widget>
                        </item>
                        <item>
-                        <widget class="QLabel" name="label_11">
+                        <widget class="QLabel" name="spectrumOngoingTime">
                          <property name="styleSheet">
                           <string notr="true">font: 600 9pt &quot;Segoe UI&quot;;</string>
                          </property>

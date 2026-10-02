@@ -118,12 +118,16 @@ class SpectrumWidget(QWidget):
     def plot(self):
         self.ax.clear()
         if self.data and len(self.data) > 0:
+            major_ticks = np.arange(0, len(self.data), 50)
+            minor_ticks = np.arange(0, len(self.data), 10)
             # Отрисовка спектра (гистограмма или линейный график)
             self.ax.plot(self.data, linewidth=0.5)
-            self.ax.grid(True)
+            self.ax.grid(visible=True, linestyle='--', color='gray', linewidth=0.5)
+            self.ax.set_xticks(major_ticks)
+            self.ax.set_xticks(minor_ticks, minor=True)
             self.ax.set_ylim(bottom=0)
             self.ax.set_xlim(left=0)
-            self.ax.set_xlabel("Канал")
+            #self.ax.set_xlabel("Канал")
             self.ax.set_ylabel("Кількість імпульсів")
         else:
             self.ax.text(0.5, 0.5, "Немає даних", transform=self.ax.transAxes, ha='center')
@@ -234,6 +238,43 @@ class DeviceCardBarrel(QWidget):
         # Активен ли локальный спектральный цикл
         # ------------------------------------------------------------
         self.spectrum_active = False
+
+        self.spectrum_started_label = self.ui.findChild(QLabel, "spectrumStartedDate")
+        self.spectrum_ongoing_label = self.ui.findChild(QLabel, "spectrumOngoingTime")
+
+        self.spectrum_display_timer = QTimer(self)
+        self.spectrum_display_timer.setInterval(1000)
+        self.spectrum_display_timer.timeout.connect(self.update_spectrum_ongoing_time)
+
+    def start_spectrum_display(self):
+        self.spectrum_start_monotonic = time.monotonic()
+        self.spectrum_elapsed_time = 0.0
+
+        if self.spectrum_started_label:
+            self.spectrum_started_label.setText(
+                QDateTime.currentDateTime().toString(
+                    "dd-MM-yyyy, HH:mm:ss"
+                )
+            )
+
+        self.update_spectrum_ongoing_time()
+        self.spectrum_display_timer.start()
+
+    def update_spectrum_ongoing_time(self):
+        if self.spectrum_start_monotonic is None:
+            return
+
+        elapsed_seconds = max(
+            0,
+            int(time.monotonic() - self.spectrum_start_monotonic)
+        )
+        hours, remainder = divmod(elapsed_seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+
+        if self.spectrum_ongoing_label:
+            self.spectrum_ongoing_label.setText(
+                f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+            )
 
     def clear_history(self):
         """
@@ -837,6 +878,14 @@ class DeviceCardBarrel(QWidget):
         # ============================================================
 
         self.spectrum_start_monotonic = None
+
+        self.spectrum_display_timer.stop()
+
+        if self.spectrum_started_label:
+            self.spectrum_started_label.setText("—")
+
+        if self.spectrum_ongoing_label:
+            self.spectrum_ongoing_label.setText("—")
 
         # ============================================================
         # 5. ФАКТИЧЕСКОЕ ВРЕМЯ ЗАВЕРШЁННОГО ЦИКЛА
@@ -5381,19 +5430,20 @@ class App(QObject):
                 # DeviceManager уже получил и проверил
                 # успешный ответ StartSpectre.
 
-                card.spectrum_start_monotonic = (
-                    time.monotonic()
-                )
+                # card.spectrum_start_monotonic = (
+                #     time.monotonic()
+                # )
 
                 # Фактическое время завершённого цикла будет записано
                 # только при получении первого успешного GetSpectre
                 # после достижения заданного времени накопления.
 
-                card.spectrum_elapsed_time = 0.0
+                #card.spectrum_elapsed_time = 0.0
 
                 # Локальный флаг карточки синхронизируем с фактом
                 # успешного запуска спектрального накопления.
-
+                
+                card.start_spectrum_display()
                 card.spectrum_active = True
 
                 self.ui.textEdit.append(
