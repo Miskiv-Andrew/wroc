@@ -5,24 +5,22 @@
         "group": "A"
     },
     "2": {
-        "full": true,
+        "full": false,
         "isotopes": [],
         "group": "A"
     },
     "3": {
         "full": true,
-        "isotopes": [
-            "133I",
-            "177Lu",
-            "90Y",
-            "18F",
-            "99mTc"
-        ],
+        "isotopes": [],
         "group": "reserve"
     },
     "4": {
         "full": true,
-        "isotopes": [],
+        "isotopes": [
+            "133I",
+            "177Lu",
+            "90Y"
+        ],
         "group": "B"
     },
     "5": {
