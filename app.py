@@ -1,7 +1,7 @@
 # app.py
 
 import sys
-from PySide6.QtWidgets import QApplication, QWidget, QGridLayout, QVBoxLayout, QPushButton, QLabel, QSizePolicy, QSpacerItem, QDialog, QLineEdit, QMessageBox, QHBoxLayout, QSpinBox, QMenu, QTableWidget, QTableWidgetItem
+from PySide6.QtWidgets import QApplication, QComboBox, QWidget, QGridLayout, QVBoxLayout, QPushButton, QLabel, QSizePolicy, QSpacerItem, QDialog, QLineEdit, QMessageBox, QHBoxLayout, QSpinBox, QMenu, QTableWidget, QTableWidgetItem
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtCore import QFile, QThread, QMetaObject, QTimer , Qt, QObject, Signal, QDateTime, QProcess
 from devices.device_manager import DeviceManager
@@ -9,9 +9,10 @@ from PySide6.QtGui import QAction, QPixmap
 from PySide6.QtNetwork import QHostAddress
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
+import matplotlib.dates as mdates
 import json, numpy as np
 import os, math, time
-
+from datetime import datetime
 
 from PySide6.QtCore import QRegularExpression
 from PySide6.QtGui import QRegularExpressionValidator
@@ -173,10 +174,13 @@ class DeviceCardBarrel(QWidget):
         # История активности
         self.activity_history = []
 
-        # Подключение кнопки построения гистограммы
-        btn_hist = self.ui.findChild(QPushButton, "makeHist")
-        if btn_hist:
-            btn_hist.clicked.connect(self.plot_activity_histogram)
+        self.concentration_history = {}
+        self.setup_concentration_plot()
+
+        # # Подключение кнопки построения гистограммы
+        # btn_hist = self.ui.findChild(QPushButton, "makeHist")
+        # if btn_hist:
+        #     btn_hist.clicked.connect(self.plot_activity_histogram)
 
         self.last_temperature = 0.0
 
@@ -218,6 +222,7 @@ class DeviceCardBarrel(QWidget):
         # в данный момент не запущен.
         self.spectrum_start_monotonic = None
 
+        self.spectrum_session_started_at = None
         # ------------------------------------------------------------
         # ФАКТИЧЕСКАЯ ДЛИТЕЛЬНОСТЬ ЗАВЕРШЁННОГО ЦИКЛА
         # ------------------------------------------------------------
@@ -250,12 +255,20 @@ class DeviceCardBarrel(QWidget):
         self.spectrum_start_monotonic = time.monotonic()
         self.spectrum_elapsed_time = 0.0
 
-        if self.spectrum_started_label:
-            self.spectrum_started_label.setText(
-                QDateTime.currentDateTime().toString(
-                    "dd-MM-yyyy, HH:mm:ss"
+        # if self.spectrum_started_label:
+        #     self.spectrum_started_label.setText(
+        #         QDateTime.currentDateTime().toString(
+        #             "dd-MM-yyyy, HH:mm:ss"
+        #         )
+        #     )
+        if self.spectrum_session_started_at is None:
+            self.spectrum_session_started_at = QDateTime.currentDateTime()
+            if self.spectrum_started_label:
+                self.spectrum_started_label.setText(
+                    self.spectrum_session_started_at.toString(
+                        "dd-MM-yyyy, HH:mm:ss"
+                    )
                 )
-            )
 
         self.update_spectrum_ongoing_time()
         self.spectrum_display_timer.start()
@@ -377,7 +390,7 @@ class DeviceCardBarrel(QWidget):
 
     def reset_activity_display(self):
         """
-            Після спорожнення цистерни, виставляємо "Готовність до скиду -> Не готовий" та очищуємо таблицю ізотопів
+            Після спорожнення цистерни, виставляємо "Готовність до скиду -> Не готовий", та очищуємо таблицю ізотопів та графік активності
         """
         self.set_ready_to_drain(0)
 
@@ -385,6 +398,10 @@ class DeviceCardBarrel(QWidget):
         if table is not None:
             table.clearContents()
             table.setRowCount(0)
+
+        self.concentration_history.clear()
+        self.concentration_selector.clear()
+        self.plot_concentration_history()
     
     def set_barrel_icon(self):
         """Set the barrel detector icon"""
@@ -881,8 +898,8 @@ class DeviceCardBarrel(QWidget):
 
         self.spectrum_display_timer.stop()
 
-        if self.spectrum_started_label:
-            self.spectrum_started_label.setText("—")
+        # if self.spectrum_started_label:
+        #     self.spectrum_started_label.setText("—")
 
         if self.spectrum_ongoing_label:
             self.spectrum_ongoing_label.setText("—")
@@ -1085,6 +1102,7 @@ class DeviceCardBarrel(QWidget):
             )
             is True
         )
+        cycle_timestamp_ms = QDateTime.currentDateTime().toMSecsSinceEpoch()
 
         # ============================================================
         # 7. СЛОВАРИ ЦЕНТРАЛЬНЫХ РЕЗУЛЬТАТОВ
@@ -1299,6 +1317,8 @@ class DeviceCardBarrel(QWidget):
                 "conc_upper"
             )
 
+            concentration_lower = data.get("conc_lower")
+
             detected = data.get(
                 "detected",
                 "НЕМАЄ"
@@ -1366,6 +1386,8 @@ class DeviceCardBarrel(QWidget):
                 concentration_upper = float(
                     concentration_upper
                 )
+
+                concentration_lower = float(concentration_lower)
 
             except (TypeError, ValueError):
 
@@ -1675,6 +1697,8 @@ class DeviceCardBarrel(QWidget):
         self.update_isotopes_table(
             result
         )
+
+        
 
         # ============================================================
         # 14. ЭКСПОРТ СПЕКТРОВ
@@ -2092,61 +2116,168 @@ class DeviceCardBarrel(QWidget):
         table.resizeColumnsToContents()
 
 
-    def plot_activity_histogram(self):
-        """
-        Строит гистограмму активности по сохранённой истории.
-        Вызывается по кнопке "Побудувати" на вкладке "Гістограма".
-        """
-        from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-        from matplotlib.figure import Figure
+    # def plot_activity_histogram(self):
+    #     """
+    #     Строит гистограмму активности по сохранённой истории.
+    #     Вызывается по кнопке "Побудувати" на вкладке "Гістограма".
+    #     """
+    #     from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+    #     from matplotlib.figure import Figure
         
-        if not self.activity_history:
-            if hasattr(self, 'parent_app') and self.parent_app:
-                self.parent_app.ui.textEdit.append(
-                    f"Цистерна №{self.posit_number}: немає даних активності для побудови графіка"
-                )
+    #     if not self.activity_history:
+    #         if hasattr(self, 'parent_app') and self.parent_app:
+    #             self.parent_app.ui.textEdit.append(
+    #                 f"Цистерна №{self.posit_number}: немає даних активності для побудови графіка"
+    #             )
+    #         return
+        
+    #     # Получаем виджет для гистограммы
+    #     hist_widget = self.ui.findChild(QWidget, "histogramWidget")
+    #     if not hist_widget:
+    #         return
+        
+    #     # Очищаем старый график
+    #     for child in hist_widget.children():
+    #         if isinstance(child, FigureCanvas):
+    #             child.deleteLater()
+        
+    #     # Создаём новый график
+    #     figure = Figure()
+    #     canvas = FigureCanvas(figure)
+    #     ax = figure.add_subplot(111)
+        
+    #     # Подготовка данных
+    #     activities = [item["activity"] for item in self.activity_history]
+    #     indices = range(1, len(activities) + 1)
+        
+    #     # Построение гистограммы (столбцы)
+    #     ax.bar(indices, activities, width=0.8, color='steelblue')
+    #     ax.set_xlabel("Номер вимірювання")
+    #     ax.set_ylabel("Активність, кБк")
+    #     ax.set_title(f"Активність цистерни №{self.posit_number}")
+    #     ax.grid(True, alpha=0.3)
+        
+    #     # Добавляем подписи над столбцами
+    #     if activities:
+    #         max_activity = max(activities)
+    #         for i, act in enumerate(activities):
+    #             ax.text(i + 1, act + 0.01 * max_activity, f"{act:.1f}", 
+    #                     ha='center', va='bottom', fontsize=8)
+        
+    #     canvas.draw()
+        
+    #     # Размещаем график
+    #     layout = QVBoxLayout(hist_widget)
+    #     layout.setContentsMargins(0, 0, 0, 0)
+    #     layout.addWidget(canvas)
+
+    def setup_concentration_plot(self):
+        concentration_widget = self.ui.findChild(QWidget, "activityWidget")
+        if concentration_widget is None:
+            raise RuntimeError("activityWidget not found in dashboardbarrel.ui")
+
+        layout = concentration_widget.layout()
+        if layout is None:
+            layout = QVBoxLayout(concentration_widget)
+
+        layout.setContentsMargins(4, 4, 4, 4)
+
+        self.concentration_selector = QComboBox(concentration_widget)
+        self.concentration_selector.currentTextChanged.connect(
+            self.plot_concentration_history
+        )
+        layout.addWidget(self.concentration_selector)
+
+        self.concentration_figure = Figure()
+        self.concentration_canvas = FigureCanvas(self.concentration_figure)
+        layout.addWidget(self.concentration_canvas)
+
+        self.concentration_ax = self.concentration_figure.add_subplot(111)
+        self.plot_concentration_history()
+
+    def plot_concentration_history(self, isotope=None):
+        isotope = isotope or self.concentration_selector.currentText()
+        points = self.concentration_history.get(isotope, [])
+
+        self.concentration_ax.clear()
+
+        if not points:
+            self.concentration_ax.text(
+                0.5, 0.5, "Немає даних",
+                transform=self.concentration_ax.transAxes,
+                ha="center",
+                va="center"
+            )
+            self.concentration_canvas.draw()
             return
-        
-        # Получаем виджет для гистограммы
-        hist_widget = self.ui.findChild(QWidget, "histogramWidget")
-        if not hist_widget:
-            return
-        
-        # Очищаем старый график
-        for child in hist_widget.children():
-            if isinstance(child, FigureCanvas):
-                child.deleteLater()
-        
-        # Создаём новый график
-        figure = Figure()
-        canvas = FigureCanvas(figure)
-        ax = figure.add_subplot(111)
-        
-        # Подготовка данных
-        activities = [item["activity"] for item in self.activity_history]
-        indices = range(1, len(activities) + 1)
-        
-        # Построение гистограммы (столбцы)
-        ax.bar(indices, activities, width=0.8, color='steelblue')
-        ax.set_xlabel("Номер вимірювання")
-        ax.set_ylabel("Активність, кБк")
-        ax.set_title(f"Активність цистерни №{self.posit_number}")
-        ax.grid(True, alpha=0.3)
-        
-        # Добавляем подписи над столбцами
-        if activities:
-            max_activity = max(activities)
-            for i, act in enumerate(activities):
-                ax.text(i + 1, act + 0.01 * max_activity, f"{act:.1f}", 
-                        ha='center', va='bottom', fontsize=8)
-        
-        canvas.draw()
-        
-        # Размещаем график
-        layout = QVBoxLayout(hist_widget)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(canvas)
-        
+
+        points = sorted(points, key=lambda point: point["timestamp_ms"])
+        dates = [
+            datetime.fromtimestamp(point["timestamp_ms"] / 1000)
+            for point in points
+        ]
+
+        lower = [
+            min(point["conc_lower"], point["conc_upper"])
+            for point in points
+        ]
+        upper = [
+            max(point["conc_lower"], point["conc_upper"])
+            for point in points
+        ]
+
+        self.concentration_ax.vlines(
+            mdates.date2num(dates),
+            lower,
+            upper,
+            color="#7a8793",
+            linewidth=1,
+            label="Статистичні межі"
+        )
+
+        measured = [
+            (date, point["concentration"])
+            for date, point in zip(dates, points)
+            if point["measurement_valid"] and not point["extrapolated"]
+        ]
+        estimated = [
+            (date, point["concentration"])
+            for date, point in zip(dates, points)
+            if not point["measurement_valid"] or point["extrapolated"]
+        ]
+
+        if measured:
+            self.concentration_ax.plot(
+                [item[0] for item in measured],
+                [item[1] for item in measured],
+                marker="o",
+                color="#247a68",
+                label="Концентрація"
+            )
+
+        if estimated:
+            self.concentration_ax.scatter(
+                [item[0] for item in estimated],
+                [item[1] for item in estimated],
+                marker="^",
+                color="#d17a22",
+                label="Оцінка / невалідний цикл"
+            )
+
+        self.concentration_ax.set_title(
+            f"{isotope}, цистерна №{self.posit_number}"
+        )
+        self.concentration_ax.set_xlabel("Час")
+        self.concentration_ax.set_ylabel("Концентрація, Бк/л")
+        self.concentration_ax.xaxis_date()
+        self.concentration_ax.xaxis.set_major_formatter(
+            mdates.DateFormatter("%d-%m %H:%M")
+        )
+        self.concentration_ax.grid(True, alpha=0.3)
+        self.concentration_ax.legend()
+        self.concentration_figure.autofmt_xdate()
+        self.concentration_figure.tight_layout()
+        self.concentration_canvas.draw()
 
 class DeviceCardWall(QWidget):
     """
@@ -6809,6 +6940,11 @@ class App(QObject):
                 ):
                     
                     card.reset_activity_display()
+
+                if not new_full:
+                    card.spectrum_session_started_at = None
+                    if card.spectrum_started_label:
+                        card.spectrum_started_label.setText("—")
 
                 # ====================================================
                 # 9. СБРАСЫВАЕМ ИСТОРИЮ АЛГОРИТМА
