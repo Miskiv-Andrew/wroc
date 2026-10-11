@@ -2687,12 +2687,12 @@ class App(QObject):
         # --- Група A (цистерни 1, 2) ---
         self.GROUP_A_ISOTOPES = ["18F", "99mTc"]
         self.GROUP_A_WINDOWS = {
-            "18F": (161, 204),
-            "99mTc": (12, 64)
+            "18F": (159, 202),
+            "99mTc": (25, 61)
         }
         self.GROUP_A_COEFFICIENTS = {
-            "18F": 47.0,
-            "99mTc": 9.346
+            "18F": 115.0,
+            "99mTc": 20.6
         }
         self.GROUP_A_HALF_LIFE = {
             "18F": 110.0,
@@ -2708,12 +2708,12 @@ class App(QObject):
         self.GROUP_B_ISOTOPES = ["133I", "177Lu", "90Y"]
         self.GROUP_B_WINDOWS = {
             "133I": (90, 150),
-            "177Lu": (63, 89),
+            "177Lu": (62, 88),
             "90Y": (371, 820)
         }
         self.GROUP_B_COEFFICIENTS = {
-            "133I": 40.99,
-            "177Lu": 315.0,
+            "133I": 86.3,
+            "177Lu": 570.0,
             "90Y": 1.0
         }
         self.GROUP_B_SIGMA = {
