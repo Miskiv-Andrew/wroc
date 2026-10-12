@@ -2726,17 +2726,17 @@ class App(QObject):
         # --- Група RESERVE (цистерна 3) ---
         self.GROUP_RESERVE_ISOTOPES = ["18F", "99mTc", "133I", "177Lu", "90Y"]
         self.GROUP_RESERVE_WINDOWS = {
-            "18F": (161, 204),
-            "99mTc": (12, 64),
+            "18F": (159, 202),
+            "99mTc": (25, 61),
             "133I": (90, 150),
-            "177Lu": (63, 89),
+            "177Lu": (62, 88),
             "90Y": (371, 820)
         }
         self.GROUP_RESERVE_COEFFICIENTS = {
             "18F": 47.0,
-            "99mTc": 9.346,
-            "133I": 40.99,
-            "177Lu": 315.0,
+            "99mTc": 20.6,
+            "133I": 86.3,
+            "177Lu": 570.0,
             "90Y": 1.0
         }
         self.GROUP_RESERVE_SIGMA = {
@@ -2747,7 +2747,7 @@ class App(QObject):
             "90Y": 2
         }
         self.GROUP_RESERVE_ORDER = ["90Y", "133I", "177Lu", "18F", "99mTc"]
-        self.GROUP_RESERVE_BASE_I_WINDOW = (115, 150)
+        self.GROUP_RESERVE_BASE_I_WINDOW = (115, 148)
         self.GROUP_RESERVE_TC_DELAY_HOURS = 6
         self.GROUP_RESERVE_TC_EXTRAPOLATION_COEFF = 0.890899
 
