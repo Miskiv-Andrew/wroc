@@ -129,7 +129,7 @@ class SpectrumWidget(QWidget):
             self.ax.set_ylim(bottom=0)
             self.ax.set_xlim(left=0)
             #self.ax.set_xlabel("Канал")
-            self.ax.set_ylabel("Кількість імпульсів")
+            #self.ax.set_ylabel("Кількість імпульсів")
         else:
             self.ax.text(0.5, 0.5, "Немає даних", transform=self.ax.transAxes, ha='center')
         self.canvas.draw()
@@ -1317,7 +1317,9 @@ class DeviceCardBarrel(QWidget):
                 "conc_upper"
             )
 
-            concentration_lower = data.get("conc_lower")
+            concentration_lower = data.get(
+                "conc_lower"
+            )
 
             detected = data.get(
                 "detected",
@@ -1387,7 +1389,9 @@ class DeviceCardBarrel(QWidget):
                     concentration_upper
                 )
 
-                concentration_lower = float(concentration_lower)
+                concentration_lower = float(
+                    concentration_lower
+                )
 
             except (TypeError, ValueError):
 
@@ -1489,7 +1493,8 @@ class DeviceCardBarrel(QWidget):
                 f"{activity:.2f} Бк, "
                 f"концентрація = "
                 f"{concentration:.2f} Бк/л, "
-                f"статус: {detected}"
+                f"статус: {detected} "
+                #f"extrapolated: {extrapolated}"
             )
 
             output_lines.append(
@@ -1498,6 +1503,7 @@ class DeviceCardBarrel(QWidget):
                 f"C={concentration_upper:.2f} Бк/л"
             )
 
+            point_timestamp_ms = cycle_timestamp_ms
             # ========================================================
             # 12.8. RESERVE Tc:
             #       ДИАГНОСТИКА + МЕТАДАННЫЕ ДЛЯ БД
@@ -1516,6 +1522,13 @@ class DeviceCardBarrel(QWidget):
                 reference_timestamp = data.get(
                     "reference_timestamp"
                 )
+                if reference_timestamp:
+                    reference_datetime = QDateTime.fromString(
+                    reference_timestamp,
+                    Qt.DateFormat.ISODate
+                    )
+                    if reference_datetime.isValid():
+                        point_timestamp_ms = reference_datetime.toMSecsSinceEpoch()
 
                 ratio = data.get(
                     "ratio"
@@ -1644,6 +1657,18 @@ class DeviceCardBarrel(QWidget):
                         "екстраполяцію"
                     )
 
+            self.concentration_history.setdefault(name, []).append({
+                "timestamp_ms": point_timestamp_ms,
+                "concentration": concentration,
+                "conc_lower": concentration_lower,
+                "conc_upper": concentration_upper,
+                "measurement_valid": measurement_valid,
+                "extrapolated": bool(data.get("extrapolated", False))
+            })
+
+            if self.concentration_selector.findText(name) < 0:
+                self.concentration_selector.addItem(name)
+
             # ========================================================
             # 12.9. BRIDGE
             # ========================================================
@@ -1697,6 +1722,8 @@ class DeviceCardBarrel(QWidget):
         self.update_isotopes_table(
             result
         )
+
+        self.plot_concentration_history()
 
         
 
@@ -2195,6 +2222,102 @@ class DeviceCardBarrel(QWidget):
         self.concentration_ax = self.concentration_figure.add_subplot(111)
         self.plot_concentration_history()
 
+    # def plot_concentration_history(self, isotope=None):
+    #     isotope = isotope or self.concentration_selector.currentText()
+    #     points = self.concentration_history.get(isotope, [])
+
+    #     self.concentration_ax.clear()
+
+    #     if not points:
+    #         self.concentration_ax.text(
+    #             0.5, 0.5, "Немає даних",
+    #             transform=self.concentration_ax.transAxes,
+    #             ha="center",
+    #             va="center"
+    #         )
+    #         self.concentration_canvas.draw()
+    #         return
+
+    #     points = sorted(points, key=lambda point: point["timestamp_ms"])
+    #     dates = [
+    #         datetime.fromtimestamp(point["timestamp_ms"] / 1000)
+    #         for point in points
+    #     ]
+
+    #     lower = [
+    #         min(point["conc_lower"], point["conc_upper"])
+    #         for point in points
+    #     ]
+    #     upper = [
+    #         max(point["conc_lower"], point["conc_upper"])
+    #         for point in points
+    #     ]
+
+    #     self.concentration_ax.vlines(
+    #         mdates.date2num(dates),
+    #         lower,
+    #         upper,
+    #         color="#7a8793",
+    #         linewidth=1,
+    #         label="Статистичні межі"
+    #     )
+
+    #     measured = [
+    #         (date, point["concentration"])
+    #         for date, point in zip(dates, points)
+    #         if point["measurement_valid"] and not point["extrapolated"]
+    #     ]
+    #     estimated = [
+    #         (date, point["concentration"])
+    #         for date, point in zip(dates, points)
+    #         if not point["measurement_valid"] or point["extrapolated"]
+    #     ]
+
+    #     if measured:
+    #         self.concentration_ax.plot(
+    #             [item[0] for item in measured],
+    #             [item[1] for item in measured],
+    #             marker="o",
+    #             markersize=1,
+    #             color="#247a68",
+    #             label="Концентрація"
+    #         )
+
+    #     # if estimated:
+    #     #     self.concentration_ax.scatter(
+    #     #         [item[0] for item in estimated],
+    #     #         [item[1] for item in estimated],
+    #     #         marker="^",
+    #     #         color="#d17a22",
+    #     #         label="Оцінка / невалідний цикл"
+    #     #     )
+
+    #     if estimated:
+    #         self.concentration_ax.plot(
+    #             [item[0] for item in estimated],
+    #             [item[1] for item in estimated],
+    #             marker="o",
+    #             markersize=1,
+    #             color="#d17a22",
+    #             label="Екстраполяція"
+    #         )
+
+    #     # self.concentration_ax.set_title(
+    #     #     f"{isotope}, цистерна №{self.posit_number}"
+    #     # )
+    #     #self.concentration_ax.set_xlabel("Час")
+    #     #self.concentration_ax.set_ylabel("Концентрація, Бк/л")
+    #     self.concentration_ax.xaxis_date()
+    #     self.concentration_ax.xaxis.set_major_formatter(
+    #         mdates.DateFormatter("%d-%m %H:%M")
+    #     )
+    #     self.concentration_ax.grid(True, alpha=0.3)
+    #     self.concentration_ax.legend()
+    #     self.concentration_figure.autofmt_xdate()
+    #     self.concentration_figure.tight_layout()
+    #     self.concentration_canvas.draw()
+
+
     def plot_concentration_history(self, isotope=None):
         isotope = isotope or self.concentration_selector.currentText()
         points = self.concentration_history.get(isotope, [])
@@ -2212,6 +2335,7 @@ class DeviceCardBarrel(QWidget):
             return
 
         points = sorted(points, key=lambda point: point["timestamp_ms"])
+
         dates = [
             datetime.fromtimestamp(point["timestamp_ms"] / 1000)
             for point in points
@@ -2226,58 +2350,86 @@ class DeviceCardBarrel(QWidget):
             for point in points
         ]
 
+        # Statistical bounds
         self.concentration_ax.vlines(
             mdates.date2num(dates),
             lower,
             upper,
             color="#7a8793",
-            linewidth=1,
+            linewidth=1.5,
+            capstyle='butt',
             label="Статистичні межі"
         )
 
+        concentrations = [
+            point["concentration"]
+            for point in points
+        ]
+
+        # True = measured, False = extrapolated or invalid
         measured = [
-            (date, point["concentration"])
-            for date, point in zip(dates, points)
-            if point["measurement_valid"] and not point["extrapolated"]
-        ]
-        estimated = [
-            (date, point["concentration"])
-            for date, point in zip(dates, points)
-            if not point["measurement_valid"] or point["extrapolated"]
+            point["measurement_valid"] and not point["extrapolated"]
+            for point in points
         ]
 
-        if measured:
+        # Draw a continuous line, coloring each segment by its starting point
+        for i in range(len(points) - 1):
+            color = "#247a68" if measured[i] else "#d17a22"
+
             self.concentration_ax.plot(
-                [item[0] for item in measured],
-                [item[1] for item in measured],
+                dates[i:i + 2],
+                concentrations[i:i + 2],
                 marker="o",
-                color="#247a68",
-                label="Концентрація"
+                markersize=2,
+                color=color,
+                linewidth=1.5
             )
 
-        if estimated:
-            self.concentration_ax.scatter(
-                [item[0] for item in estimated],
-                [item[1] for item in estimated],
-                marker="^",
-                color="#d17a22",
-                label="Оцінка / невалідний цикл"
+        # Plot a single point if there is only one measurement
+        if len(points) == 1:
+            color = "#247a68" if measured[0] else "#d17a22"
+            self.concentration_ax.plot(
+                dates,
+                concentrations,
+                marker="o",
+                markersize=2,
+                linestyle="None",
+                color=color,
+                label="Концентрація" if measured[0] else "Екстраполяція"
             )
 
-        self.concentration_ax.set_title(
-            f"{isotope}, цистерна №{self.posit_number}"
+        # Legend entries
+        self.concentration_ax.plot(
+            [], [],
+            color="#247a68",
+            linewidth=1.5,
+            label="Концентрація"
         )
-        self.concentration_ax.set_xlabel("Час")
-        self.concentration_ax.set_ylabel("Концентрація, Бк/л")
+        self.concentration_ax.plot(
+            [], [],
+            color="#d17a22",
+            linewidth=1.5,
+            label="Екстраполяція"
+        )
+
+        # self.concentration_ax.set_title(
+        #     f"{isotope}, цистерна №{self.posit_number}"
+        # )
+        # self.concentration_ax.set_xlabel("Час")
+        # self.concentration_ax.set_ylabel("Концентрація, Бк/л")
+
         self.concentration_ax.xaxis_date()
         self.concentration_ax.xaxis.set_major_formatter(
             mdates.DateFormatter("%d-%m %H:%M")
         )
+
         self.concentration_ax.grid(True, alpha=0.3)
         self.concentration_ax.legend()
         self.concentration_figure.autofmt_xdate()
         self.concentration_figure.tight_layout()
         self.concentration_canvas.draw()
+
+    
 
 class DeviceCardWall(QWidget):
     """
