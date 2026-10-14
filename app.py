@@ -8541,446 +8541,269 @@ class App(QObject):
             return 13394.0
 
 
+
     def _identify_group_A(self, arr1, arr2, real_time, volume, history):
+        """Група A (18F, 99mTc), алгоритм F,Tc_2.docx.
+
+        Один виклик = одна година. Динамічний Tc належить попередній
+        годині; прямий Tc і F — поточній. Історія зберігається окремо
+        для кожної цистерни та скидається тільки при її спорожненні.
         """
-        Ідентифікація ізотопів для групи A (цистерни ZB1, ZB2).
-
-        Алгоритм реалізований за первинним описом "F, Tc":
-
-        ПЕРШИЙ ЦИКЛ
-        ------------
-        1. Для 18F результат розраховується одразу.
-        2. Для 99mTc результат ще НЕ видається.
-        3. Поточна площа Tc з ARR_2 запам'ятовується для другого циклу.
-        4. K_F та K_Tc обчислюються за фактичним T першого циклу
-           і фіксуються як константи для наступних циклів.
-
-        ДРУГИЙ ЦИКЛ
-        ------------
-        1. 18F розраховується звичайно.
-        2. 99mTc розраховується ОБОВ'ЯЗКОВО за формулою динаміки:
-               S_Tc =
-               (S_current - K_F * S_previous) /
-               (K_Tc - K_F)
-        3. Для другого циклу отриманий динамічний результат НЕ
-           замінюється прямою площею.
-        4. Після цього обчислюється відношення:
-               ratio = S_Tc_dynamic / S_current
-        5. Якщо ratio < 0.95, з третього циклу використовується
-           прямий метод.
-           Якщо ratio >= 0.95, з третього циклу продовжується
-           динамічний метод.
-           Значення рівно 0.95 за погодженим правилом відноситься
-           до динамічного режиму.
-
-        ТРЕТІЙ ЦИКЛ І ДАЛІ
-        ------------------
-        1. Якщо tc_use_direct == True:
-               S_Tc = S_current
-        2. Інакше:
-               S_Tc =
-               (S_current - K_F * S_previous) /
-               (K_Tc - K_F)
-
-        ВАЖЛИВО
-        -------
-        - K_F та K_Tc після першого циклу не перераховуються.
-        - previous_Tc_arr2 після кожного завершеного циклу
-          оновлюється поточною площею Tc з ARR_2.
-        - Якщо історія пошкоджена або неповна, алгоритм безпечно
-          починає нову "першу годину", а не використовує
-          некоректні дані.
-        - У першому циклі 99mTc повертається з available=False.
-          Це означає: результат Tc ще не отриманий, а не "Tc немає".
-        """
-
-        # ============================================================
-        # 0. БАЗОВА ПЕРЕВІРКА ВХІДНИХ ДАНИХ
-        # ============================================================
-
+        # 1. Перевірка параметрів і підготовка спектральних площ.
         if len(arr1) != 1023 or len(arr2) != 1023:
-            raise ValueError(
-                "Група A: ARR_1 та ARR_2 повинні містити рівно 1023 канали."
+            raise ValueError("Група A: очікується 1023 канали ARR_1/ARR_2")
+        real_time, volume = float(real_time), float(volume)
+        if not math.isfinite(real_time) or real_time <= 0:
+            raise ValueError("Група A: некоректний час вимірювання")
+        if not math.isfinite(volume) or volume < 0:
+            raise ValueError("Група A: некоректний об'єм")
+        if any(not math.isfinite(float(v)) for v in arr1) or any(
+            not math.isfinite(float(v)) for v in arr2
+        ):
+            raise ValueError("Група A: спектр містить некоректні значення")
+
+        f_window = self.GROUP_A_WINDOWS["18F"]
+        tc_window = self.GROUP_A_WINDOWS["99mTc"]
+        f_clean = self._calculate_window_sum(arr2, *f_window)
+        f_raw = self._calculate_window_sum(arr1, *f_window)
+        tc_clean = self._calculate_window_sum(arr2, *tc_window)
+        tc_raw = self._calculate_window_sum(arr1, *tc_window)
+        f_coeff = self.GROUP_A_COEFFICIENTS["18F"]
+        tc_coeff = self.GROUP_A_COEFFICIENTS["99mTc"]
+
+        # 2. Історія: пошкоджені дані не можна непомітно вважати
+        #    новою першою годиною — це спотворить часову прив'язку.
+        if history is None or history == {}:
+            k_f = self._calculate_decay_coefficient(
+                real_time, self.GROUP_A_HALF_LIFE["18F"]
             )
-
-        try:
-            real_time = float(real_time)
-            volume = float(volume)
-        except (TypeError, ValueError) as exc:
-            raise ValueError(
-                "Група A: T та об'єм повинні бути числовими."
-            ) from exc
-
-        if not math.isfinite(real_time) or real_time <= 0.0:
-            raise ValueError(
-                f"Група A: некоректний час вимірювання T={real_time}."
+            k_tc = self._calculate_decay_coefficient(
+                real_time, self.GROUP_A_HALF_LIFE["99mTc"]
             )
-
-        if not math.isfinite(volume) or volume < 0.0:
-            raise ValueError(
-                f"Група A: некоректний об'єм цистерни={volume}."
-            )
-
-        # ============================================================
-        # 1. РОЗРАХУНОК 18F
-        # ============================================================
-
-        isotope_F = "18F"
-        window_F = self.GROUP_A_WINDOWS[isotope_F]
-        coeff_F = self.GROUP_A_COEFFICIENTS[isotope_F]
-        sigma_F = self.GROUP_A_SIGMA[isotope_F]
-
-        # Площа з ARR_2 — після віднімання фону.
-        sum_F_clean = self._calculate_window_sum(
-            arr2,
-            window_F[0],
-            window_F[1]
-        )
-
-        # Площа з ARR_1 — для статистичних меж.
-        sum_F_raw = self._calculate_window_sum(
-            arr1,
-            window_F[0],
-            window_F[1]
-        )
-
-        limits_F = self._calculate_limits(
-            sum_F_clean,
-            sum_F_raw,
-            real_time,
-            sigma_F
-        )
-
-        # Питома активність 18F.
-        conc_F = sum_F_clean * coeff_F
-
-        # Загальна активність 18F.
-        activity_F = conc_F * volume
-
-        # Межі питомої активності.
-        conc_F_upper = limits_F["upper"] * coeff_F
-        conc_F_lower = limits_F["lower"] * coeff_F
-
-        # Межі загальної активності.
-        activity_F_upper = conc_F_upper * volume
-        activity_F_lower = conc_F_lower * volume
-
-        # Ідентифікація 18F за положенням верхньої/нижньої межі.
-        if limits_F["upper"] > 0.0 and limits_F["lower"] > 0.0:
-            detected_F = "Є"
-        elif limits_F["upper"] > 0.0 and limits_F["lower"] <= 0.0:
-            detected_F = "МОЖЕ БУТИ"
-        else:
-            detected_F = "НЕМАЄ"
-
-        # ============================================================
-        # 2. ПОТОЧНІ ПЛОЩІ 99mTc
-        # ============================================================
-
-        isotope_Tc = "99mTc"
-        window_Tc = self.GROUP_A_WINDOWS[isotope_Tc]
-        coeff_Tc = self.GROUP_A_COEFFICIENTS[isotope_Tc]
-        sigma_Tc = self.GROUP_A_SIGMA[isotope_Tc]
-
-        # Поточна площа Tc після віднімання фону.
-        sum_Tc_clean_current = self._calculate_window_sum(
-            arr2,
-            window_Tc[0],
-            window_Tc[1]
-        )
-
-        # Поточна площа Tc з ARR_1.
-        # Вона використовується для статистичної похибки
-        # саме поточного циклу.
-        sum_Tc_raw_current = self._calculate_window_sum(
-            arr1,
-            window_Tc[0],
-            window_Tc[1]
-        )
-
-        # ============================================================
-        # 3. ПЕРЕВІРКА ІСТОРІЇ
-        # ============================================================
-        #
-        # Історія повинна бути придатна для продовження динамічного
-        # алгоритму. Якщо вона пошкоджена, не намагаємося вгадувати
-        # дані — починаємо новий перший цикл.
-
-        history_valid = False
-
-        if isinstance(history, dict) and history:
-            required_keys = {
-                "cycle",
-                "K_F",
-                "K_Tc",
-                "previous_Tc_arr2",
-                "tc_use_direct"
+            if not math.isfinite(k_f) or not math.isfinite(k_tc) or abs(k_tc - k_f) < 1e-12:
+                raise ValueError("Група A: некоректні коефіцієнти розпаду")
+            state = {
+                "cycle": 0, "K_F": k_f, "K_Tc": k_tc,
+                "previous_Tc_arr2": None, "tc_use_direct": False,
+                "tc_switch_pending": False, "tc_ratio": None,
+                "f_extrapolate": False, "tc_extrapolate": False,
+                "f_negative_count": 0, "tc_negative_count": 0,
+                "f_results": {}, "tc_results": {},
+                "reference_time": real_time,
             }
-
-            if required_keys.issubset(history.keys()):
-                try:
-                    hist_cycle = int(history["cycle"])
-                    hist_K_F = float(history["K_F"])
-                    hist_K_Tc = float(history["K_Tc"])
-                    hist_prev_Tc = float(history["previous_Tc_arr2"])
-
-                    # tc_use_direct на першому циклі ще не визначений
-                    # і тому може бути None.
-                    hist_mode = history["tc_use_direct"]
-
-                    history_valid = (
-                        hist_cycle >= 1
-                        and math.isfinite(hist_K_F)
-                        and math.isfinite(hist_K_Tc)
-                        and math.isfinite(hist_prev_Tc)
-                        and hist_mode in (None, True, False)
-                    )
-
-                except (TypeError, ValueError):
-                    history_valid = False
-
-        # ============================================================
-        # 4. ПЕРШИЙ ЦИКЛ
-        # ============================================================
-
-        if not history_valid:
-
-            # Коефіцієнти розпаду розраховуються ОДИН РАЗ.
-            # identify_isotopes_alim() передає сюди T = 3600 с.
-            K_F = self._calculate_decay_coefficient(
-                real_time,
-                self.GROUP_A_HALF_LIFE[isotope_F]
-            )
-
-            K_Tc = self._calculate_decay_coefficient(
-                real_time,
-                self.GROUP_A_HALF_LIFE[isotope_Tc]
-            )
-
-            if (
-                not math.isfinite(K_F)
-                or not math.isfinite(K_Tc)
-            ):
-                raise ValueError(
-                    "Група A: не вдалося отримати коректні K_F/K_Tc."
-                )
-
-            # Знаменник знадобиться з другого циклу.
-            denom = K_Tc - K_F
-
-            if abs(denom) < 1e-12:
-                raise ValueError(
-                    "Група A: K_Tc - K_F занадто малий для "
-                    "динамічного розрахунку Tc."
-                )
-
-            history_updated = {
-                # Номер завершеного спектрального циклу.
-                "cycle": 1,
-
-                # Константні коефіцієнти, отримані за перший цикл.
-                "K_F": K_F,
-                "K_Tc": K_Tc,
-
-                # Поточна ARR_2 зона Tc стає попередньою
-                # для другого циклу.
-                "previous_Tc_arr2": sum_Tc_clean_current,
-
-                # Прямий режим не використовується.
-                # Поле залишено для сумісності структури history.
-                "tc_use_direct": False,
-
-                # Саме відношення також з'явиться лише
-                # після другого циклу.
-                "tc_ratio": None,
-
-                # Діагностично зберігаємо T першого циклу,
-                # за яким були отримані K.
-                "reference_time": real_time
-            }
-
-            # У першому циклі Tc ЩЕ НЕ РОЗРАХОВУЄТЬСЯ.
-            #
-            # available=False принципово відрізняє стан
-            # "результату ще немає" від реального результату
-            # "активність = 0".
-            result = {
-                "group": "A",
-                "isotopes": ["18F", "99mTc"],
-
-                "18F": {
-                    "available": True,
-                    "activity": activity_F,
-                    "concentration": conc_F,
-                    "activity_upper": activity_F_upper,
-                    "activity_lower": activity_F_lower,
-                    "conc_upper": conc_F_upper,
-                    "conc_lower": conc_F_lower,
-                    "detected": detected_F,
-                    "sum_clean": sum_F_clean,
-                    "sum_raw": sum_F_raw,
-                    "limits": limits_F
-                },
-
-                "99mTc": {
-                    "available": False,
-                    "activity": None,
-                    "concentration": None,
-                    "activity_upper": None,
-                    "activity_lower": None,
-                    "conc_upper": None,
-                    "conc_lower": None,
-                    "detected": None,
-
-                    # Поточні площі залишаємо для діагностики,
-                    # але не трактуємо як результат Tc.
-                    "sum_clean": sum_Tc_clean_current,
-                    "sum_raw": sum_Tc_raw_current,
-
-                    "limits": None,
-                    "delay_cycles": 1
-                },
-
-                "real_time": real_time,
-                "history_updated": history_updated
-            }
-
-            return result
-
-        # ============================================================
-        # 5. ДРУГИЙ ТА НАСТУПНІ ЦИКЛИ
-        # ============================================================
-        #
-        # За контрольним Excel консультанта для кожного циклу >= 2
-        # використовується динамічна формула:
-        #
-        #     S_Tc = (S_current - K_F * S_previous) / (K_Tc - K_F)
-        #
-        # Перемикання на прямий метод за ratio НЕ виконується.
-
-        cycle = hist_cycle + 1
-        K_F = hist_K_F
-        K_Tc = hist_K_Tc
-        prev_sum_Tc_arr2 = hist_prev_Tc
-
-        denom = K_Tc - K_F
-
-        if abs(denom) < 1e-12:
-            raise ValueError(
-                "Група A: K_Tc - K_F занадто малий для "
-                "динамічного розрахунку Tc."
-            )
-
-        sum_Tc_clean = (
-            sum_Tc_clean_current
-            - K_F * prev_sum_Tc_arr2
-        ) / denom
-
-        # ratio зберігаємо тільки для діагностики.
-        if abs(sum_Tc_clean_current) > 1e-12:
-            tc_ratio = sum_Tc_clean / sum_Tc_clean_current
         else:
-            tc_ratio = None
+            required = {
+                "cycle", "K_F", "K_Tc", "previous_Tc_arr2",
+                "tc_use_direct", "tc_switch_pending", "f_extrapolate",
+                "tc_extrapolate", "f_negative_count", "tc_negative_count",
+                "f_results", "tc_results",
+            }
+            if not isinstance(history, dict) or not required.issubset(history):
+                raise ValueError("Група A: неповна історія; автоматичний скидання заборонено")
+            state = dict(history)
+            if not isinstance(state["cycle"], int) or state["cycle"] < 1:
+                raise ValueError("Група A: некоректний номер циклу")
+            for key in ("K_F", "K_Tc", "previous_Tc_arr2"):
+                if not math.isfinite(float(state[key])):
+                    raise ValueError(f"Група A: некоректне поле {key}")
+            if abs(state["K_Tc"] - state["K_F"]) < 1e-12:
+                raise ValueError("Група A: некоректні K_F/K_Tc")
+            if not isinstance(state["f_results"], dict) or not isinstance(state["tc_results"], dict):
+                raise ValueError("Група A: некоректні таблиці результатів")
+            state["f_results"] = {int(k): dict(v) for k, v in state["f_results"].items()}
+            state["tc_results"] = {int(k): dict(v) for k, v in state["tc_results"].items()}
 
-        # Поле залишаємо для сумісності структури history/result.
-        # Алгоритм завжди залишається динамічним.
-        tc_use_direct = False
+        hour = state["cycle"] + 1
+        tc_previous_hour_result = None
+        tc_ratio = None
 
-        # ============================================================
-        # 6. МЕЖІ, АКТИВНІСТЬ ТА ІДЕНТИФІКАЦІЯ Tc
-        # ============================================================
-        #
-        # Для статистичної складової використовується ARR_1
-        # ПОТОЧНОГО циклу, як указано в первинному алгоритмі.
-
-        limits_Tc = self._calculate_limits(
-            sum_Tc_clean,
-            sum_Tc_raw_current,
-            real_time,
-            sigma_Tc
-        )
-
-        conc_Tc = sum_Tc_clean * coeff_Tc
-        activity_Tc = conc_Tc * volume
-
-        conc_Tc_upper = limits_Tc["upper"] * coeff_Tc
-        conc_Tc_lower = limits_Tc["lower"] * coeff_Tc
-
-        activity_Tc_upper = conc_Tc_upper * volume
-        activity_Tc_lower = conc_Tc_lower * volume
-
-        if limits_Tc["upper"] > 0.0 and limits_Tc["lower"] > 0.0:
-            detected_Tc = "Є"
-        elif limits_Tc["upper"] > 0.0 and limits_Tc["lower"] <= 0.0:
-            detected_Tc = "МОЖЕ БУТИ"
+        # 3. Фтор: вимірювання або екстраполяція з попередньої години.
+        if state["f_extrapolate"]:
+            prev_f = state["f_results"].get(hour - 1)
+            if prev_f is None:
+                raise ValueError("Група A: немає попереднього F для екстраполяції")
+            f_conc = prev_f["concentration"] * 0.685175
+            f_upper = prev_f["conc_upper"] * 0.685175
+            f_lower = prev_f["conc_lower"] * 0.685175
+            f_area = f_conc / f_coeff
+            f_limits = {"upper": f_upper / f_coeff, "lower": f_lower / f_coeff}
+            f_algorithm = "extrapolation"
         else:
-            detected_Tc = "НЕМАЄ"
+            f_area = f_clean
+            f_limits = self._calculate_limits(
+                f_clean, f_raw, real_time, self.GROUP_A_SIGMA["18F"]
+            )
+            f_conc = f_area * f_coeff
+            f_upper = f_limits["upper"] * f_coeff
+            f_lower = f_limits["lower"] * f_coeff
+            f_algorithm = "measured"
 
-        # ============================================================
-        # 7. ОНОВЛЮЄМО ІСТОРІЮ
-        # ============================================================
-        #
-        # Поточна ARR_2 зона Tc повинна стати попередньою
-        # для наступного циклу — незалежно від того, який режим
-        # (direct/dynamic) був використаний для результату.
-
-        history_updated = {
-            "cycle": cycle,
-            "K_F": K_F,
-            "K_Tc": K_Tc,
-            "previous_Tc_arr2": sum_Tc_clean_current,
-            "tc_use_direct": tc_use_direct,
-            "tc_ratio": tc_ratio,
-            "reference_time": history.get("reference_time", real_time)
+        if f_lower > 0 and f_upper > 0:
+            f_detected = "Є"
+        elif f_upper > 0 and f_lower <= 0:
+            f_detected = "МОЖЕ БУТИ"
+        else:
+            f_detected = "НЕМАЄ"
+        f_result = {
+            "available": True, "activity": f_conc * volume,
+            "concentration": f_conc, "activity_upper": f_upper * volume,
+            "activity_lower": f_lower * volume, "conc_upper": f_upper,
+            "conc_lower": f_lower, "detected": f_detected,
+            "sum_clean": f_area, "sum_raw": f_raw if f_algorithm == "measured" else None,
+            "limits": f_limits, "reference_hour": hour,
+            "algorithm": f_algorithm, "extrapolated": state["f_extrapolate"],
+        }
+        state["f_results"][hour] = {
+            "concentration": f_conc, "conc_upper": f_upper, "conc_lower": f_lower
         }
 
-        # ============================================================
-        # 8. ФОРМУЄМО РЕЗУЛЬТАТ
-        # ============================================================
+        # 4. Умови переходу F: дві від'ємні години або відношення
+        #    центральних питомих активностей (h)/(h-2) > 0.7.
+        if not state["f_extrapolate"]:
+            f_negative = min(2, state["f_negative_count"] + 1) if min(
+                f_conc, f_upper, f_lower
+            ) < 0 else 0
+            state["f_negative_count"] = f_negative
+            f_ratio_trigger = False
+            old_f = state["f_results"].get(hour - 2)
+            if old_f is not None and old_f["concentration"] > 0:
+                f_ratio_trigger = f_conc / old_f["concentration"] > 0.7
+            if f_negative >= 2 or f_ratio_trigger:
+                state["f_extrapolate"] = True  # Починаючи з наступної години.
 
-        result = {
-            "group": "A",
-            "isotopes": ["18F", "99mTc"],
+        # 5. Технецій: визначаємо результати, що належать годинам.
+        #    У перехідному циклі формується ДВА результати Tc.
+        tc_calculations = []
+        if hour == 1:
+            pass  # Tc недоступний до другого вимірювання.
+        elif state["tc_extrapolate"]:
+            last_hour = max(state["tc_results"], default=0)
+            if last_hour == 0:
+                raise ValueError("Група A: немає Tc для екстраполяції")
+            prev = state["tc_results"][last_hour]
+            tc_calculations.append((
+                last_hour + 1, prev["concentration"] * 0.890927 / tc_coeff,
+                {"upper": prev["conc_upper"] * 0.890927 / tc_coeff,
+                 "lower": prev["conc_lower"] * 0.890927 / tc_coeff},
+                "extrapolation", None,
+            ))
+        elif state["tc_use_direct"]:
+            tc_calculations.append((
+                hour, tc_clean,
+                self._calculate_limits(tc_clean, tc_raw, real_time, self.GROUP_A_SIGMA["99mTc"]),
+                "direct", tc_raw,
+            ))
+        else:
+            # Динамічна формула Tc, результат належить годині h-1.
+            tc_dynamic = (
+                tc_clean - state["K_F"] * state["previous_Tc_arr2"]
+            ) / (state["K_Tc"] - state["K_F"])
+            tc_calculations.append((
+                hour - 1, tc_dynamic,
+                self._calculate_limits(tc_dynamic, tc_raw, real_time, self.GROUP_A_SIGMA["99mTc"]),
+                "dynamic", tc_raw,
+            ))
+            if state["tc_switch_pending"]:
+                # Останній динамічний результат + перший прямий.
+                tc_calculations.append((
+                    hour, tc_clean,
+                    self._calculate_limits(tc_clean, tc_raw, real_time, self.GROUP_A_SIGMA["99mTc"]),
+                    "direct", tc_raw,
+                ))
+                state["tc_switch_pending"] = False
+                state["tc_use_direct"] = True
+            else:
+                # Формула п.13 документа: S_current / (S_previous*K_Tc).
+                denominator = state["previous_Tc_arr2"] * state["K_Tc"]
+                if denominator != 0:
+                    tc_ratio = tc_clean / denominator
+                    if math.isfinite(tc_ratio) and tc_ratio >= 0.95:
+                        state["tc_switch_pending"] = True
 
-            "18F": {
-                "available": True,
-                "activity": activity_F,
-                "concentration": conc_F,
-                "activity_upper": activity_F_upper,
-                "activity_lower": activity_F_lower,
-                "conc_upper": conc_F_upper,
-                "conc_lower": conc_F_lower,
-                "detected": detected_F,
-                "sum_clean": sum_F_clean,
-                "sum_raw": sum_F_raw,
-                "limits": limits_F
-            },
+        # 6. Послідовно обробляємо результати Tc за годинами належності.
+        tc_result = None
+        for reference_hour, tc_area, tc_limits, tc_algorithm, tc_raw_result in tc_calculations:
+            # Якщо екстраполяція була активована попереднім результатом,
+            # наступна година вже повинна екстраполюватися.
+            if state["tc_extrapolate"] and tc_algorithm != "extrapolation":
+                prev = state["tc_results"].get(reference_hour - 1)
+                if prev is None:
+                    raise ValueError("Група A: немає Tc для переходу в екстраполяцію")
+                tc_area = prev["concentration"] * 0.890927 / tc_coeff
+                tc_limits = {
+                    "upper": prev["conc_upper"] * 0.890927 / tc_coeff,
+                    "lower": prev["conc_lower"] * 0.890927 / tc_coeff,
+                }
+                tc_algorithm = "extrapolation"
+                tc_raw_result = None
+            tc_conc = tc_area * tc_coeff
+            tc_upper = tc_limits["upper"] * tc_coeff
+            tc_lower = tc_limits["lower"] * tc_coeff
+            if tc_lower > 0 and tc_upper > 0:
+                tc_detected = "Є"
+            elif tc_upper > 0 and tc_lower <= 0:
+                tc_detected = "МОЖЕ БУТИ"
+            else:
+                tc_detected = "НЕМАЄ"
+            current_tc_result = {
+                "available": True, "activity": tc_conc * volume,
+                "concentration": tc_conc, "activity_upper": tc_upper * volume,
+                "activity_lower": tc_lower * volume, "conc_upper": tc_upper,
+                "conc_lower": tc_lower, "detected": tc_detected,
+                "sum_clean": tc_area, "sum_raw": tc_raw_result,
+                "limits": tc_limits, "delay_cycles": hour - reference_hour,
+                "reference_hour": reference_hour, "algorithm": tc_algorithm,
+                "extrapolated": tc_algorithm == "extrapolation",
+            }
+            if reference_hour in state["tc_results"]:
+                raise ValueError("Група A: дубль результату Tc за годину")
+            state["tc_results"][reference_hour] = {
+                "concentration": tc_conc, "conc_upper": tc_upper,
+                "conc_lower": tc_lower,
+            }
+            if tc_result is not None:
+                tc_previous_hour_result = tc_result
+            tc_result = current_tc_result
 
-            "99mTc": {
-                "available": True,
-                "activity": activity_Tc,
-                "concentration": conc_Tc,
-                "activity_upper": activity_Tc_upper,
-                "activity_lower": activity_Tc_lower,
-                "conc_upper": conc_Tc_upper,
-                "conc_lower": conc_Tc_lower,
-                "detected": detected_Tc,
-                "sum_clean": sum_Tc_clean,
-                "sum_raw": sum_Tc_raw_current,
-                "limits": limits_Tc,
-                "delay_cycles": 1,
+            # Умова екстраполяції перевіряється лише для виміряних
+            # результатів, а режим починається з наступної години.
+            if not state["tc_extrapolate"]:
+                if min(tc_conc, tc_upper, tc_lower) < 0:
+                    state["tc_negative_count"] = min(2, state["tc_negative_count"] + 1)
+                else:
+                    state["tc_negative_count"] = 0
+                old_tc = state["tc_results"].get(reference_hour - 6)
+                tc_ratio_trigger = (
+                    old_tc is not None
+                    and old_tc["concentration"] > 0
+                    and tc_conc / old_tc["concentration"] > 0.7
+                )
+                if state["tc_negative_count"] >= 2 or tc_ratio_trigger:
+                    state["tc_extrapolate"] = True
 
-                # Діагностичні поля, корисні для перевірки
-                # алгоритму на реальних даних.
-                "tc_ratio": tc_ratio,
-                "tc_use_direct": tc_use_direct
-            },
+        if tc_result is None:
+            tc_result = {
+                "available": False, "activity": None, "concentration": None,
+                "activity_upper": None, "activity_lower": None,
+                "conc_upper": None, "conc_lower": None, "detected": None,
+                "sum_clean": tc_clean, "sum_raw": tc_raw, "limits": None,
+                "delay_cycles": 1, "reference_hour": None,
+                "algorithm": None, "extrapolated": False,
+            }
 
-            "real_time": real_time,
-            "history_updated": history_updated
+        # 7. Завершення циклу. Коефіцієнти розпаду не змінюємо.
+        state["cycle"] = hour
+        state["previous_Tc_arr2"] = tc_clean
+        state["tc_ratio"] = tc_ratio
+        tc_result["tc_ratio"] = tc_ratio
+        tc_result["tc_use_direct"] = state["tc_use_direct"]
+        return {
+            "group": "A", "isotopes": ["18F", "99mTc"],
+            "18F": f_result, "99mTc": tc_result,
+            "tc_previous_hour_result": tc_previous_hour_result,
+            "real_time": real_time, "history_updated": state,
         }
 
-        return result
 
 
 
