@@ -8546,9 +8546,8 @@ class App(QObject):
             return 13394.0
 
 
-
     def _identify_group_A(self, arr1, arr2, real_time, volume, history):
-        """Група A (18F, 99mTc), алгоритм F,Tc_2.docx.
+        """Група A (18F, 99mTc), алгоритм F,Tc_2_updated.docx.
 
         Один виклик = одна година. Динамічний Tc належить попередній
         годині; прямий Tc і F — поточній. Історія зберігається окремо
@@ -8589,7 +8588,8 @@ class App(QObject):
                 raise ValueError("Група A: некоректні коефіцієнти розпаду")
             state = {
                 "cycle": 0, "K_F": k_f, "K_Tc": k_tc,
-                "previous_Tc_arr2": None, "tc_use_direct": False,
+                "previous_Tc_arr2": None, "previous_Tc_arr1": None,
+                "previous_Tc_time": None, "tc_use_direct": False,
                 "tc_switch_pending": False, "tc_ratio": None,
                 "f_extrapolate": False, "tc_extrapolate": False,
                 "f_negative_count": 0, "tc_negative_count": 0,
@@ -8599,6 +8599,7 @@ class App(QObject):
         else:
             required = {
                 "cycle", "K_F", "K_Tc", "previous_Tc_arr2",
+                "previous_Tc_arr1", "previous_Tc_time",
                 "tc_use_direct", "tc_switch_pending", "f_extrapolate",
                 "tc_extrapolate", "f_negative_count", "tc_negative_count",
                 "f_results", "tc_results",
@@ -8608,9 +8609,12 @@ class App(QObject):
             state = dict(history)
             if not isinstance(state["cycle"], int) or state["cycle"] < 1:
                 raise ValueError("Група A: некоректний номер циклу")
-            for key in ("K_F", "K_Tc", "previous_Tc_arr2"):
+            for key in ("K_F", "K_Tc", "previous_Tc_arr2",
+                        "previous_Tc_arr1", "previous_Tc_time"):
                 if not math.isfinite(float(state[key])):
                     raise ValueError(f"Група A: некоректне поле {key}")
+            if state["previous_Tc_time"] <= 0 or state["previous_Tc_arr1"] < 0:
+                raise ValueError("Група A: некоректні попередні дані Tc")
             if abs(state["K_Tc"] - state["K_F"]) < 1e-12:
                 raise ValueError("Група A: некоректні K_F/K_Tc")
             if not isinstance(state["f_results"], dict) or not isinstance(state["tc_results"], dict):
@@ -8676,12 +8680,15 @@ class App(QObject):
             if f_negative >= 2 or f_ratio_trigger:
                 state["f_extrapolate"] = True  # Починаючи з наступної години.
 
-        # 5. Технецій: визначаємо результати, що належать годинам.
-        #    У перехідному циклі формується ДВА результати Tc.
+        # 5. Технецій. Спочатку перевіряємо умову п. 10/13,
+        #    а потім обираємо спосіб розрахунку. Після переходу
+        #    на прямий спосіб співвідношення більше не перевіряємо.
         tc_calculations = []
         if hour == 1:
-            pass  # Tc недоступний до другого вимірювання.
+            pass  # Перший результат Tc з'явиться після другої години.
         elif state["tc_extrapolate"]:
+            # Екстраполяція виконується за годиною, до якої належить
+            # результат, а не за номером поточного циклу вимірювання.
             last_hour = max(state["tc_results"], default=0)
             if last_hour == 0:
                 raise ValueError("Група A: немає Tc для екстраполяції")
@@ -8699,48 +8706,50 @@ class App(QObject):
                 "direct", tc_raw,
             ))
         else:
-            # Динамічна формула Tc, результат належить годині h-1.
-            tc_dynamic = (
-                tc_clean - state["K_F"] * state["previous_Tc_arr2"]
-            ) / (state["K_Tc"] - state["K_F"])
-            tc_calculations.append((
-                hour - 1, tc_dynamic,
-                self._calculate_limits(tc_dynamic, tc_raw, real_time, self.GROUP_A_SIGMA["99mTc"]),
-                "dynamic", tc_raw,
-            ))
-            if state["tc_switch_pending"]:
-                # Останній динамічний результат + перший прямий.
+            # Відношення з п. 10/13: S(h) / (S(h-1) * K_Tc).
+            denominator = state["previous_Tc_arr2"] * state["K_Tc"]
+            if denominator != 0:
+                tc_ratio = tc_clean / denominator
+            # Якщо знаменник нульовий, відношення не визначене:
+            # не перемикаємо спосіб розрахунку за невідомим критерієм.
+            if tc_ratio is not None and math.isfinite(tc_ratio) and tc_ratio >= 1.0:
+                # Пункт 13: ОБИДВА результати прямі. Перший належить
+                # попередній годині та використовує її ARR_1 і час.
+                prev_area = state["previous_Tc_arr2"]
+                prev_raw = state["previous_Tc_arr1"]
+                prev_time = state["previous_Tc_time"]
+                tc_calculations.append((
+                    hour - 1, prev_area,
+                    self._calculate_limits(prev_area, prev_raw, prev_time,
+                                           self.GROUP_A_SIGMA["99mTc"]),
+                    "direct", prev_raw,
+                ))
                 tc_calculations.append((
                     hour, tc_clean,
-                    self._calculate_limits(tc_clean, tc_raw, real_time, self.GROUP_A_SIGMA["99mTc"]),
+                    self._calculate_limits(tc_clean, tc_raw, real_time,
+                                           self.GROUP_A_SIGMA["99mTc"]),
                     "direct", tc_raw,
                 ))
-                state["tc_switch_pending"] = False
                 state["tc_use_direct"] = True
             else:
-                # Формула п.13 документа: S_current / (S_previous*K_Tc).
-                denominator = state["previous_Tc_arr2"] * state["K_Tc"]
-                if denominator != 0:
-                    tc_ratio = tc_clean / denominator
-                    if math.isfinite(tc_ratio) and tc_ratio >= 0.95:
-                        state["tc_switch_pending"] = True
+                # Пункт 10: динаміка розпаду; результат для години h-1.
+                tc_dynamic = (
+                    tc_clean - state["K_F"] * state["previous_Tc_arr2"]
+                ) / (state["K_Tc"] - state["K_F"])
+                tc_calculations.append((
+                    hour - 1, tc_dynamic,
+                    self._calculate_limits(tc_dynamic, tc_raw, real_time,
+                                           self.GROUP_A_SIGMA["99mTc"]),
+                    "dynamic", tc_raw,
+                ))
+
+        # Поле з попередньої версії зберігаємо для сумісності історії.
+        state["tc_switch_pending"] = False
 
         # 6. Послідовно обробляємо результати Tc за годинами належності.
         tc_result = None
+        tc_extrapolation_next = False
         for reference_hour, tc_area, tc_limits, tc_algorithm, tc_raw_result in tc_calculations:
-            # Якщо екстраполяція була активована попереднім результатом,
-            # наступна година вже повинна екстраполюватися.
-            if state["tc_extrapolate"] and tc_algorithm != "extrapolation":
-                prev = state["tc_results"].get(reference_hour - 1)
-                if prev is None:
-                    raise ValueError("Група A: немає Tc для переходу в екстраполяцію")
-                tc_area = prev["concentration"] * 0.890927 / tc_coeff
-                tc_limits = {
-                    "upper": prev["conc_upper"] * 0.890927 / tc_coeff,
-                    "lower": prev["conc_lower"] * 0.890927 / tc_coeff,
-                }
-                tc_algorithm = "extrapolation"
-                tc_raw_result = None
             tc_conc = tc_area * tc_coeff
             tc_upper = tc_limits["upper"] * tc_coeff
             tc_lower = tc_limits["lower"] * tc_coeff
@@ -8784,7 +8793,12 @@ class App(QObject):
                     and tc_conc / old_tc["concentration"] > 0.7
                 )
                 if state["tc_negative_count"] >= 2 or tc_ratio_trigger:
-                    state["tc_extrapolate"] = True
+                    tc_extrapolation_next = True
+
+        # Переходимо до екстраполяції лише після обробки всіх
+        # результатів цього циклу (особливо двох прямих у п. 13).
+        if tc_extrapolation_next:
+            state["tc_extrapolate"] = True
 
         if tc_result is None:
             tc_result = {
@@ -8799,6 +8813,8 @@ class App(QObject):
         # 7. Завершення циклу. Коефіцієнти розпаду не змінюємо.
         state["cycle"] = hour
         state["previous_Tc_arr2"] = tc_clean
+        state["previous_Tc_arr1"] = tc_raw
+        state["previous_Tc_time"] = real_time
         state["tc_ratio"] = tc_ratio
         tc_result["tc_ratio"] = tc_ratio
         tc_result["tc_use_direct"] = state["tc_use_direct"]
@@ -8808,7 +8824,6 @@ class App(QObject):
             "tc_previous_hour_result": tc_previous_hour_result,
             "real_time": real_time, "history_updated": state,
         }
-
 
 
 
@@ -12690,33 +12705,7 @@ class App(QObject):
             )
 
     
-            
-
-# def main():
-#     """
-#     Точка входу в програму.
-#     Спочатку перевіряємо пароль, потім запускаємо основне вікно.
-#     """
-#     # Створюємо об'єкт програми Qt
-#     app = QApplication(sys.argv)
-
-#     # ------------------------------------------------------------
-#     # 1. Показуємо діалог вводу пароля
-#     # ------------------------------------------------------------
-#     password_dialog = PasswordDialog()
-#     result = password_dialog.exec()  # exec() повертає QDialog.Accepted або QDialog.Rejected
-
-#     # Якщо користувач натиснув Cancel або ввів неправильний пароль — виходимо
-#     if result != QDialog.Accepted:
-#         sys.exit(0)  # завершуємо програму без помилок
-
-#     # ------------------------------------------------------------
-#     # 2. Пароль правильний — створюємо головне вікно
-#     # ------------------------------------------------------------
-#     window = App()
-#     app.aboutToQuit.connect(window.cleanup)
-#     sys.exit(app.exec())
-
+  
 def main():
     """
     Точка входу в програму.
