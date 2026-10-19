@@ -118,16 +118,21 @@ class SpectrumWidget(QWidget):
     
     def plot(self):
         self.ax.clear()
-        if self.data and len(self.data) > 0:
+        if self.data.any() and len(self.data) > 0:
             major_ticks = np.arange(0, len(self.data), 50)
             minor_ticks = np.arange(0, len(self.data), 10)
             # Отрисовка спектра (гистограмма или линейный график)
             self.ax.plot(self.data, linewidth=0.5)
             self.ax.grid(visible=True, linestyle='--', color='gray', linewidth=0.5)
+            self.ax.axvline(x=50, color='orange', linewidth=0.5, label='Tc99')
+            self.ax.axvline(x=77, color='red', linewidth=0.5, label='Lu177')
+            self.ax.axvline(x=130, color='blue', linewidth=0.5, label='I131')
+            self.ax.axvline(x=182, color='green', linewidth=0.5, label='F18')
             self.ax.set_xticks(major_ticks)
             self.ax.set_xticks(minor_ticks, minor=True)
             self.ax.set_ylim(bottom=0)
             self.ax.set_xlim(left=0)
+            self.ax.legend()
             #self.ax.set_xlabel("Канал")
             #self.ax.set_ylabel("Кількість імпульсів")
         else:
@@ -6359,8 +6364,8 @@ class App(QObject):
 
 
             card.setMinimumSize(
-                0,
-                0
+                950,
+                600
             )
 
             card.setSizePolicy(
@@ -6433,13 +6438,13 @@ class App(QObject):
             QSizePolicy.Policy.Preferred
         )
 
-        self.barrel_grid.addItem(
-            spacerB
-        )
+        # self.barrel_grid.addItem(
+        #     spacerB
+        # )
 
-        self.wall_layout.addItem(
-            spacerW
-        )
+        # self.wall_layout.addItem(
+        #     spacerW
+        # )
 
         # ============================================================
         # 9. НИ ОДНА КАРТОЧКА НЕ СОЗДАЛАСЬ
@@ -12779,6 +12784,100 @@ def main():
 
     window = App()
 
+    # def run_series(position, card, files):
+    #     position = position
+    #     #card = DeviceCardBarrel(parent_app=window)
+    #     card=card
+    #     card.posit_number = position
+    #     card.serial_number = f"TEST-{position}"
+    #     card.location_type = "cistern"
+
+    #     card.set_position(position)
+    #     card.set_serial(card.serial_number)
+    #     card.set_group(window.cistern_groups[position])
+    #     card.set_barrel_image(True)
+    #     window.barrel_grid.addWidget(card, 0, 0)
+    #     window.cards_by_sn[card.serial_number] = card
+
+    #     history = {}
+
+    #     card.concentration_history.clear()
+    #     card.concentration_selector.clear()
+    #     series_start_ms = QDateTime.currentDateTime().toMSecsSinceEpoch()
+    #     for cycle, path in enumerate(files, start=1):
+    #         spectrum = np.loadtxt(path, dtype=float).reshape(-1)
+
+    #         if spectrum.size == 1023:
+    #             spectrum = np.append(spectrum, 3600.0)
+    #         if spectrum.size != 1024:
+    #             raise ValueError(f"{path}: expected 1023 counts plus optional time")
+
+    #         result, history = window.identify_isotopes_alim(
+    #             spectrum,
+    #             cistern_position=position,
+    #             history=history,
+    #         )
+
+    #         if not result:
+    #             print(f"Position {position}, cycle {cycle}: no result; check the app log")
+    #             continue
+
+    #         card.spectrum.update_data(spectrum[:1023])
+    #         card.update_isotopes_table(result)
+
+    #         timestamp_ms = QDateTime.currentDateTime().toMSecsSinceEpoch()
+    #         #series_start_ms = QDateTime.currentDateTime().toMSecsSinceEpoch()
+    #         for isotope in result["isotopes"]:
+    #             data = result.get(isotope, {})
+    #             points = [data]
+
+    #             if isotope == "99mTc":
+    #                 previous_tc = result.get("tc_previous_hour_result")
+    #                 if previous_tc:
+    #                     points.insert(0, previous_tc)
+
+    #             for point in points:
+    #                 if point.get("available", True) is False:
+    #                     continue
+
+    #                 concentration = point.get("concentration")
+    #                 lower = point.get("conc_lower")
+    #                 upper = point.get("conc_upper")
+    #                 if concentration is None or lower is None or upper is None:
+    #                     continue
+
+    #                 reference_hour = point.get("reference_hour")
+    #                 point_cycle = (
+    #                     reference_hour
+    #                     if isotope == "99mTc" and reference_hour is not None
+    #                     else cycle
+    #                 )
+    #                 timestamp_ms = series_start_ms + (point_cycle - 1) * 3_600_000
+
+    #                 card.concentration_history.setdefault(isotope, []).append({
+    #                     "timestamp_ms": timestamp_ms,
+    #                     "concentration": concentration,
+    #                     "conc_lower": lower,
+    #                     "conc_upper": upper,
+    #                     "measurement_valid": result.get("measurement_valid", True),
+    #                     "extrapolated": point.get("extrapolated", False),
+    #                 })
+
+    #             if card.concentration_selector.findText(isotope) < 0:
+    #                 card.concentration_selector.addItem(isotope)
+
+    #         card.plot_concentration_history()
+    #         #print(f"Concentration history: {card.concentration_history}")
+    #         #print(f"Position {position}, cycle {cycle}: {history}")
+    # card = DeviceCardBarrel(parent_app=window)
+    # # #run_series(1, [r"test_spectra\A_cycle1.txt", r"test_spectra\A_cycle2.txt", r"test_spectra\A_cycle3.txt", r"test_spectra\A_cycle4.txt" ])
+    # run_series(1, card, [r"test_spectra\A_cycle1_alim.txt", r"test_spectra\A_cycle2_alim.txt", r"test_spectra\A_cycle3_alim.txt", r"test_spectra\A_cycle4_alim.txt", r"test_spectra\A_cycle5_alim.txt", r"test_spectra\A_cycle6_alim.txt", r"test_spectra\A_cycle7_alim.txt", r"test_spectra\A_cycle8_alim.txt", r"test_spectra\A_cycle9_alim.txt", r"test_spectra\A_cycle10_alim.txt",
+    #                     r"test_spectra\A_cycle11_alim.txt", r"test_spectra\A_cycle12_alim.txt", r"test_spectra\A_cycle13_alim.txt", r"test_spectra\A_cycle14_alim.txt", r"test_spectra\A_cycle15_alim.txt", r"test_spectra\A_cycle16_alim.txt", r"test_spectra\A_cycle17_alim.txt", r"test_spectra\A_cycle18_alim.txt", r"test_spectra\A_cycle19_alim.txt", r"test_spectra\A_cycle20_alim.txt",
+    #                     r"test_spectra\A_cycle21_alim.txt", r"test_spectra\A_cycle22_alim.txt", r"test_spectra\A_cycle23_alim.txt", r"test_spectra\A_cycle24_alim.txt", r"test_spectra\A_cycle25_alim.txt", r"test_spectra\A_cycle26_alim.txt", r"test_spectra\A_cycle27_alim.txt", r"test_spectra\A_cycle28_alim.txt", r"test_spectra\A_cycle29_alim.txt", r"test_spectra\A_cycle30_alim.txt",
+    #                     r"test_spectra\A_cycle31_alim.txt", r"test_spectra\A_cycle32_alim.txt", r"test_spectra\A_cycle33_alim.txt", r"test_spectra\A_cycle34_alim.txt", r"test_spectra\A_cycle35_alim.txt", r"test_spectra\A_cycle36_alim.txt", r"test_spectra\A_cycle37_alim.txt", r"test_spectra\A_cycle38_alim.txt", r"test_spectra\A_cycle39_alim.txt", r"test_spectra\A_cycle40_alim.txt"
+    #                     ])
+    # run_series(3, card, [r"test_spectra\R_cycle1.txt", r"test_spectra\R_cycle2.txt", r"test_spectra\R_cycle3.txt", r"test_spectra\R_cycle4.txt", r"test_spectra\R_cycle5.txt", r"test_spectra\R_cycle6.txt", r"test_spectra\R_cycle7.txt", r"test_spectra\R_cycle8.txt" ])
+    #print(f"Concentration history: {card.concentration_history}")
     # Перед повним завершенням QApplication викликаємо cleanup(),
     # щоб коректно зупинити потоки, таймери, Bridge і БД.
     app.aboutToQuit.connect(window.cleanup)

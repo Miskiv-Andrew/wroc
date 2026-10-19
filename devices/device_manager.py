@@ -128,13 +128,14 @@ class DeviceManager(QObject):
             #"2400126" : 1, "2400127" : 2,  "2400128" : 3
             }
         self.cistern_dict = {
-            #"2600021": {"position": 1, "isotopes": ["18F", "99mTc"], "group": "A"},
-            #"2600023": {"position": 2, "isotopes": ["18F", "99mTc"], "group": "A"},
+            "2600021": {"position": 1, "isotopes": ["18F", "99mTc"], "group": "A"},
+            "2600022": {"position": 2, "isotopes": ["18F", "99mTc"], "group": "A"},
             #  # Резервная цистерна (номер 3) — без изотопов, группа reserve
-            "2600023": {"position": 4, "isotopes": ["133I", "177Lu", "90Y"], "group": "B"},
-            # "2400092": {"position": 5, "isotopes": ["133I", "177Lu", "90Y"], "group": "B"},
-            # "2400093": {"position": 6, "isotopes": ["133I", "177Lu", "90Y"], "group": "B"},
-            # "2400094": {"position": 7, "isotopes": ["133I", "177Lu", "90Y"], "group": "B"},
+            "2600023": {"position": 3, "isotopes": ["133I", "177Lu", "90Y", "18F", "99mTc"], "group": "reserve"},
+            "2600024": {"position": 4, "isotopes": ["133I", "177Lu", "90Y"], "group": "B"},
+            "2600025": {"position": 5, "isotopes": ["133I", "177Lu", "90Y"], "group": "B"},
+            "2600026": {"position": 6, "isotopes": ["133I", "177Lu", "90Y"], "group": "B"},
+            #"2600026": {"position": 7, "isotopes": ["133I", "177Lu", "90Y"], "group": "B"},
             # "2400095": {"position": 8, "isotopes": ["133I", "177Lu", "90Y"], "group": "B"},
             # "2400096": {"position": 9, "isotopes": ["133I", "177Lu", "90Y"], "group": "B"},
             #2600021": {"position": 3, "isotopes": ["133I", "177Lu", "90Y", "18F", "99mTc"], "group": "reserve"}
