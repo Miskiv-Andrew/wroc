@@ -1,7 +1,7 @@
 # app.py
 
 import sys
-from PySide6.QtWidgets import QApplication, QComboBox, QWidget, QGridLayout, QVBoxLayout, QPushButton, QLabel, QSizePolicy, QSpacerItem, QDialog, QLineEdit, QMessageBox, QHBoxLayout, QSpinBox, QMenu, QTableWidget, QTableWidgetItem
+from PySide6.QtWidgets import QApplication, QComboBox, QWidget, QGridLayout, QVBoxLayout, QPushButton, QLabel, QSizePolicy, QSpacerItem, QDialog, QLineEdit, QMessageBox, QHBoxLayout, QSpinBox, QMenu, QCheckBox, QTableWidget, QTableWidgetItem
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtCore import QFile, QThread, QMetaObject, QTimer , Qt, QObject, Signal, QDateTime, QProcess
 from devices.device_manager import DeviceManager
@@ -118,7 +118,7 @@ class SpectrumWidget(QWidget):
     
     def plot(self):
         self.ax.clear()
-        if self.data.any() and len(self.data) > 0:
+        if self.data and len(self.data) > 0:
             major_ticks = np.arange(0, len(self.data), 50)
             minor_ticks = np.arange(0, len(self.data), 10)
             # Отрисовка спектра (гистограмма или линейный график)
@@ -1318,6 +1318,10 @@ class DeviceCardBarrel(QWidget):
                 "activity_upper"
             )
 
+            activity_lower = data.get(
+                "activity_lower"
+            )
+
             concentration_upper = data.get(
                 "conc_upper"
             )
@@ -1390,6 +1394,10 @@ class DeviceCardBarrel(QWidget):
                     activity_upper
                 )
 
+                activity_lower = float(
+                    activity_lower
+                )
+
                 concentration_upper = float(
                     concentration_upper
                 )
@@ -1417,6 +1425,10 @@ class DeviceCardBarrel(QWidget):
 
             if (
                 not math.isfinite(activity)
+                or
+                not math.isfinite(activity_lower)
+                or 
+                not math.isfinite(concentration_lower)
                 or
                 not math.isfinite(concentration)
                 or
@@ -1667,6 +1679,9 @@ class DeviceCardBarrel(QWidget):
                 "concentration": concentration,
                 "conc_lower": concentration_lower,
                 "conc_upper": concentration_upper,
+                "activity": activity,
+                "activity_lower": activity_lower,
+                "activity_upper": activity_upper,
                 "measurement_valid": measurement_valid,
                 "extrapolated": bool(data.get("extrapolated", False))
             })
@@ -2214,11 +2229,29 @@ class DeviceCardBarrel(QWidget):
 
         layout.setContentsMargins(4, 4, 4, 4)
 
+        # Selector and logarithmic-scale checkbox on the same row
+        controls_layout = QHBoxLayout()
+
         self.concentration_selector = QComboBox(concentration_widget)
         self.concentration_selector.currentTextChanged.connect(
             self.plot_concentration_history
         )
-        layout.addWidget(self.concentration_selector)
+        controls_layout.addWidget(self.concentration_selector)
+
+        self.metric_selector = QComboBox(concentration_widget)
+        self.metric_selector.addItem("Питома активність", "concentration")
+        self.metric_selector.addItem("Активність", "activity")
+        self.metric_selector.currentIndexChanged.connect(
+            lambda _index: self.plot_concentration_history()
+        )
+        controls_layout.addWidget(self.metric_selector)
+
+        self.concentration_log_checkbox = QCheckBox("Логарифмічна шкала", concentration_widget)
+        self.concentration_log_checkbox.toggled.connect(
+            lambda checked: self.plot_concentration_history()
+        )
+        controls_layout.addWidget(self.concentration_log_checkbox)
+        layout.addLayout(controls_layout)
 
         self.concentration_figure = Figure()
         self.concentration_canvas = FigureCanvas(self.concentration_figure)
@@ -2323,111 +2356,249 @@ class DeviceCardBarrel(QWidget):
     #     self.concentration_canvas.draw()
 
 
+    # def plot_concentration_history(self, isotope=None):
+    #     isotope = isotope or self.concentration_selector.currentText()
+    #     points = self.concentration_history.get(isotope, [])
+        
+    #     self.concentration_ax.clear()
+    #     if self.concentration_log_checkbox.isChecked():
+    #         self.concentration_ax.set_yscale("log")
+    #     else:
+    #         self.concentration_ax.set_yscale("linear")
+
+    #     if not points:
+    #         self.concentration_ax.text(
+    #             0.5, 0.5, "Немає даних",
+    #             transform=self.concentration_ax.transAxes,
+    #             ha="center",
+    #             va="center"
+    #         )
+    #         self.concentration_canvas.draw()
+    #         return
+
+    #     points = sorted(points, key=lambda point: point["timestamp_ms"])
+
+    #     dates = [
+    #         datetime.fromtimestamp(point["timestamp_ms"] / 1000)
+    #         for point in points
+    #     ]
+
+    #     lower = [
+    #         min(point["conc_lower"], point["conc_upper"])
+    #         for point in points
+    #     ]
+    #     upper = [
+    #         max(point["conc_lower"], point["conc_upper"])
+    #         for point in points
+    #     ]
+
+    #     # Statistical bounds
+    #     self.concentration_ax.vlines(
+    #         mdates.date2num(dates),
+    #         lower,
+    #         upper,
+    #         color="#7a8793",
+    #         linewidth=1.5,
+    #         capstyle='butt',
+    #         label="Статистичні межі"
+    #     )
+
+    #     concentrations = [
+    #         point["concentration"]
+    #         for point in points
+    #     ]
+
+    #     # True = measured, False = extrapolated or invalid
+    #     measured = [
+    #         point["measurement_valid"] and not point["extrapolated"]
+    #         for point in points
+    #     ]
+
+    #     # Draw a continuous line, coloring each segment by its starting point
+    #     for i in range(len(points) - 1):
+    #         color = "#247a68" if measured[i] else "#d17a22"
+
+    #         self.concentration_ax.plot(
+    #             dates[i:i + 2],
+    #             concentrations[i:i + 2],
+    #             marker="o",
+    #             markersize=2,
+    #             color=color,
+    #             linewidth=1.5
+    #         )
+
+    #     # Plot a single point if there is only one measurement
+    #     if len(points) == 1:
+    #         color = "#247a68" if measured[0] else "#d17a22"
+    #         self.concentration_ax.plot(
+    #             dates,
+    #             concentrations,
+    #             marker="o",
+    #             markersize=2,
+    #             linestyle="None",
+    #             color=color,
+    #             label="Концентрація" if measured[0] else "Екстраполяція"
+    #         )
+
+    #     # Legend entries
+    #     self.concentration_ax.plot(
+    #         [], [],
+    #         color="#247a68",
+    #         linewidth=1.5,
+    #         label="Концентрація"
+    #     )
+    #     self.concentration_ax.plot(
+    #         [], [],
+    #         color="#d17a22",
+    #         linewidth=1.5,
+    #         label="Екстраполяція"
+    #     )
+
+    #     # self.concentration_ax.set_title(
+    #     #     f"{isotope}, цистерна №{self.posit_number}"
+    #     # )
+    #     # self.concentration_ax.set_xlabel("Час")
+    #     # self.concentration_ax.set_ylabel("Концентрація, Бк/л")
+
+    #     self.concentration_ax.xaxis_date()
+    #     self.concentration_ax.xaxis.set_major_formatter(
+    #         mdates.DateFormatter("%d-%m %H:%M")
+    #     )
+
+    #     self.concentration_ax.grid(True, alpha=0.3)
+    #     self.concentration_ax.legend()
+    #     self.concentration_figure.autofmt_xdate()
+    #     self.concentration_figure.tight_layout()
+    #     self.concentration_canvas.draw()
+
     def plot_concentration_history(self, isotope=None):
         isotope = isotope or self.concentration_selector.currentText()
         points = self.concentration_history.get(isotope, [])
 
+        metric_config = {
+            "concentration": (
+                "concentration",
+                "conc_lower",
+                "conc_upper",
+                "Концентрація, Бк/л",
+                "Концентрація",
+            ),
+            "activity": (
+                "activity",
+                "activity_lower",
+                "activity_upper",
+                "Активність, Бк",
+                "Активність",
+            ),
+        }
+
+        metric = self.metric_selector.currentData()
+        value_key, lower_key, upper_key, y_label, series_label = (
+            metric_config[metric]
+        )
+
         self.concentration_ax.clear()
+        self.concentration_ax.set_yscale(
+            "log" if self.concentration_log_checkbox.isChecked() else "linear"
+        )
 
         if not points:
             self.concentration_ax.text(
-                0.5, 0.5, "Немає даних",
+                0.5,
+                0.5,
+                "Немає даних",
                 transform=self.concentration_ax.transAxes,
                 ha="center",
-                va="center"
+                va="center",
             )
             self.concentration_canvas.draw()
             return
 
         points = sorted(points, key=lambda point: point["timestamp_ms"])
-
         dates = [
             datetime.fromtimestamp(point["timestamp_ms"] / 1000)
             for point in points
         ]
 
+        # lower = [
+        #     min(point[lower_key], point[upper_key])
+        #     for point in points
+        # ]
+        # upper = [
+        #     max(point[lower_key], point[upper_key])
+        #     for point in points
+        # ]
+        # values = [point[value_key] for point in points]
         lower = [
-            min(point["conc_lower"], point["conc_upper"])
+            max(0.0, min(float(point[lower_key]), float(point[upper_key])))
             for point in points
         ]
         upper = [
-            max(point["conc_lower"], point["conc_upper"])
+            max(0.0, max(float(point[lower_key]), float(point[upper_key])))
+            for point in points
+        ]
+        values = [
+            max(0.0, float(point[value_key]))
             for point in points
         ]
 
-        # Statistical bounds
         self.concentration_ax.vlines(
             mdates.date2num(dates),
             lower,
             upper,
             color="#7a8793",
             linewidth=1.5,
-            capstyle='butt',
-            label="Статистичні межі"
+            capstyle="butt",
+            label="Статистичні межі",
         )
 
-        concentrations = [
-            point["concentration"]
-            for point in points
-        ]
-
-        # True = measured, False = extrapolated or invalid
         measured = [
             point["measurement_valid"] and not point["extrapolated"]
             for point in points
         ]
 
-        # Draw a continuous line, coloring each segment by its starting point
-        for i in range(len(points) - 1):
-            color = "#247a68" if measured[i] else "#d17a22"
-
+        for index in range(len(points) - 1):
+            color = "#247a68" if measured[index] else "#d17a22"
             self.concentration_ax.plot(
-                dates[i:i + 2],
-                concentrations[i:i + 2],
+                dates[index:index + 2],
+                values[index:index + 2],
                 marker="o",
                 markersize=2,
                 color=color,
-                linewidth=1.5
+                linewidth=1.5,
             )
 
-        # Plot a single point if there is only one measurement
         if len(points) == 1:
             color = "#247a68" if measured[0] else "#d17a22"
             self.concentration_ax.plot(
                 dates,
-                concentrations,
+                values,
                 marker="o",
                 markersize=2,
                 linestyle="None",
                 color=color,
-                label="Концентрація" if measured[0] else "Екстраполяція"
             )
 
-        # Legend entries
         self.concentration_ax.plot(
-            [], [],
+            [],
+            [],
             color="#247a68",
             linewidth=1.5,
-            label="Концентрація"
+            label=series_label,
         )
         self.concentration_ax.plot(
-            [], [],
+            [],
+            [],
             color="#d17a22",
             linewidth=1.5,
-            label="Екстраполяція"
+            label="Екстраполяція",
         )
 
-        # self.concentration_ax.set_title(
-        #     f"{isotope}, цистерна №{self.posit_number}"
-        # )
-        # self.concentration_ax.set_xlabel("Час")
-        # self.concentration_ax.set_ylabel("Концентрація, Бк/л")
-
+        #self.concentration_ax.set_ylabel(y_label)
         self.concentration_ax.xaxis_date()
         self.concentration_ax.xaxis.set_major_formatter(
             mdates.DateFormatter("%d-%m %H:%M")
         )
-
         self.concentration_ax.grid(True, alpha=0.3)
         self.concentration_ax.legend()
         self.concentration_figure.autofmt_xdate()
@@ -6362,11 +6533,14 @@ class App(QObject):
 
                 card.set_group(group)
 
-
-            card.setMinimumSize(
-                950,
-                600
-            )
+            if isinstance(card, DeviceCardBarrel):
+                card.setMinimumSize(950,500)
+            else:
+                card.setMinimumSize(0,0)
+            # card.setMinimumSize(
+            #     0,
+            #     0
+            # )
 
             card.setSizePolicy(
                 QSizePolicy.Expanding,
@@ -12772,6 +12946,10 @@ def main():
     # ============================================================
 
     window = App()
+    from serial.tools import list_ports
+
+    for port in list_ports.comports():
+        print(port.device, port.vid, port.pid, port.manufacturer, port.description)
 
     # def run_series(position, card, files):
     #     position = position
@@ -12832,7 +13010,15 @@ def main():
     #                 concentration = point.get("concentration")
     #                 lower = point.get("conc_lower")
     #                 upper = point.get("conc_upper")
-    #                 if concentration is None or lower is None or upper is None:
+
+    #                 activity = point.get("activity")
+    #                 activity_lower = point.get("activity_lower")
+    #                 activity_upper = point.get("activity_upper")
+                    
+    #                 if any(value is None for value in (
+    #                     concentration, lower, upper,
+    #                     activity, activity_lower, activity_upper,
+    #                 )):
     #                     continue
 
     #                 reference_hour = point.get("reference_hour")
@@ -12848,6 +13034,9 @@ def main():
     #                     "concentration": concentration,
     #                     "conc_lower": lower,
     #                     "conc_upper": upper,
+    #                     "activity": activity,
+    #                     "activity_lower": activity_lower,
+    #                     "activity_upper": activity_upper,
     #                     "measurement_valid": result.get("measurement_valid", True),
     #                     "extrapolated": point.get("extrapolated", False),
     #                 })
@@ -12857,7 +13046,7 @@ def main():
 
     #         card.plot_concentration_history()
     #         #print(f"Concentration history: {card.concentration_history}")
-    #         #print(f"Position {position}, cycle {cycle}: {history}")
+    #         print(f"Position {position}, cycle {cycle}: {history}")
     # card = DeviceCardBarrel(parent_app=window)
     # # #run_series(1, [r"test_spectra\A_cycle1.txt", r"test_spectra\A_cycle2.txt", r"test_spectra\A_cycle3.txt", r"test_spectra\A_cycle4.txt" ])
     # run_series(1, card, [r"test_spectra\A_cycle1_alim.txt", r"test_spectra\A_cycle2_alim.txt", r"test_spectra\A_cycle3_alim.txt", r"test_spectra\A_cycle4_alim.txt", r"test_spectra\A_cycle5_alim.txt", r"test_spectra\A_cycle6_alim.txt", r"test_spectra\A_cycle7_alim.txt", r"test_spectra\A_cycle8_alim.txt", r"test_spectra\A_cycle9_alim.txt", r"test_spectra\A_cycle10_alim.txt",

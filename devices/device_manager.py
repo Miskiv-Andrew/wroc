@@ -125,19 +125,19 @@ class DeviceManager(QObject):
 
         #self.debug_mode: int | None = 1        
         self.room_dict    = {
-            #"2400126" : 1, "2400127" : 2,  "2400128" : 3
+            "2600030" : 1, "2600031" : 2,  "2600032" : 3
             }
         self.cistern_dict = {
             "2600021": {"position": 1, "isotopes": ["18F", "99mTc"], "group": "A"},
             "2600022": {"position": 2, "isotopes": ["18F", "99mTc"], "group": "A"},
-            #  # Резервная цистерна (номер 3) — без изотопов, группа reserve
+            # Резервная цистерна (номер 3) — без изотопов, группа reserve
             "2600023": {"position": 3, "isotopes": ["133I", "177Lu", "90Y", "18F", "99mTc"], "group": "reserve"},
             "2600024": {"position": 4, "isotopes": ["133I", "177Lu", "90Y"], "group": "B"},
             "2600025": {"position": 5, "isotopes": ["133I", "177Lu", "90Y"], "group": "B"},
             "2600026": {"position": 6, "isotopes": ["133I", "177Lu", "90Y"], "group": "B"},
-            #"2600026": {"position": 7, "isotopes": ["133I", "177Lu", "90Y"], "group": "B"},
-            # "2400095": {"position": 8, "isotopes": ["133I", "177Lu", "90Y"], "group": "B"},
-            # "2400096": {"position": 9, "isotopes": ["133I", "177Lu", "90Y"], "group": "B"},
+            "2600027": {"position": 7, "isotopes": ["133I", "177Lu", "90Y"], "group": "B"},
+            "2600028": {"position": 8, "isotopes": ["133I", "177Lu", "90Y"], "group": "B"},
+            "2600029": {"position": 9, "isotopes": ["133I", "177Lu", "90Y"], "group": "B"},
             #2600021": {"position": 3, "isotopes": ["133I", "177Lu", "90Y", "18F", "99mTc"], "group": "reserve"}
         }
 
@@ -686,7 +686,7 @@ class DeviceManager(QObject):
                     # 3. ПЕРЕБИРАЄМО МОЖЛИВІ АДРЕСИ 1..6
                     # =================================================
 
-                    for addr in range(1, 7):
+                    for addr in range(1, 13):
 
                         # ---------------------------------------------
                         # Запитуємо серійний номер.
@@ -1098,7 +1098,7 @@ class DeviceManager(QObject):
                     # Пошук приладів у DeviceManager виконується
                     # по адресах 1..6.
 
-                    if expected_address < 1 or expected_address > 6:
+                    if expected_address < 1 or expected_address > 13:
                         raise ValueError(
                             f"рядок {line_number}: "
                             f"адреса приладу повинна бути 1..6, "

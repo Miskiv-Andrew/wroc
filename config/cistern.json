@@ -27,7 +27,7 @@
         "group": "reserve"
     },
     "4": {
-        "full": true,
+        "full": false,
         "isotopes": [
             "133I",
             "177Lu",
@@ -36,7 +36,7 @@
         "group": "B"
     },
     "5": {
-        "full": true,
+        "full": false,
         "isotopes": [
             "133I",
             "177Lu",
@@ -45,7 +45,7 @@
         "group": "B"
     },
     "6": {
-        "full": true,
+        "full": false,
         "isotopes": [
             "133I",
             "177Lu",
@@ -55,17 +55,29 @@
     },
     "7": {
         "full": false,
-        "isotopes": [],
+        "isotopes": [
+            "133I",
+            "177Lu",
+            "90Y"
+        ],
         "group": "B"
     },
     "8": {
         "full": false,
-        "isotopes": [],
+        "isotopes": [
+            "133I",
+            "177Lu",
+            "90Y"
+        ],
         "group": "B"
     },
     "9": {
         "full": false,
-        "isotopes": [],
+        "isotopes": [
+            "133I",
+            "177Lu",
+            "90Y"
+        ],
         "group": "B"
     }
 }
