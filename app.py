@@ -9601,6 +9601,61 @@ class App(QObject):
         }
 
         return result
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
     def _identify_group_reserve(
@@ -9749,8 +9804,9 @@ class App(QObject):
         f_half_life_minutes = 110.0
 
         delay_hours = self.GROUP_RESERVE_TC_DELAY_HOURS
+        f_extrapolation_coeff = 0.685175
         extrapolation_coeff = (
-            self.GROUP_RESERVE_TC_EXTRAPOLATION_COEFF
+            0.890927
         )
 
         isotope_Tc = "99mTc"
@@ -9872,6 +9928,15 @@ class App(QObject):
                 "last_result_reference_timestamp": None
             }
 
+        # Постійний режим F та останні вимірювання для порівняння h/h-2.
+        history.setdefault("f_extrapolation_started", False)
+        history.setdefault("f_measurements", [])
+        history.setdefault("last_f_result", None)
+        history.setdefault("tc_backfill_results", [])
+        history.setdefault("tc_last_valid", None)
+        history.setdefault("tc_last_valid_hour", None)
+        history.setdefault("tc_current_hour_mode", False)
+
         # ============================================================
         # 4. НОВИЙ ГОДИННИЙ ЦИКЛ
         # ============================================================
@@ -9883,6 +9948,9 @@ class App(QObject):
 
         history["hour_index"] = current_hour
 
+        # Додаткові історичні значення Tc лише для цього циклу.
+        history["tc_backfill_results"] = []
+
         # Час завершення саме цього спектрального циклу.
         #
         # Це не T алгоритму.
@@ -9891,6 +9959,14 @@ class App(QObject):
                 Qt.DateFormat.ISODate
             )
         )
+
+        history.setdefault("tc_hour_timestamps", {})
+        history["tc_hour_timestamps"][str(current_hour)] = current_timestamp
+        # Зберігаємо останні 8 міток (для заповнення 6 годин).
+        history["tc_hour_timestamps"] = {
+            key: value for key, value in history["tc_hour_timestamps"].items()
+            if int(key) >= current_hour - 8
+        }
 
         # ============================================================
         # 5. ДОПОМІЖНІ ЛОКАЛЬНІ ФУНКЦІЇ
@@ -10137,6 +10213,117 @@ class App(QObject):
                 "reason": reason
             }
 
+        def f_from_previous(reason):
+            """Продовження F незалежно від валідності поточного спектра."""
+            previous = history.get("last_f_result")
+            if not isinstance(previous, dict) or not previous.get("available"):
+                return make_unavailable_isotope()
+            factor = f_extrapolation_coeff
+            result = dict(previous)
+            for key in ("concentration", "conc_upper", "conc_lower",
+                        "activity", "activity_upper", "activity_lower",
+                        "sum_clean"):
+                if isinstance(result.get(key), (int, float)):
+                    result[key] *= factor
+            if isinstance(result.get("limits"), dict):
+                result["limits"] = {key: val * factor for key, val in result["limits"].items()}
+            result["sum_raw"] = None
+            result["detected"] = tc_status(result["conc_upper"], result["conc_lower"])
+            result["extrapolated"] = True
+            result["reason"] = reason
+            history["last_f_result"] = dict(result)
+            return result
+
+        def tc_result_at_hour(source, hour, timestamp, reason):
+            """Створює Tc для заданої години без шестигодинного відставання."""
+            result = dict(source)
+            for key in ("concentration", "conc_upper", "conc_lower",
+                        "activity", "activity_upper", "activity_lower", "sum_clean"):
+                if isinstance(result.get(key), (int, float)):
+                    result[key] *= extrapolation_coeff
+            if isinstance(result.get("limits"), dict):
+                result["limits"] = {key: val * extrapolation_coeff for key, val in result["limits"].items()}
+            result["sum_raw"] = None
+            result.update({"reference_hour": hour, "reference_timestamp": timestamp,
+                        "delay_hours": delay_hours, "extrapolated": True,
+                        "algorithm": "Tc extrapolation", "ratio": None,
+                        "reason": reason})
+            result["detected"] = tc_status(result["conc_upper"], result["conc_lower"])
+            return result
+
+        def hour_timestamp(hour):
+            if hour == current_hour:
+                return current_timestamp
+            entry = get_reference_entry(hour)
+            if entry is not None:
+                return entry.get("timestamp")
+            return history.get("tc_hour_timestamps", {}).get(str(hour))
+
+        def switch_tc_to_current_hour(tc_data, reference_hour, reference_timestamp):
+            """Заповнює невидані години і переводить Tc на поточний час."""
+            negative = any(tc_data.get(key) is not None and tc_data[key] < 0
+                        for key in ("concentration", "conc_upper", "conc_lower"))
+            ratio = tc_data.get("ratio")
+            ratio_trigger = ratio is not None and ratio < 1.5
+            if not negative and not ratio_trigger:
+                if tc_data.get("available"):
+                    history["tc_last_valid"] = dict(tc_data)
+                    history["tc_last_valid_hour"] = reference_hour
+                return tc_data
+
+            # Якщо перший Tc негативний — зберігаємо його як є,
+            # екстраполяцію починаємо з другої години.
+            last_valid = history.get("tc_last_valid")
+            last_valid_hour = history.get("tc_last_valid_hour")
+            if negative and last_valid is not None and last_valid_hour is not None:
+                source = dict(last_valid)
+                start_hour = int(last_valid_hour) + 1
+            else:
+                source = dict(tc_data)
+                start_hour = reference_hour + 1
+
+
+            # Зберігаємо розраховане значення опорної години,
+            # оскільки основний результат цього виклику вже
+            # відповідатиме поточній годині.
+            if source is tc_data or (not negative and ratio_trigger):
+                history["tc_backfill_results"].append(dict(tc_data))
+
+            # Історія часу зберігається окремо до переходу, щоб
+            # після обрізання tc_hours мітки не втрачались.
+            backfill = []
+            for hour in range(start_hour, current_hour + 1):
+                source = tc_result_at_hour(source, hour, hour_timestamp(hour),
+                                        "Постійна екстраполяція Tc")
+                if hour < current_hour:
+                    backfill.append(dict(source))
+            history["tc_backfill_results"].extend(backfill)
+            history["extrapolation_started"] = True
+            history["tc_current_hour_mode"] = True
+            history["last_result_conc_upper"] = source["conc_upper"]
+            history["last_result_conc_lower"] = source["conc_lower"]
+            history["last_result_reference_hour"] = current_hour
+            history["last_result_reference_timestamp"] = current_timestamp
+            return source
+
+        def finalize_f_result(result):
+            """Перевіряє h/h-2 та запам'ятовує результат F."""
+            if history["f_extrapolation_started"]:
+                return f_from_previous("Постійна екстраполяція F")
+            measurements = history["f_measurements"]
+            prior = next((item for item in measurements
+                        if item["hour"] == current_hour - 2), None)
+            if prior is not None and prior["concentration"] > 0:
+                if result["concentration"] / prior["concentration"] > 0.7:
+                    history["f_extrapolation_started"] = True
+            measurements.append({"hour": current_hour,
+                                "concentration": result["concentration"]})
+            history["f_measurements"] = [item for item in measurements
+                                        if item["hour"] >= current_hour - 2]
+            result["extrapolated"] = False
+            history["last_f_result"] = dict(result)
+            return result
+
         def make_invalid_hour_result(reason):
             """
             Обробляє повністю невдалий годинний цикл ZB3.
@@ -10194,11 +10381,14 @@ class App(QObject):
                 # Після 6-ї години при помилці використовуємо
                 # погоджену екстраполяцію попереднього
                 # кінцевого результату.
-                tc_data = extrapolate_previous_tc(
-                    reference_hour,
-                    reference_timestamp,
-                    reason
-                )
+                if history.get("tc_current_hour_mode"):
+                    tc_data = extrapolate_previous_tc(
+                        current_hour, current_timestamp, reason
+                    )
+                else:
+                    tc_data = extrapolate_previous_tc(
+                        reference_hour, reference_timestamp, reason
+                    )
 
             trim_history()
 
@@ -10215,7 +10405,7 @@ class App(QObject):
                     "90Y"
                 ],
 
-                "18F": dict(unavailable),
+                "18F": f_from_previous(reason),
 
                 "99mTc": tc_data,
 
@@ -10232,7 +10422,7 @@ class App(QObject):
 
                 "invalid_reason": reason,
 
-                "history_updated": history
+                            "history_updated": history
             }
 
         # ============================================================
@@ -10697,6 +10887,16 @@ class App(QObject):
             limits_F["lower"]
         )
 
+        # Результат F спочатку формується з поточного ARR_4.
+        f_data = finalize_f_result({
+            "available": True,
+            "activity": activity_F, "concentration": conc_F,
+            "activity_upper": activity_F_upper, "activity_lower": activity_F_lower,
+            "conc_upper": conc_F_upper, "conc_lower": conc_F_lower,
+            "detected": detected_F, "sum_clean": sum_F_clean,
+            "sum_raw": sum_F_raw, "limits": limits_F
+        })
+
         # ============================================================
         # 16. ПОТОЧНИЙ ПОЧАТКОВИЙ РОЗРАХУНОК 99mTc
         # ============================================================
@@ -10791,19 +10991,7 @@ class App(QObject):
                     "90Y"
                 ],
 
-                "18F": {
-                    "available": True,
-                    "activity": activity_F,
-                    "concentration": conc_F,
-                    "activity_upper": activity_F_upper,
-                    "activity_lower": activity_F_lower,
-                    "conc_upper": conc_F_upper,
-                    "conc_lower": conc_F_lower,
-                    "detected": detected_F,
-                    "sum_clean": sum_F_clean,
-                    "sum_raw": sum_F_raw,
-                    "limits": limits_F
-                },
+                "18F": f_data,
 
                 "99mTc": tc_data,
 
@@ -10859,7 +11047,7 @@ class App(QObject):
                     "after_iodine_subtraction": arr4
                 },
 
-                "history_updated": history
+                            "history_updated": history
             }
 
             return result
@@ -10896,8 +11084,8 @@ class App(QObject):
         ):
 
             tc_data = extrapolate_previous_tc(
-                reference_hour,
-                reference_timestamp,
+                current_hour,
+                current_timestamp,
                 "Постійний режим екстраполяції 99mTc."
             )
 
@@ -11436,6 +11624,11 @@ class App(QObject):
 
                                         trim_history()
 
+        # Рішення про незворотний перехід Tc приймаємо після
+        # обчислення p17/p18, не змінюючи самі формули консультанта.
+        if tc_data.get("available") and not history.get("tc_current_hour_mode"):
+            tc_data = switch_tc_to_current_hour(tc_data, reference_hour, reference_timestamp)
+
         # ============================================================
         # 26. ФОРМУЄМО ЗАГАЛЬНИЙ РЕЗУЛЬТАТ
         # ============================================================
@@ -11452,25 +11645,7 @@ class App(QObject):
                 "90Y"
             ],
 
-            "18F": {
-                "available": True,
-
-                "activity": activity_F,
-                "concentration": conc_F,
-
-                "activity_upper": activity_F_upper,
-                "activity_lower": activity_F_lower,
-
-                "conc_upper": conc_F_upper,
-                "conc_lower": conc_F_lower,
-
-                "detected": detected_F,
-
-                "sum_clean": sum_F_clean,
-                "sum_raw": sum_F_raw,
-
-                "limits": limits_F
-            },
+            "18F": f_data,
 
             "99mTc": tc_data,
 
@@ -11547,10 +11722,12 @@ class App(QObject):
                 "after_iodine_subtraction": arr4
             },
 
-            "history_updated": history
+                        "history_updated": history
         }
 
         return result
+
+
 
 
     def identify_isotopes_alim(
