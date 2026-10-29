@@ -1,0 +1,188 @@
+
+TRANSLATIONS = {
+    "uk": {
+        #password
+        "password_window_title": "Авторизація",
+        "password_title": "Введіть пароль для доступу до програми",
+        "password_error_title": "Помилка", 
+        "password_error_text": "Неправильний пароль. Спробуйте ще раз",
+        # Menu
+        "window_title": "Моніторинг",
+        "menu_devices": "Прилади",
+        "menu_find_devices": "Пошук приладів",
+        "menu_start_system": "Старт системи",
+        "menu_stop_system": "Зупинка системи",
+        "menu_intervals": "Налаштування інтервалів",
+        "menu_device_replacement": "Заміна приладу",
+        "menu_database": "База даних",
+        "menu_open_database": "Відкрити БД",
+        "language_menu": "Мова",
+        "menu_info": "Довідка",
+        "menu_about_program": "Про програму",
+        "ip_plc": "IP адреса ПЛК",
+        "port": "Порт",
+        "connect_plc": "Приєднатись до ПЛК",
+        "disconnect_plc": "Від'єднатись від ПЛК",
+
+
+
+        
+
+        # UI devices
+        "barrel_name": "Цистерна",
+        "paed_name": "ПАЕД",
+        "group_A": "Група А",
+        "group_B": "Група B",
+        "group_R": "РЕЗЕРВ",
+        "paed_values": "мкЗв/год",
+        "temperature_name": "Температура",
+        "barrel_full": "Заповнена",
+        "barrel_empty": "Незаповнена",
+        "table_isotope": "Ізотоп",
+        "table_concentration": "Питома активність(Бк/л)",
+        "table_activity": "Активність(Бк)",
+        "table_status": "Статус",
+        "graph_activity": "Графік активності",
+        "graph_spectre": "Графік спектру",
+        "measure_start": "Початок вимірювання",
+        "measure_ongoing": "Пройдений час",
+        "low_detector": "Низькочутливий детектор",
+        "high_detector": "Високочутливий детектор",
+        "result_validity": "Валідність результатів",
+        "device_status": "Статус",
+        "status_normal": "Норма",
+        "status_failure": "Відмова",
+        "status_invalid": "Невалідний",
+        "status_no_connection": "Немає зв'язку",
+        "status_crc_error": "Помилка CRC",
+        "group_unknown": "Група невідома",
+        "cistern_label": "Цистерна №",
+        "wall_label": "Детектор №",
+
+        "no_data": "Немає даних",
+        "log_scale": "Логарифмічна шкала",
+        "concentration": "Питома активність",
+        "activity": "Активність",
+        "cancel_action": "Скасувати"
+
+
+        
+    },
+
+    "en": {
+        # Password
+        "password_window_title": "Authorization",
+        "password_title": "Enter the password to access the application",
+        "password_error_title": "Error",
+        "password_error_text": "Incorrect password. Please try again",
+
+        # Menu
+        "window_title": "Monitoring",
+        "menu_devices": "Devices",
+        "menu_find_devices": "Find Devices",
+        "menu_start_system": "Start System",
+        "menu_stop_system": "Stop System",
+        "menu_intervals": "Interval Settings",
+        "menu_device_replacement": "Device Replacement",
+        "menu_database": "Database",
+        "menu_open_database": "Open Database",
+        "language_menu": "Language",
+        "menu_info": "Help",
+        "menu_about_program": "About program",
+        "ip_plc": "IP address PLC",
+        "port": "Port",
+        "connect_plc": "Connect to PLC",
+        "disconnect_plc": "Disconnect from PLC",
+
+        # UI devices
+        "barrel_name": "Tank",
+        "paed_name": "PAED",
+        "group_A": "Group A",
+        "group_B": "Group B",
+        "group_R": "RESERVE",
+        "paed_values": "µSv/h",
+        "temperature_name": "Temperature",
+        "barrel_full": "Full",
+        "barrel_empty": "Empty",
+        "table_isotope": "Isotope",
+        "table_concentration": "Specific Activity (Bq/L)",
+        "table_activity": "Activity (Bq)",
+        "table_status": "Status",
+        "graph_activity": "Activity Graph",
+        "graph_spectre": "Spectrum Graph",
+        "measure_start": "Measurement Start",
+        "measure_ongoing": "Elapsed Time",
+        "low_detector": "Low-Sensitivity Detector",
+        "high_detector": "High-Sensitivity Detector",
+        "result_validity": "Result Validity",
+        "device_status": "Status",
+        "status_normal": "Normal",
+        "status_failure": "Failure",
+        "status_invalid": "Invalid",
+        "status_no_connection": "No connection",
+        "status_crc_error": "CRC error",
+        "group_unknown": "Unknown group",
+        "cistern_label": "Cistern №",
+        "wall_label": "Detector №",
+
+        "no_data": "No data",
+        "log_scale": "Log scale",
+        "concentration": "Specific activity",
+        "activity": "Activity",
+
+        "cancel_action": "Cancel"
+    },
+
+    "pl": {
+            # Password
+            "password_window_title": "Authorization",
+            "password_title": "Enter the password to access the application",
+            "password_error_title": "Error",
+            "password_error_text": "Incorrect password. Please try again",
+    
+            # Menu
+            "window_title": "Monitoring",
+            "menu_devices": "Devices",
+            "menu_find_devices": "Find Devices",
+            "menu_start_system": "Start System",
+            "menu_stop_system": "Stop System",
+            "menu_intervals": "Interval Settings",
+            "menu_device_replacement": "Device Replacement",
+            "menu_database": "Database",
+            "menu_open_database": "Open Database",
+            "language_menu": "Language",
+            "menu_info": "Help",
+            "menu_about_program": "About",
+    
+            "connect_plc": "Connect to PLC",
+    
+            # UI devices
+            "barrel_name": "Tank",
+            "paed_name": "PAED",
+            "group_A": "Group A",
+            "group_B": "Group B",
+            "group_R": "RESERVE",
+            "paed_values": "µSv/h",
+            "temperature_name": "Temperature",
+            "barrel_full": "Full",
+            "barrel_empty": "Empty",
+            "table_isotope": "Isotope",
+            "table_concentration": "Specific Activity (Bq/L)",
+            "table_activity": "Activity (Bq)",
+            "table_status": "Status",
+            "graph_activity": "Activity Graph",
+            "graph_spectre": "Spectrum Graph",
+            "measure_start": "Measurement Start",
+            "measure_ongoing": "Elapsed Time",
+            "low_detector": "Low-Sensitivity Detector",
+            "high_detector": "High-Sensitivity Detector",
+            "result_validity": "Result Validity",
+            "device_status": "Status",
+            "status_normal": "Normal",
+            "status_failure": "Failure",
+            "status_invalid": "Invalid",
+            "status_no_connection": "No connection",
+            "status_crc_error": "CRC error",
+            "group_unknown": "Unknown group",
+    }
+}

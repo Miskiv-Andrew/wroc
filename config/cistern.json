@@ -1,6 +1,6 @@
 {
     "1": {
-        "full": true,
+        "full": false,
         "isotopes": [
             "18F",
             "99mTc"
@@ -8,15 +8,12 @@
         "group": "A"
     },
     "2": {
-        "full": true,
-        "isotopes": [
-            "18F",
-            "99mTc"
-        ],
+        "full": false,
+        "isotopes": [],
         "group": "A"
     },
     "3": {
-        "full": true,
+        "full": false,
         "isotopes": [
             "133I",
             "177Lu",
@@ -28,47 +25,27 @@
     },
     "4": {
         "full": false,
-        "isotopes": [
-            "133I",
-            "177Lu",
-            "90Y"
-        ],
+        "isotopes": [],
         "group": "B"
     },
     "5": {
         "full": false,
-        "isotopes": [
-            "133I",
-            "177Lu",
-            "90Y"
-        ],
+        "isotopes": [],
         "group": "B"
     },
     "6": {
         "full": false,
-        "isotopes": [
-            "133I",
-            "177Lu",
-            "90Y"
-        ],
+        "isotopes": [],
         "group": "B"
     },
     "7": {
         "full": false,
-        "isotopes": [
-            "133I",
-            "177Lu",
-            "90Y"
-        ],
+        "isotopes": [],
         "group": "B"
     },
     "8": {
         "full": false,
-        "isotopes": [
-            "133I",
-            "177Lu",
-            "90Y"
-        ],
+        "isotopes": [],
         "group": "B"
     },
     "9": {

@@ -303694,3 +303694,138 @@
 2026-10-25 23:07:14 [LOG] Disconnected from PLC
 2026-10-25 23:07:14 Server stopped
 2026-10-25 23:07:14 [SYSTEM] Application stopped
+2026-10-28 15:01:10 [SYSTEM] Starting ModBusBridgeService
+2026-10-28 15:01:10 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-10-28 15:01:10 [LOG] Attempting to connect to PLC...
+2026-10-28 15:01:10 Server is running on port 12345
+2026-10-28 15:01:10 [SYSTEM] Starting event loop
+2026-10-28 15:01:10 Client connected: 127.0.0.1:22358
+2026-10-28 15:01:10 Received 16 bytes
+2026-10-28 15:01:12 Client disconnected
+2026-10-28 15:01:12 [LOG] Disconnected from PLC
+2026-10-28 15:01:12 Server stopped
+2026-10-28 15:01:12 [SYSTEM] Application stopped
+2026-10-28 16:41:02 [SYSTEM] Starting ModBusBridgeService
+2026-10-28 16:41:03 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-10-28 16:41:03 [LOG] Attempting to connect to PLC...
+2026-10-28 16:41:03 Server is running on port 12345
+2026-10-28 16:41:03 [SYSTEM] Starting event loop
+2026-10-28 16:41:03 Client connected: 127.0.0.1:25201
+2026-10-28 16:41:03 Received 16 bytes
+2026-10-28 16:41:05 Client disconnected
+2026-10-28 16:41:05 [LOG] Disconnected from PLC
+2026-10-28 16:41:05 Server stopped
+2026-10-28 16:41:05 [SYSTEM] Application stopped
+2026-10-28 16:41:07 [SYSTEM] Starting ModBusBridgeService
+2026-10-28 16:41:07 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-10-28 16:41:07 [LOG] Attempting to connect to PLC...
+2026-10-28 16:41:07 Server is running on port 12345
+2026-10-28 16:41:07 [SYSTEM] Starting event loop
+2026-10-28 16:41:07 Client connected: 127.0.0.1:25204
+2026-10-28 16:41:07 Received 16 bytes
+2026-10-28 16:41:08 Client disconnected
+2026-10-28 16:41:08 [LOG] Disconnected from PLC
+2026-10-28 16:41:08 Server stopped
+2026-10-28 16:41:08 [SYSTEM] Application stopped
+2026-10-28 16:46:33 [SYSTEM] Starting ModBusBridgeService
+2026-10-28 16:46:33 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-10-28 16:46:33 [LOG] Attempting to connect to PLC...
+2026-10-28 16:46:33 Server is running on port 12345
+2026-10-28 16:46:33 [SYSTEM] Starting event loop
+2026-10-28 16:46:33 Client connected: 127.0.0.1:25361
+2026-10-28 16:46:33 Received 16 bytes
+2026-10-28 16:46:37 [ERROR] Socket error: Connection refused
+2026-10-28 16:46:37 [LOG] Socket error: Connection refused
+2026-10-28 16:46:37 [LOG] PLC reconnect will be attempted every 3000 ms
+2026-10-28 16:46:38 Client disconnected
+2026-10-28 16:46:38 [LOG] Disconnected from PLC
+2026-10-28 16:46:38 Server stopped
+2026-10-28 16:46:38 [SYSTEM] Application stopped
+2026-10-28 16:49:20 [SYSTEM] Starting ModBusBridgeService
+2026-10-28 16:49:20 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-10-28 16:49:20 [LOG] Attempting to connect to PLC...
+2026-10-28 16:49:20 Server is running on port 12345
+2026-10-28 16:49:20 [SYSTEM] Starting event loop
+2026-10-28 16:49:20 Client connected: 127.0.0.1:25443
+2026-10-28 16:49:20 Received 16 bytes
+2026-10-28 16:49:22 Client disconnected
+2026-10-28 16:49:22 [LOG] Disconnected from PLC
+2026-10-28 16:49:22 Server stopped
+2026-10-28 16:49:22 [SYSTEM] Application stopped
+2026-10-28 16:49:32 [SYSTEM] Starting ModBusBridgeService
+2026-10-28 16:49:32 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-10-28 16:49:32 [LOG] Attempting to connect to PLC...
+2026-10-28 16:49:32 Server is running on port 12345
+2026-10-28 16:49:32 [SYSTEM] Starting event loop
+2026-10-28 16:49:32 Client connected: 127.0.0.1:25446
+2026-10-28 16:49:32 Received 16 bytes
+2026-10-28 16:49:33 Client disconnected
+2026-10-28 16:49:33 [LOG] Disconnected from PLC
+2026-10-28 16:49:33 Server stopped
+2026-10-28 16:49:33 [SYSTEM] Application stopped
+2026-10-28 16:49:37 [SYSTEM] Starting ModBusBridgeService
+2026-10-28 16:49:37 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-10-28 16:49:37 [LOG] Attempting to connect to PLC...
+2026-10-28 16:49:37 Server is running on port 12345
+2026-10-28 16:49:37 [SYSTEM] Starting event loop
+2026-10-28 16:49:37 Client connected: 127.0.0.1:25448
+2026-10-28 16:49:37 Received 16 bytes
+2026-10-28 16:49:38 Client disconnected
+2026-10-28 16:49:38 [LOG] Disconnected from PLC
+2026-10-28 16:49:38 Server stopped
+2026-10-28 16:49:38 [SYSTEM] Application stopped
+2026-10-28 16:49:39 [SYSTEM] Starting ModBusBridgeService
+2026-10-28 16:49:39 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-10-28 16:49:39 [LOG] Attempting to connect to PLC...
+2026-10-28 16:49:39 Server is running on port 12345
+2026-10-28 16:49:39 [SYSTEM] Starting event loop
+2026-10-28 16:49:40 Client connected: 127.0.0.1:25450
+2026-10-28 16:49:40 Received 16 bytes
+2026-10-28 16:49:40 Client disconnected
+2026-10-28 16:49:40 [LOG] Disconnected from PLC
+2026-10-28 16:49:40 Server stopped
+2026-10-28 16:49:40 [SYSTEM] Application stopped
+2026-10-28 16:50:16 [SYSTEM] Starting ModBusBridgeService
+2026-10-28 16:50:16 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-10-28 16:50:16 [LOG] Attempting to connect to PLC...
+2026-10-28 16:50:16 Server is running on port 12345
+2026-10-28 16:50:16 [SYSTEM] Starting event loop
+2026-10-28 16:50:16 Client connected: 127.0.0.1:25483
+2026-10-28 16:50:16 Received 16 bytes
+2026-10-28 16:50:17 Client disconnected
+2026-10-28 16:50:17 [LOG] Disconnected from PLC
+2026-10-28 16:50:17 Server stopped
+2026-10-28 16:50:17 [SYSTEM] Application stopped
+2026-10-28 16:50:17 [SYSTEM] Starting ModBusBridgeService
+2026-10-28 16:50:17 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-10-28 16:50:17 [LOG] Attempting to connect to PLC...
+2026-10-28 16:50:17 Server is running on port 12345
+2026-10-28 16:50:17 [SYSTEM] Starting event loop
+2026-10-28 16:50:18 Client connected: 127.0.0.1:25485
+2026-10-28 16:50:18 Received 16 bytes
+2026-10-28 16:50:18 Client disconnected
+2026-10-28 16:50:18 [LOG] Disconnected from PLC
+2026-10-28 16:50:18 Server stopped
+2026-10-28 16:50:18 [SYSTEM] Application stopped
+2026-10-28 16:50:21 [SYSTEM] Starting ModBusBridgeService
+2026-10-28 16:50:22 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-10-28 16:50:22 [LOG] Attempting to connect to PLC...
+2026-10-28 16:50:22 Server is running on port 12345
+2026-10-28 16:50:22 [SYSTEM] Starting event loop
+2026-10-28 16:50:22 Client connected: 127.0.0.1:25487
+2026-10-28 16:50:22 Received 16 bytes
+2026-10-28 16:50:23 Client disconnected
+2026-10-28 16:50:23 [LOG] Disconnected from PLC
+2026-10-28 16:50:23 Server stopped
+2026-10-28 16:50:23 [SYSTEM] Application stopped
+2026-10-28 16:50:24 [SYSTEM] Starting ModBusBridgeService
+2026-10-28 16:50:24 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-10-28 16:50:24 [LOG] Attempting to connect to PLC...
+2026-10-28 16:50:24 Server is running on port 12345
+2026-10-28 16:50:24 [SYSTEM] Starting event loop
+2026-10-28 16:50:24 Client connected: 127.0.0.1:25489
+2026-10-28 16:50:24 Received 16 bytes
+2026-10-28 16:50:25 Client disconnected
+2026-10-28 16:50:25 [LOG] Disconnected from PLC
+2026-10-28 16:50:25 Server stopped
+2026-10-28 16:50:25 [SYSTEM] Application stopped

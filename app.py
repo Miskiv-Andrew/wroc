@@ -5,7 +5,7 @@ from PySide6.QtWidgets import QApplication, QComboBox, QWidget, QGridLayout, QVB
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtCore import QFile, QThread, QMetaObject, QTimer , Qt, QObject, Signal, QDateTime, QProcess
 from devices.device_manager import DeviceManager
-from PySide6.QtGui import QAction, QPixmap
+from PySide6.QtGui import QAction, QPixmap, QActionGroup
 from PySide6.QtNetwork import QHostAddress
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -13,7 +13,7 @@ import matplotlib.dates as mdates
 import json, numpy as np
 import os, math, time
 from datetime import datetime
-
+from translations import TRANSLATIONS
 from PySide6.QtCore import QRegularExpression
 from PySide6.QtGui import QRegularExpressionValidator
 
@@ -38,7 +38,7 @@ class PasswordDialog(QDialog):
         super().__init__(parent)
 
         # Заголовок і розмір вікна
-        self.setWindowTitle("Авторизація")
+        self.setWindowTitle(self.tr("password_window_title"))
         self.setFixedSize(350, 150)
 
         # ------------------------------------------------------------
@@ -52,7 +52,7 @@ class PasswordDialog(QDialog):
         layout = QVBoxLayout(self)
 
         # Текст-підказка
-        label = QLabel("Введіть пароль для доступу до програми:")
+        label = QLabel(self.tr("password_title"))
         layout.addWidget(label)
 
         # Поле для введення пароля (символи приховані)
@@ -63,7 +63,7 @@ class PasswordDialog(QDialog):
         # Рядок з кнопками OK / Скасувати
         button_layout = QHBoxLayout()
         self.ok_button = QPushButton("OK")
-        self.cancel_button = QPushButton("Скасувати")
+        self.cancel_button = QPushButton(self.tr("cancel_action"))
 
         button_layout.addWidget(self.ok_button)
         button_layout.addWidget(self.cancel_button)
@@ -77,6 +77,9 @@ class PasswordDialog(QDialog):
 
         # Якщо користувач натискає Enter у полі введення — це те саме, що натиснути OK
         self.password_input.returnPressed.connect(self.check_password)
+    
+    def tr(self, key):
+        return TRANSLATIONS["en"].get(key, key)
 
     def check_password(self):
         """
@@ -92,8 +95,8 @@ class PasswordDialog(QDialog):
             # Показуємо повідомлення про помилку
             QMessageBox.critical(
                 self,
-                "Помилка",
-                "Неправильний пароль. Спробуйте ще раз."
+                self.tr("password_error_title"),
+                self.tr("password_error_text")
             )
             self.password_input.clear()  # очищаємо поле
             self.password_input.setFocus()  # ставимо курсор у поле
@@ -255,6 +258,11 @@ class DeviceCardBarrel(QWidget):
         self.spectrum_display_timer = QTimer(self)
         self.spectrum_display_timer.setInterval(1000)
         self.spectrum_display_timer.timeout.connect(self.update_spectrum_ongoing_time)
+    
+    def tr(self, key):
+        if self.parent_app is not None:
+            return self.parent_app.tr(key)
+        return TRANSLATIONS["uk"].get(key, key)
 
     def start_spectrum_display(self):
         self.spectrum_start_monotonic = time.monotonic()
@@ -323,14 +331,22 @@ class DeviceCardBarrel(QWidget):
         """
             Встановлюємо групу в GUI(A, B чи РЕЗЕРВ)
         """
+        self.current_group = group
+        group_keys = {
+        "A": "group_A",
+        "B": "group_B",
+        "reserve": "group_R",
+        }
         group_label = self.ui.findChild(QLabel, "groupLabel")
+        if group_label:
+            group_label.setText(self.tr(group_keys.get(group, "group_unknown")))
         frame = self.ui.findChild(QWidget, "deviceCard")
 
-        group_names = {
-            "A": "Група A",
-            "B": "Група B",
-            "reserve": "РЕЗЕРВ"
-        }
+        # group_names = {
+        #     "A": "Група A",
+        #     "B": "Група B",
+        #     "reserve": "РЕЗЕРВ"
+        # }
 
         group_colors = {
             "A": "#4CAF50",
@@ -338,10 +354,10 @@ class DeviceCardBarrel(QWidget):
             "reserve": "#FF9800"
         }
 
-        if group_label:
-            group_label.setText(
-                group_names.get(group, "Група невідома")
-            )
+        # if group_label:
+        #     group_label.setText(
+        #         group_names.get(group, "Група невідома")
+        #     )
 
         if frame:
             color = group_colors.get(group, "#808080")
@@ -356,20 +372,24 @@ class DeviceCardBarrel(QWidget):
             )
     
     def set_barrel_image(self, full: bool):
+        self.is_full = full
         label = self.ui.findChild(QLabel, "barrelLabel")
         label1 = self.ui.findChild(QLabel, "barrelFullness")
         if not label:
                 return
 
         image_name = "barrelfull.svg" if full else "barrelempty.svg"
-        text = "Заповнена" if full else "Незаповнена"
+        #text = "Заповнена" if full else "Незаповнена"
         path = os.path.abspath(os.path.join("_UI", image_name))
         #label.setPixmap(QPixmap(path))
         pixmap = QPixmap(path)
 
         scaled_pixmap = pixmap.scaledToWidth(80, Qt.SmoothTransformation)
         label.setPixmap(scaled_pixmap)  
-        label1.setText(f"{text}")
+        #label1.setText(f"{text}")
+        if label1:
+            key = "barrel_full" if full else "barrel_empty"
+            label1.setText(self.tr(key))
         self.is_full = full
         self.set_spectrum_ui_enabled(full)
 
@@ -527,34 +547,41 @@ class DeviceCardBarrel(QWidget):
         high_failure: True - отказ высокочувствительного детектора, False - норма
         result_valid: True - результат валидный, False - невалидный
         """
+        self._detector_status = (low_failure, high_failure, result_valid)
         # Низкочувствительный детектор
         low_label = self.ui.findChild(QLabel, "lowDetectorValue")
         if low_label:
             if not low_failure:
-                low_label.setText("Відмова")
+                #low_label.setText("Відмова")
+                low_label.setText(self.tr("status_failure"))
                 low_label.setStyleSheet("color: red; font: 600 11pt 'Segoe UI';")
             else:
-                low_label.setText("Норма")
+                #low_label.setText("Норма")
+                low_label.setText(self.tr("status_normal"))
                 low_label.setStyleSheet("color: green; font: 600 11pt 'Segoe UI';")
         
         # Высокочувствительный детектор
         high_label = self.ui.findChild(QLabel, "highDetectorValue")
         if high_label:
             if not high_failure:
-                high_label.setText("Відмова")
+                #high_label.setText("Відмова")
+                high_label.setText(self.tr("status_failure"))
                 high_label.setStyleSheet("color: red; font: 600 11pt 'Segoe UI';")
             else:
-                high_label.setText("Норма")
+                #high_label.setText("Норма")
+                high_label.setText(self.tr("status_normal"))
                 high_label.setStyleSheet("color: green; font: 600 11pt 'Segoe UI';")
         
         # Валидность результата
         valid_label = self.ui.findChild(QLabel, "validityValue")
         if valid_label:
             if result_valid:
-                valid_label.setText("Норма")
+                #valid_label.setText("Норма")
+                valid_label.setText(self.tr("status_normal"))
                 valid_label.setStyleSheet("color: green; font: 600 11pt 'Segoe UI';")
             else:
-                valid_label.setText("Невалідний")
+                #valid_label.setText("Невалідний")
+                valid_label.setText(self.tr("status_invalid"))
                 valid_label.setStyleSheet("color: red; font: 600 11pt 'Segoe UI';")
         
         # # Сохраняем для БД
@@ -573,6 +600,7 @@ class DeviceCardBarrel(QWidget):
         connected: True - связь есть, False - нет связи
         crc_error: True - ошибка CRC (пакет получен, но повреждён)
         """
+        self._connection_status = (connected, crc_error)
         status_label = self.ui.findChild(QLabel, "statusValue")
         low_label = self.ui.findChild(QLabel, "lowDetectorValue")
         high_label = self.ui.findChild(QLabel, "highDetectorValue")
@@ -581,7 +609,8 @@ class DeviceCardBarrel(QWidget):
         if not connected:
             # Нет связи
             if status_label:
-                status_label.setText("Немає зв'язку")
+                #status_label.setText("Немає зв'язку")
+                status_label.setText(self.tr("status_no_connection"))
                 status_label.setStyleSheet("color: red; font: 600 11pt 'Segoe UI';")
             if low_label:
                 low_label.setText("-----")
@@ -596,7 +625,8 @@ class DeviceCardBarrel(QWidget):
         elif crc_error:
             # Ошибка CRC (связь есть, но пакет повреждён)
             if status_label:
-                status_label.setText("Норма")
+                #status_label.setText("Норма")
+                status_label.setText(self.tr("status_normal"))
                 status_label.setStyleSheet("color: green; font: 600 11pt 'Segoe UI';")
             if low_label:
                 low_label.setText("-----")
@@ -605,13 +635,15 @@ class DeviceCardBarrel(QWidget):
                 high_label.setText("-----")
                 high_label.setStyleSheet("color: red; font: 600 11pt 'Segoe UI';")
             if valid_label:
-                valid_label.setText("Помилка CRC")
+                #valid_label.setText("Помилка CRC")
+                valid_label.setText(self.tr("status_crc_error"))
                 valid_label.setStyleSheet("color: red; font: 600 11pt 'Segoe UI';")
         
         else:
             # Нормальная связь
             if status_label:
-                status_label.setText("Норма")
+                #status_label.setText("Норма")
+                status_label.setText(self.tr("status_normal"))
                 status_label.setStyleSheet("color: green; font: 600 11pt 'Segoe UI';")
 
 
@@ -2239,14 +2271,14 @@ class DeviceCardBarrel(QWidget):
         controls_layout.addWidget(self.concentration_selector)
 
         self.metric_selector = QComboBox(concentration_widget)
-        self.metric_selector.addItem("Питома активність", "concentration")
-        self.metric_selector.addItem("Активність", "activity")
+        self.metric_selector.addItem(self.tr("concentration"), "concentration")
+        self.metric_selector.addItem(self.tr("activity"), "activity")
         self.metric_selector.currentIndexChanged.connect(
             lambda _index: self.plot_concentration_history()
         )
         controls_layout.addWidget(self.metric_selector)
 
-        self.concentration_log_checkbox = QCheckBox("Логарифмічна шкала", concentration_widget)
+        self.concentration_log_checkbox = QCheckBox(self.tr("log_scale"), concentration_widget)
         self.concentration_log_checkbox.toggled.connect(
             lambda checked: self.plot_concentration_history()
         )
@@ -2506,7 +2538,7 @@ class DeviceCardBarrel(QWidget):
             self.concentration_ax.text(
                 0.5,
                 0.5,
-                "Немає даних",
+                self.tr("no_data"),
                 transform=self.concentration_ax.transAxes,
                 ha="center",
                 va="center",
@@ -2604,6 +2636,51 @@ class DeviceCardBarrel(QWidget):
         self.concentration_figure.autofmt_xdate()
         self.concentration_figure.tight_layout()
         self.concentration_canvas.draw()
+    
+    def retranslate_values(self):
+        if hasattr(self, "current_group"):
+            self.set_group(self.current_group)
+        self.set_barrel_image(self.is_full)
+        # if hasattr(self, "last_ready_to_drain"):
+        #     self.set_ready_to_drain(self.last_ready_to_drain)
+        if hasattr(self, "_detector_status"):
+            self.set_detector_status(*self._detector_status)
+        if hasattr(self, "_connection_status"):
+            self.set_connection_status(*self._connection_status)
+
+    def retranslate_ui(self):
+        captions = {
+            "positionLabel": "cistern_label",
+            "icondoseLabel": "paed_name",
+            "doseLabel": "paed_values",
+            "icontempLabel": "temperature_name",
+            "labelStartedDate": "measure_start",
+            "labelOngoingTime": "measure_ongoing",
+            "lowDetectorLabel": "low_detector",
+            "highDetectorLabel": "high_detector",
+            "validityLabel": "result_validity",
+            "statusLabel": "device_status",
+        }
+
+        for object_name, translation_key in captions.items():
+            label = self.ui.findChild(QLabel, object_name)
+            if label is not None:
+                label.setText(self.tr(translation_key))
+
+        self.ui.tabWidget.setTabText(0,self.tr("graph_activity"))
+        self.ui.tabWidget.setTabText(1,self.tr("graph_spectre"))
+        self.concentration_log_checkbox.setText(self.tr("log_scale"))
+        self.plot_concentration_history()
+        self.spectrum.plot()
+        
+        table = self.ui.findChild(QTableWidget, "isotopesWidget")
+        if table is not None:
+            keys = ("table_isotope", "table_concentration", "table_activity", "table_status")
+            for column, key in enumerate(keys):
+                table.setHorizontalHeaderItem(
+                    column,
+                    QTableWidgetItem(self.tr(key))
+                )
 
     
 
@@ -2741,7 +2818,10 @@ class DeviceCardWall(QWidget):
 
         self.last_temperature_timestamp = None
 
-
+    def tr(self, key):
+        if self.parent_app is not None:
+            return self.parent_app.tr(key)
+        return TRANSLATIONS["uk"].get(key, key)
  
     def set_serial(self, serial):
         label = self.ui.findChild(QLabel, "serialValue")
@@ -2811,33 +2891,40 @@ class DeviceCardWall(QWidget):
         result_valid: True - результат валидный, False - невалидный
         """
         # Низкочувствительный детектор
+        self._detector_status = (low_failure, high_failure, result_valid)
         low_label = self.ui.findChild(QLabel, "lowDetectorValue")
         if low_label:
             if not low_failure:
-                low_label.setText("Відмова")
+                #low_label.setText("Відмова")
+                low_label.setText(self.tr("status_failure"))
                 low_label.setStyleSheet("color: red; font: 600 11pt 'Segoe UI';")
             else:
-                low_label.setText("Норма")
+                #low_label.setText("Норма")
+                low_label.setText(self.tr("status_normal"))
                 low_label.setStyleSheet("color: green; font: 600 11pt 'Segoe UI';")
         
         # Высокочувствительный детектор
         high_label = self.ui.findChild(QLabel, "highDetectorValue")
         if high_label:
             if not high_failure:
-                high_label.setText("Відмова")
+                #high_label.setText("Відмова")
+                high_label.setText(self.tr("status_failure"))
                 high_label.setStyleSheet("color: red; font: 600 11pt 'Segoe UI';")
             else:
-                high_label.setText("Норма")
+                #high_label.setText("Норма")
+                high_label.setText(self.tr("status_normal"))
                 high_label.setStyleSheet("color: green; font: 600 11pt 'Segoe UI';")
         
         # Валидность результата
         valid_label = self.ui.findChild(QLabel, "validityValue")
         if valid_label:
             if result_valid:
-                valid_label.setText("Норма")
+                #valid_label.setText("Норма")
+                valid_label.setText(self.tr("status_normal"))
                 valid_label.setStyleSheet("color: green; font: 600 11pt 'Segoe UI';")
             else:
-                valid_label.setText("Невалідний")
+                #valid_label.setText("Невалідний")
+                valid_label.setText(self.tr("status_invalid"))
                 valid_label.setStyleSheet("color: red; font: 600 11pt 'Segoe UI';")
 
         # status_label = self.ui.findChild(QLabel, "statusValue")
@@ -2850,6 +2937,7 @@ class DeviceCardWall(QWidget):
         connected: True - связь есть, False - нет связи
         crc_error: True - ошибка CRC (пакет получен, но повреждён)
         """
+        self._connection_status = (connected, crc_error)
         status_label = self.ui.findChild(QLabel, "statusValue")
         low_label = self.ui.findChild(QLabel, "lowDetectorValue")
         high_label = self.ui.findChild(QLabel, "highDetectorValue")
@@ -2858,7 +2946,8 @@ class DeviceCardWall(QWidget):
         if not connected:
             # Нет связи
             if status_label:
-                status_label.setText("Немає зв'язку")
+                #status_label.setText("Немає зв'язку")
+                status_label.setText(self.tr("status_no_connection"))
                 status_label.setStyleSheet("color: red; font: 600 11pt 'Segoe UI';")
             if low_label:
                 low_label.setText("-----")
@@ -2873,7 +2962,8 @@ class DeviceCardWall(QWidget):
         elif crc_error:
             # Ошибка CRC (связь есть, но пакет повреждён)
             if status_label:
-                status_label.setText("Норма")
+                #status_label.setText("Норма")
+                status_label.setText(self.tr("status_normal"))
                 status_label.setStyleSheet("color: green; font: 600 11pt 'Segoe UI';")
             if low_label:
                 low_label.setText("-----")
@@ -2882,14 +2972,39 @@ class DeviceCardWall(QWidget):
                 high_label.setText("-----")
                 high_label.setStyleSheet("color: red; font: 600 11pt 'Segoe UI';")
             if valid_label:
-                valid_label.setText("Помилка CRC")
+                #valid_label.setText("Помилка CRC")
+                valid_label.setText(self.tr("status_crc_error"))
                 valid_label.setStyleSheet("color: red; font: 600 11pt 'Segoe UI';")
         
         else:
             # Нормальная связь
             if status_label:
-                status_label.setText("Норма")
+                #status_label.setText("Норма")
+                status_label.setText(self.tr("status_normal"))
                 status_label.setStyleSheet("color: green; font: 600 11pt 'Segoe UI';")
+    
+    def retranslate_values(self):
+        if hasattr(self, "_detector_status"):
+            self.set_detector_status(*self._detector_status)
+        if hasattr(self, "_connection_status"):
+            self.set_connection_status(*self._connection_status)
+
+    def retranslate_ui(self):
+            captions = {
+                    "positionLabel": "wall_label",
+                    "icondoseLabel": "paed_name",
+                    "doseLabel": "paed_values",
+                    "icontempLabel": "temperature_name",
+                    "lowDetectorLabel": "low_detector",
+                    "highDetectorLabel": "high_detector",
+                    "validityLabel": "result_validity",
+                    "statusLabel": "device_status",
+                }
+    
+            for object_name, translation_key in captions.items():
+                label = self.ui.findChild(QLabel, object_name)
+                if label is not None:
+                    label.setText(self.tr(translation_key))
 
 
 class DatabaseWindow(QWidget):
@@ -2965,6 +3080,33 @@ class App(QObject):
 
         # загрузка формы из .ui файла
         self.load_ui() 
+        
+        # мова 
+        self.language = "uk"
+
+        # Create an exclusive group: only one language can be checked.
+        self.language_group = QActionGroup(self)
+        self.language_group.setExclusive(True)
+
+        self.ui.actionLanguageUk.setCheckable(True)
+        self.ui.actionLanguageEn.setCheckable(True)
+        self.ui.actionLanguagePl.setCheckable(True)
+
+
+        self.language_group.addAction(self.ui.actionLanguageUk)
+        self.language_group.addAction(self.ui.actionLanguageEn)
+        self.language_group.addAction(self.ui.actionLanguagePl)
+
+        # Connect menu actions to the language switch.
+        self.ui.actionLanguageUk.triggered.connect(
+            lambda checked=False: self.change_language("uk")
+        )
+        self.ui.actionLanguageEn.triggered.connect(
+            lambda checked=False: self.change_language("en")
+        )
+        self.ui.actionLanguagePl.triggered.connect(
+            lambda checked=False: self.change_language("pl")
+        )
 
         # создание потока и объекта DeviceManager
         self.setup_device_manager()
@@ -2974,6 +3116,9 @@ class App(QObject):
 
         # Розмітка контейнеру для вікон приладів
         self.setup_ui()
+
+        # Apply the initial language and checkmark.
+        self.update_language()
 
         self.missing_device_sn = None
 
@@ -3297,6 +3442,54 @@ class App(QObject):
             self.ui.textEdit.append("Увага: меню 'Прилади' не знайдено")
 
 
+    def tr(self, key):
+        """Get a translation for the current language."""
+        return TRANSLATIONS[self.language].get(key, key)
+
+
+    def change_language(self, language):
+        """Switch languages and refresh the interface."""
+        if language not in TRANSLATIONS:
+            return
+
+        self.language = language
+        self.update_language()
+
+
+    def update_language(self):
+        """Update all visible text after a language change."""
+
+        # Main window title
+        self.ui.setWindowTitle(self.tr("window_title"))
+
+        # menu actions
+        self.ui.menu.setTitle(self.tr("menu_devices"))
+        self.ui.butt_search_dev.setText(self.tr("menu_find_devices"))
+        self.ui.butt_system_start.setText(self.tr("menu_start_system"))
+        self.ui.butt_system_stop_3.setText(self.tr("menu_stop_system"))
+        self.ui.butt_replace_device.setText(self.tr("menu_device_replacement"))
+        self.action_intervals.setText(self.tr("menu_intervals"))
+        self.ui.menuLanguage.setTitle(self.tr("language_menu"))
+        self.ui.menu_2.setTitle(self.tr("menu_database"))
+        self.ui.open_bd.setText(self.tr("menu_open_database"))
+        self.ui.menu_3.setTitle(self.tr("menu_info"))
+        self.ui.open_about.setText(self.tr("menu_about_program"))
+        self.ui.label_plc_ip.setText(self.tr("ip_plc"))
+        self.ui.label_plc_port.setText(self.tr("port"))
+        self.ui.btn_connect_plc.setText(self.tr("connect_plc"))
+        
+
+        # Show a checkmark beside the active language
+        self.ui.actionLanguageUk.setChecked(self.language == "uk")
+        self.ui.actionLanguageEn.setChecked(self.language == "en")
+        self.ui.actionLanguagePl.setChecked(self.language == "pl")
+
+        for card in self.cards_by_sn.values():
+            card.retranslate_values()
+            card.retranslate_ui()
+        
+
+        
 
     def _schedule_bridge_restart(self):
         """
@@ -3736,7 +3929,7 @@ class App(QObject):
             if self.btn_connect_plc is not None:
 
                 self.btn_connect_plc.setText(
-                    "Connect PLC"
+                    self.tr("connect_plc")
                 )
 
             return
@@ -3755,7 +3948,7 @@ class App(QObject):
         if self.btn_connect_plc is not None:
 
             self.btn_connect_plc.setText(
-                "Disconnect PLC"
+                self.tr("disconnect_plc")
             )
 
         # ============================================================
@@ -3853,7 +4046,7 @@ class App(QObject):
         if self.btn_connect_plc is not None:
 
             self.btn_connect_plc.setText(
-                "Disconnect PLC"
+                self.tr("disconnect_plc")
             )
 
         # ============================================================
@@ -4324,7 +4517,7 @@ class App(QObject):
             )
 
             self.btn_connect_plc.setText(
-                "Connect PLC"
+                self.tr("connect_plc")
             )
 
             self.ui.textEdit.append(
@@ -4492,7 +4685,7 @@ class App(QObject):
         if self.btn_connect_plc is not None:
 
             self.btn_connect_plc.setText(
-                "Відключитися"
+                self.tr("disconnect_plc")
             )
 
         self.ui.textEdit.append(
@@ -4655,7 +4848,7 @@ class App(QObject):
             )
 
             self.btn_connect_plc.setText(
-                "Disconnect PLC"
+                self.tr("disconnect_plc")
             )
 
             self.ui.textEdit.append(
@@ -4673,7 +4866,7 @@ class App(QObject):
         )
 
         self.btn_connect_plc.setText(
-            "Connect PLC"
+            self.tr("connect_plc")
         )
 
 
@@ -6532,6 +6725,9 @@ class App(QObject):
                 )
 
                 card.set_group(group)
+
+            card.retranslate_values()
+            card.retranslate_ui()
 
             if isinstance(card, DeviceCardBarrel):
                 card.setMinimumSize(950,500)
