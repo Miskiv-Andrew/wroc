@@ -1706,6 +1706,74 @@ class DeviceCardBarrel(QWidget):
                         "екстраполяцію"
                     )
 
+            if name == "99mTc":
+                if group == "A":
+                    historical_tc_points = [
+                        result.get("tc_previous_hour_result")
+                    ]
+                elif group == "reserve":
+                    historical_tc_points = self.algorithm_history.get(
+                        "tc_backfill_results",
+                        []
+                    )
+                else:
+                    historical_tc_points = []
+
+                for historical_point in historical_tc_points:
+                    if not historical_point or historical_point.get("available", True) is False:
+                        continue
+
+                    required_values = (
+                        "concentration",
+                        "conc_lower",
+                        "conc_upper",
+                        "activity",
+                        "activity_lower",
+                        "activity_upper",
+                    )
+                    if any(
+                        historical_point.get(key) is None
+                        for key in required_values
+                    ):
+                        continue
+
+                    reference_hour = historical_point.get("reference_hour")
+                    historical_timestamp_ms = cycle_timestamp_ms
+
+                    if group == "reserve":
+                        reference_timestamp = historical_point.get(
+                            "reference_timestamp"
+                        )
+                        if reference_timestamp:
+                            reference_datetime = QDateTime.fromString(
+                                reference_timestamp,
+                                Qt.DateFormat.ISODate
+                            )
+                            if reference_datetime.isValid():
+                                historical_timestamp_ms = (
+                                    reference_datetime.toMSecsSinceEpoch()
+                                )
+                    elif reference_hour is not None:
+                        current_hour = self.algorithm_history.get("cycle")
+                        if current_hour is not None:
+                            historical_timestamp_ms -= (
+                                current_hour - reference_hour
+                            ) * 3_600_000
+
+                    self.concentration_history.setdefault(name, []).append({
+                        "timestamp_ms": historical_timestamp_ms,
+                        "concentration": historical_point["concentration"],
+                        "conc_lower": historical_point["conc_lower"],
+                        "conc_upper": historical_point["conc_upper"],
+                        "activity": historical_point["activity"],
+                        "activity_lower": historical_point["activity_lower"],
+                        "activity_upper": historical_point["activity_upper"],
+                        "measurement_valid": measurement_valid,
+                        "extrapolated": bool(
+                            historical_point.get("extrapolated", False)
+                        ),
+                    })
+
             self.concentration_history.setdefault(name, []).append({
                 "timestamp_ms": point_timestamp_ms,
                 "concentration": concentration,
@@ -3141,7 +3209,7 @@ class App(QObject):
         # Пользователь может изменить его через диалог интервалов.
         # Новое значение применяется сразу, в том числе к уже
         # выполняющемуся спектральному циклу.
-        self.spectrum_accumulation_time = 3600
+        self.spectrum_accumulation_time = 120
 
         # ------------------------------------------------------------
         # НОВЫЕ АТРИБУТЫ ДЛЯ ИНТЕРВАЛОВ СОХРАНЕНИЯ В БД
@@ -3462,6 +3530,9 @@ class App(QObject):
         # Main window title
         self.ui.setWindowTitle(self.tr("window_title"))
 
+        if getattr(self, "db_window_instance", None):
+            self.db_window_instance.update_language(self.language)
+
         # menu actions
         self.ui.menu.setTitle(self.tr("menu_devices"))
         self.ui.butt_search_dev.setText(self.tr("menu_find_devices"))
@@ -3476,6 +3547,9 @@ class App(QObject):
         self.ui.open_about.setText(self.tr("menu_about_program"))
         self.ui.label_plc_ip.setText(self.tr("ip_plc"))
         self.ui.label_plc_port.setText(self.tr("port"))
+        self.ui.connect_label.setText(self.tr("connect_label"))
+        self.ui.plc_label.setText(self.tr("plc_label"))
+        self.ui.bridge_label.setText(self.tr("bridge_label"))
         self.ui.btn_connect_plc.setText(self.tr("connect_plc"))
         
 
@@ -4267,7 +4341,7 @@ class App(QObject):
         Вивід вікна для бази даних
         """
         from database.db_view_window import DBViewWindow
-        self.db_window_instance = DBViewWindow(self.db_manager, self.ui)
+        self.db_window_instance = DBViewWindow(self.db_manager, self.ui, language=self.language)
         self.db_window_instance.resize(1200, 800)
         self.db_window_instance.show()
 
@@ -8527,18 +8601,18 @@ class App(QObject):
         # 2. ЗАМЕНА РАЗРЕШЕНА ТОЛЬКО ПОСЛЕ ПОДТВЕРЖДЁННОГО ОТКАЗА
         # ============================================================
 
-        if not failed_serials:
+        # if not failed_serials:
 
-            QMessageBox.warning(
-                self.ui,
-                "Замена прибора",
-                (
-                    "Нет приборов, для которых подтверждён отказ связи.\n\n"
-                    "Замена исправного прибора не разрешена."
-                )
-            )
+        #     QMessageBox.warning(
+        #         self.ui,
+        #         "Замена прибора",
+        #         (
+        #             "Нет приборов, для которых подтверждён отказ связи.\n\n"
+        #             "Замена исправного прибора не разрешена."
+        #         )
+        #     )
 
-            return
+        #     return
 
         # ============================================================
         # 3. ПОЛУЧАЕМ АКТИВНЫЕ ПРИБОРЫ ИЗ БД
@@ -8572,18 +8646,18 @@ class App(QObject):
         # 5. ЗАЩИТА ОТ РАССИНХРОНИЗАЦИИ СОСТОЯНИЯ И БД
         # ============================================================
 
-        if not failed_devices:
+        # if not failed_devices:
 
-            QMessageBox.warning(
-                self.ui,
-                "Замена прибора",
-                (
-                    "Подтверждённо неисправные приборы "
-                    "не найдены среди активных приборов БД."
-                )
-            )
+        #     QMessageBox.warning(
+        #         self.ui,
+        #         "Замена прибора",
+        #         (
+        #             "Подтверждённо неисправные приборы "
+        #             "не найдены среди активных приборов БД."
+        #         )
+        #     )
 
-            return
+        #     return
 
         # ============================================================
         # 6. ПОЛУЧАЕМ НЕАКТИВНЫЕ ПРИБОРЫ
@@ -13372,6 +13446,8 @@ def main():
     #             points = [data]
 
     #             if isotope == "99mTc":
+    #                 points.extend(history.get("tc_backfill_results", []))
+
     #                 previous_tc = result.get("tc_previous_hour_result")
     #                 if previous_tc:
     #                     points.insert(0, previous_tc)
@@ -13418,7 +13494,7 @@ def main():
     #                 card.concentration_selector.addItem(isotope)
 
     #         card.plot_concentration_history()
-    #         #print(f"Concentration history: {card.concentration_history}")
+    #         print(f"Concentration history: {card.concentration_history}")
     #         print(f"Position {position}, cycle {cycle}: {history}")
     # card = DeviceCardBarrel(parent_app=window)
     # #run_series(1, [r"test_spectra\A_cycle1.txt", r"test_spectra\A_cycle2.txt", r"test_spectra\A_cycle3.txt", r"test_spectra\A_cycle4.txt" ])

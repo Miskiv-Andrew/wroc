@@ -1,6 +1,7 @@
 
 TRANSLATIONS = {
     "uk": {
+
         #password
         "password_window_title": "Авторизація",
         "password_title": "Введіть пароль для доступу до програми",
@@ -21,12 +22,12 @@ TRANSLATIONS = {
         "menu_about_program": "Про програму",
         "ip_plc": "IP адреса ПЛК",
         "port": "Порт",
-        "connect_plc": "Приєднатись до ПЛК",
-        "disconnect_plc": "Від'єднатись від ПЛК",
+        "connect_label": "Підключення до ПЛК",
+        "plc_label": "Індикатор ПЛК",
+        "bridge_label": "Індикатор програми",
+        "connect_plc": "Підключитись",
+        "disconnect_plc": "Відключитись",
 
-
-
-        
 
         # UI devices
         "barrel_name": "Цистерна",
@@ -63,7 +64,71 @@ TRANSLATIONS = {
         "log_scale": "Логарифмічна шкала",
         "concentration": "Питома активність",
         "activity": "Активність",
-        "cancel_action": "Скасувати"
+        "cancel_action": "Скасувати",
+
+        #db
+        "db_title": "База даних - перегляд даних",
+        "db_tab_paed": "ПАЕД",
+        "db_tab_activity": "Активність",
+        "db_tab_events": "Системні події",
+        "db_filters": "Фільтри",
+        "db_date_from": "Дата від:",
+        "db_date_to": "Дата до:",
+        "db_all_period": "За весь період",
+        "db_show": "Показати",
+        "db_all": "Всі",
+        "db_no_data": "Немає даних за вибраний період",
+        "location_type_paed": "Тип розташування",
+        "device_paed": "Прилад",
+        "device_activity_cistern": "Цистерна(прилад)",
+        "group_paed": "Група",
+
+        "choose_device": "-- Виберіть прилад --",
+        "choose_cistern": "-- Виберіть цистерну --",
+        "devices_all": "-- Всі прилади --",
+        "event_type": "Тип події",
+        "save_csv": "Експорт CSV",
+        "save_png": "Зберегти графік PNG",
+        "reset_filters": "Скинути фільтри",
+
+        "warning": "Попередження",
+        "error": "Помилка",
+
+        #db
+        "db_time": "Час",
+        "db_paed": "ПАЕД, мкЗв/год",
+        "db_temp": "Температура, °C",
+        "db_device_state": "Стан детекторів",
+        "db_composition": "Склад (активність, концентрація)",
+        "db_fullness": "Стан цистерни",
+        "db_description": "Опис",
+
+        #intervals
+        "intervals_title": "Налаштування інтервалів",
+        "interval_spectrum": "Час накопичення спектру, с",
+        "interval_db": "Інтервал запису в БД, хв",
+        "interval_zb": "Інтервал відправки ZB, с",
+        "interval_cz": "Інтервал відправки CZ, с",
+        "interval_cistern_save": "Час збереження даних цистерн",
+        "interval_wall_save": "Час збереження даних приміщення",
+        "save": "Зберегти",
+        "cancel": "Скасувати",
+
+        #replace
+        "replace_window_title": "Заміна та активація приладів",
+        "replace_heading": "Управління приладами",
+        "replace_group": "1. Заміна приладу",
+        "replace_old_device": "Прилад, що замінюється (активний):",
+        "location": "Розташування:",
+        "replace_new_device": "Новий прилад (для заміни)",
+        "new_sn": "Новий SN:",
+        "find_new_device": "Знайти новий прилад",
+        "activate_group": "2. Активація приладу",
+        "inactive_device": "Неактивний прилад:",
+        "activate_device": "Активувати прилад",
+        "execute_replacement": "Виконати заміну",
+        "cistern": "Цистерна",
+        "room": "Приміщення",
 
 
         
@@ -91,12 +156,15 @@ TRANSLATIONS = {
         "menu_about_program": "About program",
         "ip_plc": "IP address PLC",
         "port": "Port",
-        "connect_plc": "Connect to PLC",
-        "disconnect_plc": "Disconnect from PLC",
+        "connect_label": "PLC connection",
+        "plc_label": "PLC indicator",
+        "bridge_label": "Program indicator",
+        "connect_plc": "Connect",
+        "disconnect_plc": "Disconnect",
 
         # UI devices
         "barrel_name": "Tank",
-        "paed_name": "PAED",
+        "paed_name": "Dose",
         "group_A": "Group A",
         "group_B": "Group B",
         "group_R": "RESERVE",
@@ -129,8 +197,72 @@ TRANSLATIONS = {
         "log_scale": "Log scale",
         "concentration": "Specific activity",
         "activity": "Activity",
+        "cancel_action": "Cancel",
 
-        "cancel_action": "Cancel"
+        #db
+        "db_title": "Database - data viewer",
+        "db_tab_paed": "PAED",
+        "db_tab_activity": "Activity",
+        "db_tab_events": "System events",
+        "db_filters": "Filters",
+        "db_date_from": "Date from:",
+        "db_date_to": "Date to:",
+        "db_all_period": "All time",
+        "db_show": "Show",
+        "db_all": "All",
+        "db_no_data": "No data for the selected period",
+        "location_type_paed": "Location type",
+        "device_paed": "Device",
+        "device_activity_cistern": "Cistern(device)",
+        "group_paed": "Group",
+
+        "choose_device": "-- Choose device --",
+        "choose_cistern": "-- Choose cistern --",
+        "devices_all": "-- All devices --",
+        "event_type": "Event type",
+        "save_csv": "Export CSV",
+        "save_png": "Save graph in PNG",
+        "reset_filters": "Reset filters",
+
+        "warning": "Warning",
+        "error": "Error",
+
+        #db
+        "db_time": "Time",
+        "db_paed": "Dose, µSv/h",
+        "db_temp": "Temperature, °C",
+        "db_device_state": "State of detectors",
+        "db_composition": "Composition (activity, specific activity)",
+        "db_fullness": "Barrel fullness",
+        "db_description": "Description",
+
+        # Intervals
+        "intervals_title": "Interval Settings",
+        "interval_spectrum": "Spectrum Acquisition Time, s",
+        "interval_db": "Database Recording Interval, min",
+        "interval_zb": "ZB Transmission Interval, s",
+        "interval_cz": "CZ Transmission Interval, s",
+        "interval_cistern_save": "Tank Data Retention Period",
+        "interval_wall_save": "Room Data Retention Period",
+        "save": "Save",
+        "cancel": "Cancel",
+
+        #replace
+        "replace_window_title": "Device Replacement and Activation",
+        "replace_heading": "Device Management",
+        "replace_group": "1. Device Replacement",
+        "replace_old_device": "Device to Replace (Active):",
+        "location": "Location:",
+        "replace_new_device": "New Device (Replacement)",
+        "new_sn": "New SN:",
+        "find_new_device": "Find New Device",
+        "activate_group": "2. Device Activation",
+        "inactive_device": "Inactive Device:",
+        "activate_device": "Activate Device",
+        "execute_replacement": "Replace Device",
+        "cistern": "Tank",
+        "room": "Room",
+
     },
 
     "pl": {

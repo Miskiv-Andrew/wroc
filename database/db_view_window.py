@@ -13,12 +13,14 @@ from matplotlib.figure import Figure
 from database.db_manager import DatabaseManager
 import json
 
+from translations import TRANSLATIONS
 
 class DBViewWindow(QMainWindow):
-    def __init__(self, db_manager: DatabaseManager, parent=None):
+    def __init__(self, db_manager: DatabaseManager, parent=None, language="uk"):
         super().__init__(parent)
         
         self.db_manager = db_manager
+        self.language = language
         self.current_tab = "paed"  # paed, activity, events
         
         # Загружаем UI
@@ -34,6 +36,18 @@ class DBViewWindow(QMainWindow):
         self.setCentralWidget(self.ui.centralWidget())
         self.setWindowTitle("База даних - перегляд даних")
         self.resize(1200, 800)
+
+        self.ui.combo_location_type_paed.setItemData(0, "all")
+        self.ui.combo_location_type_paed.setItemData(1, "cistern")
+        self.ui.combo_location_type_paed.setItemData(2, "room")
+
+        self.ui.combo_activity_metric.addItem("Activity (Bq)", "activity")
+        self.ui.combo_activity_metric.addItem(
+            "Concentration (Bq/L)",
+            "concentration"
+        )
+
+        self.update_language()
         
         # Инициализация графиков
         self.init_plots()
@@ -46,7 +60,62 @@ class DBViewWindow(QMainWindow):
         
         # Устанавливаем начальные даты (последние 7 дней)
         self.set_default_dates()
-    
+
+    def tr(self, key):
+        language_text = TRANSLATIONS.get(self.language, {})
+        return language_text.get(
+            key,
+            TRANSLATIONS["uk"].get(key, key)
+        )
+
+    def update_language(self, language=None):
+        if language is not None:
+            self.language = language
+
+        self.setWindowTitle(self.tr("db_title"))
+        self.ui.tabWidget.setTabText(0, self.tr("db_tab_paed"))
+        self.ui.tabWidget.setTabText(1, self.tr("db_tab_activity"))
+        self.ui.tabWidget.setTabText(2, self.tr("db_tab_events"))
+
+        self.ui.groupBox_filters_paed.setTitle(self.tr("db_filters"))
+        self.ui.groupBox_filters_activity.setTitle(self.tr("db_filters"))
+        self.ui.groupBox_filters_events.setTitle(self.tr("db_filters"))
+
+        self.ui.label_date_from_paed.setText(self.tr("db_date_from"))
+        self.ui.label_date_from_activity.setText(self.tr("db_date_from"))
+        self.ui.label_date_from_events.setText(self.tr("db_date_from"))
+
+        self.ui.label_date_to_paed.setText(self.tr("db_date_to"))
+        self.ui.label_date_to_activity.setText(self.tr("db_date_to"))
+        self.ui.label_date_to_events.setText(self.tr("db_date_to"))
+
+        self.ui.btn_all_period_paed.setText(self.tr("db_all_period"))
+        self.ui.btn_all_period_activity.setText(self.tr("db_all_period"))
+        self.ui.btn_all_period_events.setText(self.tr("db_all_period"))
+
+        self.ui.btn_apply_paed.setText(self.tr("db_show"))
+        self.ui.btn_apply_activity.setText(self.tr("db_show"))
+        self.ui.btn_apply_events.setText(self.tr("db_show"))
+
+        self.ui.label_location_type_paed.setText(self.tr("location_type_paed"))
+        self.ui.label_device_paed.setText(self.tr("device_paed"))
+        self.ui.label_device_activity.setText(self.tr("device_activity_cistern"))
+        self.ui.label_group_paed.setText(self.tr("group_paed"))
+        self.ui.label_group_activity.setText(self.tr("group_paed"))
+
+        self.ui.btn_export_csv_paed.setText(self.tr("save_csv"))
+        self.ui.btn_export_csv_activity.setText(self.tr("save_csv"))
+        self.ui.btn_export_csv_events.setText(self.tr("save_csv"))
+
+        self.ui.btn_export_png_paed.setText(self.tr("save_png"))
+        self.ui.btn_export_png_activity.setText(self.tr("save_png"))
+
+        self.ui.label_event_type.setText(self.tr("event_type"))
+        self.ui.label_device_events.setText(self.tr("device_paed"))
+        self.ui.btn_reset_filters_paed.setText(self.tr("reset_filters"))
+        self.ui.btn_reset_filters_activity.setText(self.tr("reset_filters"))
+        self.ui.btn_reset_filters_events.setText(self.tr("reset_filters"))
+
     def init_plots(self):
         """Инициализирует виджеты графиков для вкладок ПАЕД и Активность"""
         # Вкладка ПАЕД
@@ -162,7 +231,7 @@ class DBViewWindow(QMainWindow):
 
         self.ui.combo_device_paed.clear()
         self.ui.combo_device_paed.addItem(
-            "-- Виберіть прилад --"
+            self.tr("choose_device")
         )
 
         # ------------------------------------------------------------
@@ -174,7 +243,7 @@ class DBViewWindow(QMainWindow):
 
         self.ui.combo_device_activity.clear()
         self.ui.combo_device_activity.addItem(
-            "-- Виберіть цистерну --"
+            self.tr("choose_cistern")
         )
 
         for device in cisterns:
@@ -200,7 +269,7 @@ class DBViewWindow(QMainWindow):
 
         self.ui.combo_device_events.clear()
         self.ui.combo_device_events.addItem(
-            "-- Всі прилади --"
+            self.tr("devices_all")
         )
 
         for device in cisterns + rooms:
@@ -212,7 +281,7 @@ class DBViewWindow(QMainWindow):
             )
 
             location_name = (
-                "Цистерна"
+                self.tr("barrel_name")
                 if device["location_type"] == "cistern"
                 else "Кімната"
             )
@@ -238,11 +307,11 @@ class DBViewWindow(QMainWindow):
 
         self.ui.combo_device_paed.clear()
         self.ui.combo_device_paed.addItem(
-            "-- Виберіть прилад --"
+            self.tr("choose_device")
         )
 
         location_type = (
-            self.ui.combo_location_type_paed.currentText()
+            self.ui.combo_location_type_paed.currentData()
         )
 
         devices = (
@@ -253,7 +322,7 @@ class DBViewWindow(QMainWindow):
         # 1. ФИЛЬТР ПО ТИПУ РАСПОЛОЖЕНИЯ
         # ------------------------------------------------------------
 
-        if location_type == "Цистерна":
+        if location_type == "cistern":
 
             filtered = [
                 d for d in devices
@@ -263,7 +332,7 @@ class DBViewWindow(QMainWindow):
             # Группа имеет смысл только для цистерн.
             self.ui.combo_group_paed.setEnabled(True)
 
-        elif location_type == "Кімната":
+        elif location_type == "room":
 
             filtered = [
                 d for d in devices
@@ -299,7 +368,7 @@ class DBViewWindow(QMainWindow):
             )
 
             location_name = (
-                "Цистерна"
+                self.tr("barrel_name")
                 if device["location_type"] == "cistern"
                 else "Кімната"
             )
@@ -347,7 +416,7 @@ class DBViewWindow(QMainWindow):
         if date_from > date_to:
             QMessageBox.warning(
                 self,
-                "Попередження",
+                self.tr("warning"),
                 "Початкова дата не може бути пізніше кінцевої."
             )
             return
@@ -361,7 +430,7 @@ class DBViewWindow(QMainWindow):
         if not device_sn:
             QMessageBox.warning(
                 self,
-                "Попередження",
+                self.tr("warning"),
                 "Виберіть прилад"
             )
             return
@@ -371,7 +440,7 @@ class DBViewWindow(QMainWindow):
         if device is None:
             QMessageBox.warning(
                 self,
-                "Помилка",
+                self.tr("error"),
                 "Не вдалося визначити тип вибраного приладу."
             )
             return
@@ -393,7 +462,7 @@ class DBViewWindow(QMainWindow):
         if device_id is None:
             QMessageBox.warning(
                 self,
-                "Помилка",
+                self.tr("error"),
                 "Прилад не знайдено в базі даних."
             )
             return
@@ -425,7 +494,7 @@ class DBViewWindow(QMainWindow):
 
             if device["location_type"] == "cistern":
 
-                if group_filter != "Всі":
+                if group_filter != "All":
 
                     query = """
                         SELECT
@@ -508,7 +577,7 @@ class DBViewWindow(QMainWindow):
 
             QMessageBox.critical(
                 self,
-                "Помилка",
+                self.tr("error"),
                 f"Не вдалося прочитати дані ПАЕД:\n{e}"
             )
             return
@@ -623,10 +692,10 @@ class DBViewWindow(QMainWindow):
 
         model.setHorizontalHeaderLabels(
             [
-                "Час",
-                "ПАЕД, мкЗв/год",
-                "Температура, °C",
-                "Стан детекторів"
+                self.tr("db_time"),
+                self.tr("db_paed"),
+                self.tr("db_temp"),
+                self.tr("db_device_state")
             ]
         )
 
@@ -726,257 +795,506 @@ class DBViewWindow(QMainWindow):
 
 
 
+    # def load_activity_data(self):
+    #     """
+    #     Загружает исторические результаты активности цистерны,
+    #     строит график суммарной активности и заполняет таблицу.
+    #     """
+
+    #     date_from, date_to = self.get_date_range(
+    #         "activity"
+    #     )
+
+    #     # ------------------------------------------------------------
+    #     # 1. ПРОВЕРЯЕМ ПЕРИОД
+    #     # ------------------------------------------------------------
+
+    #     if date_from > date_to:
+    #         QMessageBox.warning(
+    #             self,
+    #             self.tr("warning"),
+    #             "Початкова дата не може бути пізніше кінцевої."
+    #         )
+    #         return
+
+    #     # ------------------------------------------------------------
+    #     # 2. ВЫБРАННАЯ ЦИСТЕРНА
+    #     # ------------------------------------------------------------
+
+    #     device_sn = (
+    #         self.ui.combo_device_activity.currentData()
+    #     )
+
+    #     if not device_sn:
+    #         QMessageBox.warning(
+    #             self,
+    #             self.tr("warning"),
+    #             "Виберіть цистерну"
+    #         )
+    #         return
+
+    #     # ------------------------------------------------------------
+    #     # 3. ПОЛУЧАЕМ ИСТОРИЧЕСКИЙ DEVICE_ID
+    #     # ------------------------------------------------------------
+
+    #     device_id = (
+    #         self.db_manager.get_device_id_for_history(
+    #             device_sn
+    #         )
+    #     )
+
+    #     if device_id is None:
+    #         QMessageBox.warning(
+    #             self,
+    #             self.tr("error"),
+    #             "Прилад не знайдено в базі даних."
+    #         )
+    #         return
+
+    #     group_filter = (
+    #         self.ui.combo_group_activity.currentText()
+    #     )
+
+    #     conn = self.db_manager._get_connection()
+    #     cursor = conn.cursor()
+
+    #     date_from_str = date_from.strftime(
+    #         "%Y-%m-%d %H:%M:%S"
+    #     )
+
+    #     date_to_str = date_to.strftime(
+    #         "%Y-%m-%d %H:%M:%S"
+    #     )
+
+    #     # ------------------------------------------------------------
+    #     # 4. ЧИТАЕМ ДАННЫЕ
+    #     # ------------------------------------------------------------
+
+    #     try:
+
+    #         if group_filter != "All":
+
+    #             cursor.execute(
+    #                 """
+    #                 SELECT
+    #                     timestamp,
+    #                     paed,
+    #                     activity,
+    #                     concentration,
+    #                     fullness_status
+    #                 FROM measurements_cistern
+    #                 WHERE device_id = ?
+    #                   AND timestamp BETWEEN ? AND ?
+    #                   AND "group" = ?
+    #                 ORDER BY timestamp
+    #                 """,
+    #                 (
+    #                     device_id,
+    #                     date_from_str,
+    #                     date_to_str,
+    #                     group_filter
+    #                 )
+    #             )
+
+    #         else:
+
+    #             cursor.execute(
+    #                 """
+    #                 SELECT
+    #                     timestamp,
+    #                     paed,
+    #                     activity,
+    #                     concentration,
+    #                     fullness_status
+    #                 FROM measurements_cistern
+    #                 WHERE device_id = ?
+    #                   AND timestamp BETWEEN ? AND ?
+    #                 ORDER BY timestamp
+    #                 """,
+    #                 (
+    #                     device_id,
+    #                     date_from_str,
+    #                     date_to_str
+    #                 )
+    #             )
+
+    #         rows = cursor.fetchall()
+
+    #     except Exception as e:
+
+    #         QMessageBox.critical(
+    #             self,
+    #             self.tr("error"),
+    #             f"Не вдалося прочитати дані активності:\n{e}"
+    #         )
+    #         return
+
+    #     # ------------------------------------------------------------
+    #     # 5. ЕСЛИ ДАННЫХ НЕТ
+    #     # ------------------------------------------------------------
+
+    #     if not rows:
+
+    #         self.ax_activity.clear()
+
+    #         self.ax_activity.text(
+    #             0.5,
+    #             0.5,
+    #             "Немає даних за вибраний період",
+    #             transform=self.ax_activity.transAxes,
+    #             ha="center"
+    #         )
+
+    #         self.canvas_activity.draw()
+
+    #         self.fill_activity_table([])
+
+    #         return
+
+    #     # ------------------------------------------------------------
+    #     # 6. ГОТОВИМ ДАННЫЕ ДЛЯ ГРАФИКА
+    #     # ------------------------------------------------------------
+
+    #     timestamps = []
+    #     total_activities = []
+
+    #     for row in rows:
+
+    #         try:
+    #             timestamp = datetime.strptime(
+    #                 row[0],
+    #                 "%Y-%m-%d %H:%M:%S"
+    #             )
+    #         except (TypeError, ValueError):
+    #             continue
+
+    #         total_activity = 0.0
+
+    #         activity_json = row[2]
+
+    #         if activity_json:
+
+    #             try:
+
+    #                 activity_dict = json.loads(
+    #                     activity_json
+    #                 )
+
+    #                 if isinstance(activity_dict, dict):
+
+    #                     for value in activity_dict.values():
+
+    #                         try:
+    #                             total_activity += float(value)
+    #                         except (TypeError, ValueError):
+    #                             continue
+
+    #             except (
+    #                 TypeError,
+    #                 ValueError,
+    #                 json.JSONDecodeError
+    #             ):
+    #                 # Повреждение JSON одной записи не должно
+    #                 # ломать весь просмотр истории.
+    #                 total_activity = 0.0
+
+    #         timestamps.append(timestamp)
+    #         total_activities.append(total_activity)
+
+    #     # ------------------------------------------------------------
+    #     # 7. СТРОИМ ГРАФИК
+    #     # ------------------------------------------------------------
+
+    #     self.ax_activity.clear()
+
+    #     if timestamps:
+
+    #         self.ax_activity.plot(
+    #             timestamps,
+    #             total_activities,
+    #             linewidth=1.5
+    #         )
+
+    #         self.ax_activity.set_xlabel("Час")
+
+    #         self.ax_activity.set_ylabel(
+    #             "Активність, Бк"
+    #         )
+
+    #         self.ax_activity.set_title(
+    #             f"Активність - {device_sn}"
+    #         )
+
+    #         self.ax_activity.grid(True)
+
+    #         self.figure_activity.autofmt_xdate()
+
+    #     else:
+
+    #         self.ax_activity.text(
+    #             0.5,
+    #             0.5,
+    #             "Немає коректних даних для графіка",
+    #             transform=self.ax_activity.transAxes,
+    #             ha="center"
+    #         )
+
+    #     self.canvas_activity.draw()
+
+    #     # ------------------------------------------------------------
+    #     # 8. ТАБЛИЦА
+    #     # ------------------------------------------------------------
+
+    #     self.fill_activity_table(rows)
+
     def load_activity_data(self):
-        """
-        Загружает исторические результаты активности цистерны,
-        строит график суммарной активности и заполняет таблицу.
-        """
-
-        date_from, date_to = self.get_date_range(
-            "activity"
-        )
-
-        # ------------------------------------------------------------
-        # 1. ПРОВЕРЯЕМ ПЕРИОД
-        # ------------------------------------------------------------
-
-        if date_from > date_to:
-            QMessageBox.warning(
-                self,
-                "Попередження",
-                "Початкова дата не може бути пізніше кінцевої."
+            """
+            Загружает исторические результаты активности цистерны,
+            строит график суммарной активности и заполняет таблицу.
+            """
+    
+            date_from, date_to = self.get_date_range(
+                "activity"
             )
-            return
-
-        # ------------------------------------------------------------
-        # 2. ВЫБРАННАЯ ЦИСТЕРНА
-        # ------------------------------------------------------------
-
-        device_sn = (
-            self.ui.combo_device_activity.currentData()
-        )
-
-        if not device_sn:
-            QMessageBox.warning(
-                self,
-                "Попередження",
-                "Виберіть цистерну"
-            )
-            return
-
-        # ------------------------------------------------------------
-        # 3. ПОЛУЧАЕМ ИСТОРИЧЕСКИЙ DEVICE_ID
-        # ------------------------------------------------------------
-
-        device_id = (
-            self.db_manager.get_device_id_for_history(
-                device_sn
-            )
-        )
-
-        if device_id is None:
-            QMessageBox.warning(
-                self,
-                "Помилка",
-                "Прилад не знайдено в базі даних."
-            )
-            return
-
-        group_filter = (
-            self.ui.combo_group_activity.currentText()
-        )
-
-        conn = self.db_manager._get_connection()
-        cursor = conn.cursor()
-
-        date_from_str = date_from.strftime(
-            "%Y-%m-%d %H:%M:%S"
-        )
-
-        date_to_str = date_to.strftime(
-            "%Y-%m-%d %H:%M:%S"
-        )
-
-        # ------------------------------------------------------------
-        # 4. ЧИТАЕМ ДАННЫЕ
-        # ------------------------------------------------------------
-
-        try:
-
-            if group_filter != "Всі":
-
-                cursor.execute(
-                    """
-                    SELECT
-                        timestamp,
-                        paed,
-                        activity,
-                        concentration,
-                        fullness_status
-                    FROM measurements_cistern
-                    WHERE device_id = ?
-                      AND timestamp BETWEEN ? AND ?
-                      AND "group" = ?
-                    ORDER BY timestamp
-                    """,
-                    (
-                        device_id,
-                        date_from_str,
-                        date_to_str,
-                        group_filter
-                    )
+    
+            # ------------------------------------------------------------
+            # 1. ПРОВЕРЯЕМ ПЕРИОД
+            # ------------------------------------------------------------
+    
+            if date_from > date_to:
+                QMessageBox.warning(
+                    self,
+                    self.tr("warning"),
+                    "Початкова дата не може бути пізніше кінцевої."
                 )
+                return
+    
+            # ------------------------------------------------------------
+            # 2. ВЫБРАННАЯ ЦИСТЕРНА
+            # ------------------------------------------------------------
+    
+            device_sn = (
+                self.ui.combo_device_activity.currentData()
+            )
+    
+            if not device_sn:
+                QMessageBox.warning(
+                    self,
+                    self.tr("warning"),
+                    "Виберіть цистерну"
+                )
+                return
+    
+            # ------------------------------------------------------------
+            # 3. ПОЛУЧАЕМ ИСТОРИЧЕСКИЙ DEVICE_ID
+            # ------------------------------------------------------------
+    
+            device_id = (
+                self.db_manager.get_device_id_for_history(
+                    device_sn
+                )
+            )
+    
+            if device_id is None:
+                QMessageBox.warning(
+                    self,
+                    self.tr("error"),
+                    "Прилад не знайдено в базі даних."
+                )
+                return
+    
+            group_filter = (
+                self.ui.combo_group_activity.currentText()
+            )
+    
+            conn = self.db_manager._get_connection()
+            cursor = conn.cursor()
+    
+            date_from_str = date_from.strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+    
+            date_to_str = date_to.strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+    
+            # ------------------------------------------------------------
+            # 4. ЧИТАЕМ ДАННЫЕ
+            # ------------------------------------------------------------
+    
+            try:
+    
+                if group_filter != "All":
+    
+                    cursor.execute(
+                        """
+                        SELECT
+                            timestamp,
+                            paed,
+                            activity,
+                            concentration,
+                            fullness_status
+                        FROM measurements_cistern
+                        WHERE device_id = ?
+                          AND timestamp BETWEEN ? AND ?
+                          AND "group" = ?
+                        ORDER BY timestamp
+                        """,
+                        (
+                            device_id,
+                            date_from_str,
+                            date_to_str,
+                            group_filter
+                        )
+                    )
+    
+                else:
+    
+                    cursor.execute(
+                        """
+                        SELECT
+                            timestamp,
+                            paed,
+                            activity,
+                            concentration,
+                            fullness_status
+                        FROM measurements_cistern
+                        WHERE device_id = ?
+                          AND timestamp BETWEEN ? AND ?
+                        ORDER BY timestamp
+                        """,
+                        (
+                            device_id,
+                            date_from_str,
+                            date_to_str
+                        )
+                    )
+    
+                rows = cursor.fetchall()
+    
+            except Exception as e:
+    
+                QMessageBox.critical(
+                    self,
+                    self.tr("error"),
+                    f"Не вдалося прочитати дані активності:\n{e}"
+                )
+                return
+    
+            # ------------------------------------------------------------
+            # 5. ЕСЛИ ДАННЫХ НЕТ
+            # ------------------------------------------------------------
+    
+            if not rows:
+    
+                self.ax_activity.clear()
+    
+                self.ax_activity.text(
+                    0.5,
+                    0.5,
+                    "Немає даних за вибраний період",
+                    transform=self.ax_activity.transAxes,
+                    ha="center"
+                )
+    
+                self.canvas_activity.draw()
+    
+                self.fill_activity_table([])
+    
+                return
+    
+            # ------------------------------------------------------------
+            # 6. ГОТОВИМ ДАННЫЕ ДЛЯ ГРАФИКА
+            # ------------------------------------------------------------
+    
+            metric = self.ui.combo_activity_metric.currentData()
 
+            if metric == "concentration":
+                json_column = 3
+                ylabel = "Концентрація, Бк/л"
             else:
+                json_column = 2
+                ylabel = "Активність, Бк"
 
-                cursor.execute(
-                    """
-                    SELECT
-                        timestamp,
-                        paed,
-                        activity,
-                        concentration,
-                        fullness_status
-                    FROM measurements_cistern
-                    WHERE device_id = ?
-                      AND timestamp BETWEEN ? AND ?
-                    ORDER BY timestamp
-                    """,
-                    (
-                        device_id,
-                        date_from_str,
-                        date_to_str
+            records = []
+            isotopes = set()
+
+            for row in rows:
+                try:
+                    timestamp = datetime.strptime(
+                        row[0],
+                        "%Y-%m-%d %H:%M:%S"
                     )
-                )
+                except (TypeError, ValueError):
+                    continue
 
-            rows = cursor.fetchall()
+                try:
+                    isotope_values = (
+                        json.loads(row[json_column])
+                        if row[json_column]
+                        else {}
+                    )
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    isotope_values = {}
 
-        except Exception as e:
+                if not isinstance(isotope_values, dict):
+                    isotope_values = {}
 
-            QMessageBox.critical(
-                self,
-                "Помилка",
-                f"Не вдалося прочитати дані активності:\n{e}"
-            )
-            return
+                values = {}
+                for isotope, value in isotope_values.items():
+                    try:
+                        values[str(isotope)] = float(value)
+                    except (TypeError, ValueError):
+                        continue
 
-        # ------------------------------------------------------------
-        # 5. ЕСЛИ ДАННЫХ НЕТ
-        # ------------------------------------------------------------
-
-        if not rows:
+                records.append((timestamp, values))
+                isotopes.update(values)
 
             self.ax_activity.clear()
 
-            self.ax_activity.text(
-                0.5,
-                0.5,
-                "Немає даних за вибраний період",
-                transform=self.ax_activity.transAxes,
-                ha="center"
-            )
+            if records and isotopes:
+                records.sort(key=lambda record: record[0])
+                timestamps = [record[0] for record in records]
 
-            self.canvas_activity.draw()
-
-            self.fill_activity_table([])
-
-            return
-
-        # ------------------------------------------------------------
-        # 6. ГОТОВИМ ДАННЫЕ ДЛЯ ГРАФИКА
-        # ------------------------------------------------------------
-
-        timestamps = []
-        total_activities = []
-
-        for row in rows:
-
-            try:
-                timestamp = datetime.strptime(
-                    row[0],
-                    "%Y-%m-%d %H:%M:%S"
-                )
-            except (TypeError, ValueError):
-                continue
-
-            total_activity = 0.0
-
-            activity_json = row[2]
-
-            if activity_json:
-
-                try:
-
-                    activity_dict = json.loads(
-                        activity_json
+                for isotope in sorted(isotopes):
+                    values = [
+                        record[1].get(isotope, float("nan"))
+                        for record in records
+                    ]
+                    self.ax_activity.plot(
+                        timestamps,
+                        values,
+                        linewidth=1.5,
+                        label=isotope
                     )
 
-                    if isinstance(activity_dict, dict):
+                metric_title = (
+                    "Концентрація"
+                    if metric == "concentration"
+                    else "Активність"
+                )
+                self.ax_activity.set_xlabel("Час")
+                self.ax_activity.set_ylabel(ylabel)
+                self.ax_activity.set_title(f"{metric_title} - {device_sn}")
+                self.ax_activity.grid(True)
+                self.ax_activity.legend()
+                self.figure_activity.autofmt_xdate()
+            else:
+                self.ax_activity.text(
+                    0.5,
+                    0.5,
+                    "Немає коректних даних для графіка",
+                    transform=self.ax_activity.transAxes,
+                    ha="center"
+                )
 
-                        for value in activity_dict.values():
-
-                            try:
-                                total_activity += float(value)
-                            except (TypeError, ValueError):
-                                continue
-
-                except (
-                    TypeError,
-                    ValueError,
-                    json.JSONDecodeError
-                ):
-                    # Повреждение JSON одной записи не должно
-                    # ломать весь просмотр истории.
-                    total_activity = 0.0
-
-            timestamps.append(timestamp)
-            total_activities.append(total_activity)
-
-        # ------------------------------------------------------------
-        # 7. СТРОИМ ГРАФИК
-        # ------------------------------------------------------------
-
-        self.ax_activity.clear()
-
-        if timestamps:
-
-            self.ax_activity.plot(
-                timestamps,
-                total_activities,
-                linewidth=1.5
-            )
-
-            self.ax_activity.set_xlabel("Час")
-
-            self.ax_activity.set_ylabel(
-                "Активність, Бк"
-            )
-
-            self.ax_activity.set_title(
-                f"Активність - {device_sn}"
-            )
-
-            self.ax_activity.grid(True)
-
-            self.figure_activity.autofmt_xdate()
-
-        else:
-
-            self.ax_activity.text(
-                0.5,
-                0.5,
-                "Немає коректних даних для графіка",
-                transform=self.ax_activity.transAxes,
-                ha="center"
-            )
-
-        self.canvas_activity.draw()
-
-        # ------------------------------------------------------------
-        # 8. ТАБЛИЦА
-        # ------------------------------------------------------------
-
-        self.fill_activity_table(rows)
+            self.canvas_activity.draw()
+    
+            # ------------------------------------------------------------
+            # 8. ТАБЛИЦА
+            # ------------------------------------------------------------
+    
+            self.fill_activity_table(rows)
 
 
     
@@ -992,10 +1310,10 @@ class DBViewWindow(QMainWindow):
 
         model.setHorizontalHeaderLabels(
             [
-                "Час",
-                "ПАЕД, мкЗв/год",
-                "Склад (активність, концентрація)",
-                "Стан цистерни"
+                self.tr("db_time"),
+                self.tr("db_paed"),
+                self.tr("db_composition"),
+                self.tr("db_fullness")
             ]
         )
 
@@ -1188,7 +1506,7 @@ class DBViewWindow(QMainWindow):
             self.ui.combo_event_type.currentText()
         )
 
-        if event_type == "Всі":
+        if event_type == "All":
             event_type = None
 
         # ------------------------------------------------------------
@@ -1301,10 +1619,10 @@ class DBViewWindow(QMainWindow):
 
         model.setHorizontalHeaderLabels(
             [
-                "Час",
-                "Тип події",
-                "Прилад",
-                "Опис"
+                self.tr("db_time"),
+                self.tr("event_type"),
+                self.tr("device_paed"),
+                self.tr("db_description")
             ]
         )
 

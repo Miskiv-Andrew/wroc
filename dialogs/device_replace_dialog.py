@@ -4,13 +4,13 @@
 import os
 import json
 import hashlib
-from PySide6.QtWidgets import QDialog, QMessageBox
+from PySide6.QtWidgets import QDialog, QMessageBox, QLabel, QGroupBox
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtCore import QFile
 
 from devices.address_changer import AddressChanger
 from database.db_manager import DatabaseManager
-
+from translations import TRANSLATIONS
 
 class DeviceReplaceDialog(QDialog):
 
@@ -23,6 +23,7 @@ class DeviceReplaceDialog(QDialog):
         self.app = app                            # ссылка на App для отправки в Bridge
         self.new_device_info = None               # (port, serial_number, address)
         self.address_changer = AddressChanger(db_manager)
+
         
         # Загружаем UI
         loader = QUiLoader()
@@ -45,6 +46,45 @@ class DeviceReplaceDialog(QDialog):
         self.address_changer.error.connect(self.on_error)
         self.address_changer.found.connect(self.on_device_found)
 
+        self.retranslate_ui()
+
+    def tr(self, key):
+        if self.app is not None:
+            return self.app.tr(key)
+        return TRANSLATIONS["uk"].get(key, key)
+
+    def retranslate_ui(self):
+        self.setWindowTitle(self.tr("replace_window_title"))
+        self.ui.setWindowTitle(self.tr("replace_window_title"))
+
+        labels = {
+            "label_title": "replace_heading",
+            "label_old_sn": "replace_old_device",
+            "label_old_info": "location",
+            "label_new_sn": "new_sn",
+            "label_inactive_device": "inactive_device",
+        }
+        for widget_name, translation_key in labels.items():
+            label = self.findChild(QLabel, widget_name)
+            if label is None:
+                raise RuntimeError(f"Missing QLabel: {widget_name}")
+            label.setText(self.tr(translation_key))
+
+        groups = {
+            "groupBox_old_device": "replace_group",
+            "groupBox_new_device": "replace_new_device",
+            "groupBox_activate_device": "activate_group",
+        }
+        for widget_name, translation_key in groups.items():
+            group = self.findChild(QGroupBox, widget_name)
+            if group is None:
+                raise RuntimeError(f"Missing QGroupBox: {widget_name}")
+            group.setTitle(self.tr(translation_key))
+
+        self.ui.btn_find_new.setText(self.tr("find_new_device"))
+        self.ui.btn_activate.setText(self.tr("activate_device"))
+        self.ui.btn_replace.setText(self.tr("execute_replacement"))
+        self.ui.btn_cancel.setText(self.tr("cancel"))
     
     def setup_connections(self):
         self.ui.btn_find_new.clicked.connect(self.find_new_device)

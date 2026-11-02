@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1100</width>
-    <height>750</height>
+    <width>1094</width>
+    <height>737</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -18,7 +18,7 @@
     <item>
      <widget class="QTabWidget" name="tabWidget">
       <property name="currentIndex">
-       <number>0</number>
+       <number>1</number>
       </property>
       <widget class="QWidget" name="tabPaed">
        <attribute name="title">
@@ -40,11 +40,11 @@
            </item>
            <item row="0" column="1">
             <widget class="QDateTimeEdit" name="dateFrom_paed">
-             <property name="calendarPopup">
-              <bool>true</bool>
-             </property>
              <property name="displayFormat">
               <string>dd.MM.yyyy HH:mm</string>
+             </property>
+             <property name="calendarPopup">
+              <bool>true</bool>
              </property>
             </widget>
            </item>
@@ -57,11 +57,11 @@
            </item>
            <item row="0" column="3">
             <widget class="QDateTimeEdit" name="dateTo_paed">
-             <property name="calendarPopup">
-              <bool>true</bool>
-             </property>
              <property name="displayFormat">
               <string>dd.MM.yyyy HH:mm</string>
+             </property>
+             <property name="calendarPopup">
+              <bool>true</bool>
              </property>
             </widget>
            </item>
@@ -83,17 +83,17 @@
             <widget class="QComboBox" name="combo_location_type_paed">
              <item>
               <property name="text">
-               <string>Всі</string>
+               <string>All</string>
               </property>
              </item>
              <item>
               <property name="text">
-               <string>Цистерна</string>
+               <string>Cistern</string>
               </property>
              </item>
              <item>
               <property name="text">
-               <string>Кімната</string>
+               <string>Room</string>
               </property>
              </item>
             </widget>
@@ -119,7 +119,6 @@
              </property>
             </widget>
            </item>
-           <!-- НОВАЯ СТРОКА: ФИЛЬТР ПО ГРУППЕ -->
            <item row="2" column="0">
             <widget class="QLabel" name="label_group_paed">
              <property name="text">
@@ -131,7 +130,7 @@
             <widget class="QComboBox" name="combo_group_paed">
              <item>
               <property name="text">
-               <string>Всі</string>
+               <string>All</string>
               </property>
              </item>
              <item>
@@ -154,7 +153,7 @@
            <item row="2" column="2">
             <spacer name="horizontalSpacer_group_paed">
              <property name="orientation">
-              <enum>Qt::Horizontal</enum>
+              <enum>Qt::Orientation::Horizontal</enum>
              </property>
              <property name="sizeHint" stdset="0">
               <size>
@@ -167,7 +166,7 @@
            <item row="2" column="3">
             <spacer name="horizontalSpacer_group_paed_2">
              <property name="orientation">
-              <enum>Qt::Horizontal</enum>
+              <enum>Qt::Orientation::Horizontal</enum>
              </property>
              <property name="sizeHint" stdset="0">
               <size>
@@ -180,7 +179,7 @@
            <item row="2" column="4">
             <spacer name="horizontalSpacer_group_paed_3">
              <property name="orientation">
-              <enum>Qt::Horizontal</enum>
+              <enum>Qt::Orientation::Horizontal</enum>
              </property>
              <property name="sizeHint" stdset="0">
               <size>
@@ -196,7 +195,7 @@
         <item>
          <widget class="QSplitter" name="splitter_paed">
           <property name="orientation">
-           <enum>Qt::Vertical</enum>
+           <enum>Qt::Orientation::Vertical</enum>
           </property>
           <widget class="QWidget" name="plotContainer_paed">
            <layout class="QVBoxLayout" name="verticalLayout_plot_paed">
@@ -215,10 +214,10 @@
             <item>
              <widget class="QFrame" name="frame_plot_paed">
               <property name="frameShape">
-               <enum>QFrame::StyledPanel</enum>
+               <enum>QFrame::Shape::StyledPanel</enum>
               </property>
               <property name="frameShadow">
-               <enum>QFrame::Sunken</enum>
+               <enum>QFrame::Shadow::Sunken</enum>
               </property>
               <layout class="QVBoxLayout" name="verticalLayout_plot_inner_paed">
                <property name="leftMargin">
@@ -242,16 +241,16 @@
                   </sizepolicy>
                  </property>
                  <property name="frameShape">
-                  <enum>QFrame::Box</enum>
+                  <enum>QFrame::Shape::Box</enum>
                  </property>
                  <property name="frameShadow">
-                  <enum>QFrame::Sunken</enum>
+                  <enum>QFrame::Shadow::Sunken</enum>
                  </property>
                  <property name="text">
                   <string>Тут буде графік ПАЕД</string>
                  </property>
                  <property name="alignment">
-                  <set>Qt::AlignCenter</set>
+                  <set>Qt::AlignmentFlag::AlignCenter</set>
                  </property>
                 </widget>
                </item>
@@ -303,7 +302,7 @@
               <item>
                <spacer name="horizontalSpacer_paed">
                 <property name="orientation">
-                 <enum>Qt::Horizontal</enum>
+                 <enum>Qt::Orientation::Horizontal</enum>
                 </property>
                 <property name="sizeHint" stdset="0">
                  <size>
@@ -332,44 +331,79 @@
            <string>Фільтри</string>
           </property>
           <layout class="QGridLayout" name="gridLayout_filters_activity">
-           <item row="0" column="0">
-            <widget class="QLabel" name="label_date_from_activity">
-             <property name="text">
-              <string>Дата від:</string>
+           <item row="2" column="2">
+            <spacer name="horizontalSpacer_group_activity">
+             <property name="orientation">
+              <enum>Qt::Orientation::Horizontal</enum>
              </property>
-            </widget>
+             <property name="sizeHint" stdset="0">
+              <size>
+               <width>40</width>
+               <height>20</height>
+              </size>
+             </property>
+            </spacer>
            </item>
            <item row="0" column="1">
             <widget class="QDateTimeEdit" name="dateFrom_activity">
-             <property name="calendarPopup">
-              <bool>true</bool>
-             </property>
              <property name="displayFormat">
               <string>dd.MM.yyyy HH:mm</string>
              </property>
-            </widget>
-           </item>
-           <item row="0" column="2">
-            <widget class="QLabel" name="label_date_to_activity">
-             <property name="text">
-              <string>Дата до:</string>
-             </property>
-            </widget>
-           </item>
-           <item row="0" column="3">
-            <widget class="QDateTimeEdit" name="dateTo_activity">
              <property name="calendarPopup">
               <bool>true</bool>
              </property>
-             <property name="displayFormat">
-              <string>dd.MM.yyyy HH:mm</string>
-             </property>
             </widget>
+           </item>
+           <item row="2" column="4">
+            <spacer name="horizontalSpacer_group_activity_2">
+             <property name="orientation">
+              <enum>Qt::Orientation::Horizontal</enum>
+             </property>
+             <property name="sizeHint" stdset="0">
+              <size>
+               <width>40</width>
+               <height>20</height>
+              </size>
+             </property>
+            </spacer>
+           </item>
+           <item row="2" column="5">
+            <spacer name="horizontalSpacer_group_activity_3">
+             <property name="orientation">
+              <enum>Qt::Orientation::Horizontal</enum>
+             </property>
+             <property name="sizeHint" stdset="0">
+              <size>
+               <width>40</width>
+               <height>20</height>
+              </size>
+             </property>
+            </spacer>
+           </item>
+           <item row="1" column="1" colspan="2">
+            <widget class="QComboBox" name="combo_device_activity"/>
            </item>
            <item row="0" column="4">
+            <widget class="QDateTimeEdit" name="dateTo_activity">
+             <property name="displayFormat">
+              <string>dd.MM.yyyy HH:mm</string>
+             </property>
+             <property name="calendarPopup">
+              <bool>true</bool>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="5">
             <widget class="QPushButton" name="btn_all_period_activity">
              <property name="text">
               <string>За весь період</string>
+             </property>
+            </widget>
+           </item>
+           <item row="2" column="0">
+            <widget class="QLabel" name="label_group_activity">
+             <property name="text">
+              <string>Група:</string>
              </property>
             </widget>
            </item>
@@ -380,29 +414,11 @@
              </property>
             </widget>
            </item>
-           <item row="1" column="1" colspan="2">
-            <widget class="QComboBox" name="combo_device_activity"/>
-           </item>
-           <item row="1" column="4">
-            <widget class="QPushButton" name="btn_apply_activity">
-             <property name="text">
-              <string>Показати</string>
-             </property>
-            </widget>
-           </item>
-           <!-- НОВАЯ СТРОКА: ФИЛЬТР ПО ГРУППЕ -->
-           <item row="2" column="0">
-            <widget class="QLabel" name="label_group_activity">
-             <property name="text">
-              <string>Група:</string>
-             </property>
-            </widget>
-           </item>
            <item row="2" column="1">
             <widget class="QComboBox" name="combo_group_activity">
              <item>
               <property name="text">
-               <string>Всі</string>
+               <string>All</string>
               </property>
              </item>
              <item>
@@ -422,44 +438,29 @@
              </item>
             </widget>
            </item>
-           <item row="2" column="2">
-            <spacer name="horizontalSpacer_group_activity">
-             <property name="orientation">
-              <enum>Qt::Horizontal</enum>
+           <item row="1" column="5">
+            <widget class="QPushButton" name="btn_apply_activity">
+             <property name="text">
+              <string>Показати</string>
              </property>
-             <property name="sizeHint" stdset="0">
-              <size>
-               <width>40</width>
-               <height>20</height>
-              </size>
+            </widget>
+           </item>
+           <item row="0" column="0">
+            <widget class="QLabel" name="label_date_from_activity">
+             <property name="text">
+              <string>Дата від:</string>
              </property>
-            </spacer>
+            </widget>
+           </item>
+           <item row="0" column="2">
+            <widget class="QLabel" name="label_date_to_activity">
+             <property name="text">
+              <string>Дата до:</string>
+             </property>
+            </widget>
            </item>
            <item row="2" column="3">
-            <spacer name="horizontalSpacer_group_activity_2">
-             <property name="orientation">
-              <enum>Qt::Horizontal</enum>
-             </property>
-             <property name="sizeHint" stdset="0">
-              <size>
-               <width>40</width>
-               <height>20</height>
-              </size>
-             </property>
-            </spacer>
-           </item>
-           <item row="2" column="4">
-            <spacer name="horizontalSpacer_group_activity_3">
-             <property name="orientation">
-              <enum>Qt::Horizontal</enum>
-             </property>
-             <property name="sizeHint" stdset="0">
-              <size>
-               <width>40</width>
-               <height>20</height>
-              </size>
-             </property>
-            </spacer>
+            <widget class="QComboBox" name="combo_activity_metric"/>
            </item>
           </layout>
          </widget>
@@ -467,7 +468,7 @@
         <item>
          <widget class="QSplitter" name="splitter_activity">
           <property name="orientation">
-           <enum>Qt::Vertical</enum>
+           <enum>Qt::Orientation::Vertical</enum>
           </property>
           <widget class="QWidget" name="plotContainer_activity">
            <layout class="QVBoxLayout" name="verticalLayout_plot_activity">
@@ -486,10 +487,10 @@
             <item>
              <widget class="QFrame" name="frame_plot_activity">
               <property name="frameShape">
-               <enum>QFrame::StyledPanel</enum>
+               <enum>QFrame::Shape::StyledPanel</enum>
               </property>
               <property name="frameShadow">
-               <enum>QFrame::Sunken</enum>
+               <enum>QFrame::Shadow::Sunken</enum>
               </property>
               <layout class="QVBoxLayout" name="verticalLayout_plot_inner_activity">
                <property name="leftMargin">
@@ -513,16 +514,16 @@
                   </sizepolicy>
                  </property>
                  <property name="frameShape">
-                  <enum>QFrame::Box</enum>
+                  <enum>QFrame::Shape::Box</enum>
                  </property>
                  <property name="frameShadow">
-                  <enum>QFrame::Sunken</enum>
+                  <enum>QFrame::Shadow::Sunken</enum>
                  </property>
                  <property name="text">
                   <string>Тут буде графік Активності</string>
                  </property>
                  <property name="alignment">
-                  <set>Qt::AlignCenter</set>
+                  <set>Qt::AlignmentFlag::AlignCenter</set>
                  </property>
                 </widget>
                </item>
@@ -574,7 +575,7 @@
               <item>
                <spacer name="horizontalSpacer_activity">
                 <property name="orientation">
-                 <enum>Qt::Horizontal</enum>
+                 <enum>Qt::Orientation::Horizontal</enum>
                 </property>
                 <property name="sizeHint" stdset="0">
                  <size>
@@ -612,11 +613,11 @@
            </item>
            <item row="0" column="1">
             <widget class="QDateTimeEdit" name="dateFrom_events">
-             <property name="calendarPopup">
-              <bool>true</bool>
-             </property>
              <property name="displayFormat">
               <string>dd.MM.yyyy HH:mm</string>
+             </property>
+             <property name="calendarPopup">
+              <bool>true</bool>
              </property>
             </widget>
            </item>
@@ -629,11 +630,11 @@
            </item>
            <item row="0" column="3">
             <widget class="QDateTimeEdit" name="dateTo_events">
-             <property name="calendarPopup">
-              <bool>true</bool>
-             </property>
              <property name="displayFormat">
               <string>dd.MM.yyyy HH:mm</string>
+             </property>
+             <property name="calendarPopup">
+              <bool>true</bool>
              </property>
             </widget>
            </item>
@@ -655,7 +656,7 @@
             <widget class="QComboBox" name="combo_event_type">
              <item>
               <property name="text">
-               <string>Всі</string>
+               <string>All</string>
               </property>
              </item>
              <item>
@@ -747,7 +748,7 @@
           <item>
            <spacer name="horizontalSpacer_events">
             <property name="orientation">
-             <enum>Qt::Horizontal</enum>
+             <enum>Qt::Orientation::Horizontal</enum>
             </property>
             <property name="sizeHint" stdset="0">
              <size>

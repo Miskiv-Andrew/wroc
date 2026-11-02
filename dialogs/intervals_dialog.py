@@ -4,7 +4,7 @@ import os
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QPushButton, QLabel, QSpinBox, QGridLayout
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtCore import QFile
-
+from translations import TRANSLATIONS
 
 class IntervalsDialog(QDialog):
     """
@@ -18,6 +18,7 @@ class IntervalsDialog(QDialog):
     """
 
     def __init__(self, parent=None):
+        self.app = parent if hasattr(parent, "tr") else None
         # QDialog очікує QWidget як parent
         if parent is not None and hasattr(parent, 'ui'):
             real_parent = parent.ui
@@ -41,7 +42,7 @@ class IntervalsDialog(QDialog):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.ui)
 
-        self.setWindowTitle("Налаштування інтервалів")
+        #self.setWindowTitle("Налаштування інтервалів")
         self.setModal(True)
 
         # --------------------------------------------------------------------
@@ -79,6 +80,33 @@ class IntervalsDialog(QDialog):
         # --------------------------------------------------------------------
         self.btn_save.clicked.connect(self.accept)
         self.btn_cancel.clicked.connect(self.reject)
+
+        self.retranslate_ui()
+
+    def tr(self, key):
+        if self.app is not None:
+            return self.app.tr(key)
+        return TRANSLATIONS["uk"].get(key, key)
+
+    def retranslate_ui(self):
+        self.setWindowTitle(self.tr("intervals_title"))
+
+        labels = {
+            "label_spectrum_time": "interval_spectrum",
+            "label_db_interval": "interval_db",
+            "label_zb_interval": "interval_zb",
+            "label_cz_interval": "interval_cz",
+            "label": "interval_cistern_save",
+            "label_2": "interval_wall_save",
+        }
+        for widget_name, translation_key in labels.items():
+            label = self.ui.findChild(QLabel, widget_name)
+            if label:
+                label.setText(self.tr(translation_key))
+
+        self.ui.findChild(QPushButton, "btn_save").setText(self.tr("save"))
+        self.ui.findChild(QPushButton, "btn_cancel").setText(self.tr("cancel"))
+    
 
     # ------------------------------------------------------------------------
     # Методи для отримання значень

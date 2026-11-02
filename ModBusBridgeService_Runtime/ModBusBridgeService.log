@@ -17925,3 +17925,15 @@
 2026-09-17 11:00:58 [LOG] Socket error: Connection refused
 2026-09-17 11:00:58 [LOG] Disconnected from PLC
 2026-09-17 11:00:58 [SYSTEM] Application stopped
+2026-10-29 14:41:58 [SYSTEM] Starting ModBusBridgeService
+2026-10-29 14:41:58 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-10-29 14:41:58 [LOG] Attempting to connect to PLC...
+2026-10-29 14:41:58 Server is running on port 12345
+2026-10-29 14:41:58 [SYSTEM] Starting event loop
+2026-10-29 14:42:02 [ERROR] Socket error: Connection refused
+2026-10-29 14:42:02 [LOG] Socket error: Connection refused
+2026-10-29 14:42:02 [LOG] PLC reconnect will be attempted every 3000 ms
+2026-10-29 14:42:05 [LOG] Trying to reconnect to PLC...
+2026-10-29 14:42:08 [LOG] Disconnected from PLC
+2026-10-29 14:42:08 Server stopped
+2026-10-29 14:42:08 [SYSTEM] Application stopped
