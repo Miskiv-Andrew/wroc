@@ -55,7 +55,11 @@
     },
     "7": {
         "full": false,
-        "isotopes": [],
+        "isotopes": [
+            "133I",
+            "177Lu",
+            "90Y"
+        ],
         "group": "B"
     },
     "8": {
@@ -69,7 +73,11 @@
     },
     "9": {
         "full": false,
-        "isotopes": [],
+        "isotopes": [
+            "133I",
+            "177Lu",
+            "90Y"
+        ],
         "group": "B"
     }
 }

@@ -40,12 +40,18 @@ class DBViewWindow(QMainWindow):
         self.ui.combo_location_type_paed.setItemData(0, "all")
         self.ui.combo_location_type_paed.setItemData(1, "cistern")
         self.ui.combo_location_type_paed.setItemData(2, "room")
+        self.ui.combo_group_paed.setItemData(0, "all")
+        self.ui.combo_group_paed.setItemData(1, "A")
+        self.ui.combo_group_paed.setItemData(2, "B")
+        self.ui.combo_group_paed.setItemData(3, "reserve")
+        self.ui.combo_group_activity.setItemData(0, "all")
+        self.ui.combo_group_activity.setItemData(1, "A")
+        self.ui.combo_group_activity.setItemData(2, "B")
+        self.ui.combo_group_activity.setItemData(3, "reserve")
+        self.ui.combo_event_type.setItemData(0, "all")
 
-        self.ui.combo_activity_metric.addItem("Activity (Bq)", "activity")
-        self.ui.combo_activity_metric.addItem(
-            "Concentration (Bq/L)",
-            "concentration"
-        )
+        self.ui.combo_activity_metric.addItem(self.tr("table_concentration"),"concentration")
+        self.ui.combo_activity_metric.addItem(self.tr("table_activity"), "activity")
 
         self.update_language()
         
@@ -93,6 +99,9 @@ class DBViewWindow(QMainWindow):
         self.ui.btn_all_period_activity.setText(self.tr("db_all_period"))
         self.ui.btn_all_period_events.setText(self.tr("db_all_period"))
 
+        self.ui.activityGraphLabel.setText(self.tr("db_choose_graph"))
+        self.ui.activity_log_checkbox.setText(self.tr("log_scale"))
+
         self.ui.btn_apply_paed.setText(self.tr("db_show"))
         self.ui.btn_apply_activity.setText(self.tr("db_show"))
         self.ui.btn_apply_events.setText(self.tr("db_show"))
@@ -115,6 +124,21 @@ class DBViewWindow(QMainWindow):
         self.ui.btn_reset_filters_paed.setText(self.tr("reset_filters"))
         self.ui.btn_reset_filters_activity.setText(self.tr("reset_filters"))
         self.ui.btn_reset_filters_events.setText(self.tr("reset_filters"))
+
+        self.ui.combo_location_type_paed.setItemText(0, self.tr("db_all"))
+        self.ui.combo_location_type_paed.setItemText(1, self.tr("cistern"))
+        self.ui.combo_location_type_paed.setItemText(2, self.tr("room"))
+
+        self.ui.combo_group_paed.setItemText(0, self.tr("db_all"))
+        self.ui.combo_group_paed.setItemText(1, self.tr("group_A"))
+        self.ui.combo_group_paed.setItemText(2, self.tr("group_B"))
+        self.ui.combo_group_paed.setItemText(3, self.tr("group_R"))
+        self.ui.combo_group_activity.setItemText(0, self.tr("db_all"))
+        self.ui.combo_group_activity.setItemText(1, self.tr("group_A"))
+        self.ui.combo_group_activity.setItemText(2, self.tr("group_B"))
+        self.ui.combo_group_activity.setItemText(3, self.tr("group_R"))
+
+        self.ui.combo_event_type.setItemText(0, self.tr("db_all"))
 
     def init_plots(self):
         """Инициализирует виджеты графиков для вкладок ПАЕД и Активность"""
@@ -157,6 +181,7 @@ class DBViewWindow(QMainWindow):
         self.ui.btn_export_csv_paed.clicked.connect(lambda: self.export_csv("paed"))
         self.ui.btn_export_png_paed.clicked.connect(lambda: self.export_png("paed"))
         self.ui.combo_location_type_paed.currentIndexChanged.connect(self.on_location_type_changed)
+        self.ui.activity_log_checkbox.toggled.connect(lambda _checked: self.load_activity_data() )
         
         # Вкладка Активность
         self.ui.btn_apply_activity.clicked.connect(lambda: self.load_activity_data())
@@ -251,12 +276,13 @@ class DBViewWindow(QMainWindow):
             active_text = (
                 ""
                 if device["is_active"]
-                else " [замінений]"
+                #else " [замінений]"
+                else self.tr("db_device_replaced")
             )
 
             self.ui.combo_device_activity.addItem(
                 (
-                    f"Цистерна №{device['position_number']} "
+                    f"{self.tr("cistern")} №{device['position_number']} "
                     f"(SN: {device['serial_number']})"
                     f"{active_text}"
                 ),
@@ -277,13 +303,14 @@ class DBViewWindow(QMainWindow):
             active_text = (
                 ""
                 if device["is_active"]
-                else " [замінений]"
+                #else " [замінений]"
+                else self.tr("db_device_replaced")
             )
 
             location_name = (
                 self.tr("barrel_name")
                 if device["location_type"] == "cistern"
-                else "Кімната"
+                else self.tr("room")
             )
 
             self.ui.combo_device_events.addItem(
@@ -364,13 +391,14 @@ class DBViewWindow(QMainWindow):
             active_text = (
                 ""
                 if device["is_active"]
-                else " [замінений]"
+                #else " [замінений]"
+                else self.tr("db_device_replaced")
             )
 
             location_name = (
                 self.tr("barrel_name")
                 if device["location_type"] == "cistern"
-                else "Кімната"
+                else self.tr("room")
             )
 
             self.ui.combo_device_paed.addItem(
@@ -417,7 +445,8 @@ class DBViewWindow(QMainWindow):
             QMessageBox.warning(
                 self,
                 self.tr("warning"),
-                "Початкова дата не може бути пізніше кінцевої."
+                #"Початкова дата не може бути пізніше кінцевої."
+                self.tr("db_start_date_error")
             )
             return
 
@@ -431,7 +460,7 @@ class DBViewWindow(QMainWindow):
             QMessageBox.warning(
                 self,
                 self.tr("warning"),
-                "Виберіть прилад"
+                self.tr("choose_device")
             )
             return
 
@@ -463,7 +492,7 @@ class DBViewWindow(QMainWindow):
             QMessageBox.warning(
                 self,
                 self.tr("error"),
-                "Прилад не знайдено в базі даних."
+                self.tr("db_device_not_found")
             )
             return
 
@@ -472,7 +501,7 @@ class DBViewWindow(QMainWindow):
         # ------------------------------------------------------------
 
         group_filter = (
-            self.ui.combo_group_paed.currentText()
+            self.ui.combo_group_paed.currentData()
         )
 
         conn = self.db_manager._get_connection()
@@ -494,7 +523,7 @@ class DBViewWindow(QMainWindow):
 
             if device["location_type"] == "cistern":
 
-                if group_filter != "All":
+                if group_filter != "all":
 
                     query = """
                         SELECT
@@ -578,7 +607,8 @@ class DBViewWindow(QMainWindow):
             QMessageBox.critical(
                 self,
                 self.tr("error"),
-                f"Не вдалося прочитати дані ПАЕД:\n{e}"
+                #f"Не вдалося прочитати дані ПАЕД:\n{e}"
+                f"{self.tr("db_paed_unreadable")}\n{e}"
             )
             return
 
@@ -593,7 +623,7 @@ class DBViewWindow(QMainWindow):
             self.ax_paed.text(
                 0.5,
                 0.5,
-                "Немає даних за вибраний період",
+                self.tr("db_no_data"),
                 transform=self.ax_paed.transAxes,
                 ha="center"
             )
@@ -644,14 +674,14 @@ class DBViewWindow(QMainWindow):
                 linewidth=1.5
             )
 
-            self.ax_paed.set_xlabel("Час")
+            #self.ax_paed.set_xlabel("Час")
 
             self.ax_paed.set_ylabel(
-                "ПАЕД, мкЗв/год"
+                self.tr("db_paed")
             )
 
             self.ax_paed.set_title(
-                f"ПАЕД - {device_sn}"
+                f"{self.tr("paed_name")} - {device_sn}"
             )
 
             self.ax_paed.grid(True)
@@ -663,7 +693,7 @@ class DBViewWindow(QMainWindow):
             self.ax_paed.text(
                 0.5,
                 0.5,
-                "Немає коректних даних для графіка",
+                self.tr("db_no_correct_data"),
                 transform=self.ax_paed.transAxes,
                 ha="center"
             )
@@ -739,21 +769,21 @@ class DBViewWindow(QMainWindow):
             #
             # В БД:
             #
-            #     0 = отказа нет;
-            #     1 = отказ.
+            #     0 = отказ;
+            #     1 = отказа нет.
             #
             # --------------------------------------------------------
 
             low_ok = (
-                "Низькочутл: Відмова"
+                self.tr("db_low_ok")
                 if row[3] == 1
-                else "Низькочутл: Норма"
+                else self.tr("db_low_fail")
             )
 
             high_ok = (
-                "Високочутл: Відмова"
+                self.tr("db_high_ok")
                 if row[4] == 1
-                else "Високочутл: Норма"
+                else self.tr("db_high_fail")
             )
 
             status = f"{low_ok}, {high_ok}"
@@ -761,7 +791,7 @@ class DBViewWindow(QMainWindow):
             # Если вся запись отмечена как невалидная,
             # дополнительно показываем это оператору.
             if row[5] != 1:
-                status += ", результат невалідний"
+                status += self.tr("db_invalid")
 
             model.setItem(
                 row_idx,
@@ -1065,7 +1095,7 @@ class DBViewWindow(QMainWindow):
                 QMessageBox.warning(
                     self,
                     self.tr("warning"),
-                    "Початкова дата не може бути пізніше кінцевої."
+                    self.tr("db_start_date_error")
                 )
                 return
     
@@ -1081,7 +1111,7 @@ class DBViewWindow(QMainWindow):
                 QMessageBox.warning(
                     self,
                     self.tr("warning"),
-                    "Виберіть цистерну"
+                    self.tr("choose_cistern")
                 )
                 return
     
@@ -1099,12 +1129,12 @@ class DBViewWindow(QMainWindow):
                 QMessageBox.warning(
                     self,
                     self.tr("error"),
-                    "Прилад не знайдено в базі даних."
+                    self.tr("db_device_not_found")
                 )
                 return
     
             group_filter = (
-                self.ui.combo_group_activity.currentText()
+                self.ui.combo_group_activity.currentData()
             )
     
             conn = self.db_manager._get_connection()
@@ -1124,7 +1154,7 @@ class DBViewWindow(QMainWindow):
     
             try:
     
-                if group_filter != "All":
+                if group_filter != "all":
     
                     cursor.execute(
                         """
@@ -1177,7 +1207,8 @@ class DBViewWindow(QMainWindow):
                 QMessageBox.critical(
                     self,
                     self.tr("error"),
-                    f"Не вдалося прочитати дані активності:\n{e}"
+                    #f"Не вдалося прочитати дані активності:\n{e}"
+                    f"{self.tr("db_activity_unreadable")}\n{e}"
                 )
                 return
     
@@ -1192,7 +1223,7 @@ class DBViewWindow(QMainWindow):
                 self.ax_activity.text(
                     0.5,
                     0.5,
-                    "Немає даних за вибраний період",
+                    self.tr("db_no_data"),
                     transform=self.ax_activity.transAxes,
                     ha="center"
                 )
@@ -1211,10 +1242,10 @@ class DBViewWindow(QMainWindow):
 
             if metric == "concentration":
                 json_column = 3
-                ylabel = "Концентрація, Бк/л"
+                ylabel = self.tr("table_concentration")
             else:
                 json_column = 2
-                ylabel = "Активність, Бк"
+                ylabel = self.tr("table_activity")
 
             records = []
             isotopes = set()
@@ -1252,6 +1283,8 @@ class DBViewWindow(QMainWindow):
 
             self.ax_activity.clear()
 
+            self.ax_activity.set_yscale("log" if self.ui.activity_log_checkbox.isChecked() else "linear" )
+
             if records and isotopes:
                 records.sort(key=lambda record: record[0])
                 timestamps = [record[0] for record in records]
@@ -1261,6 +1294,11 @@ class DBViewWindow(QMainWindow):
                         record[1].get(isotope, float("nan"))
                         for record in records
                     ]
+                    if self.ui.activity_log_checkbox.isChecked():
+                        values = [
+                            value if value > 0 else float("nan")
+                            for value in values
+                        ]
                     self.ax_activity.plot(
                         timestamps,
                         values,
@@ -1269,11 +1307,11 @@ class DBViewWindow(QMainWindow):
                     )
 
                 metric_title = (
-                    "Концентрація"
+                    self.tr("table_concentration")
                     if metric == "concentration"
-                    else "Активність"
+                    else self.tr("table_activity")
                 )
-                self.ax_activity.set_xlabel("Час")
+                #self.ax_activity.set_xlabel("Час")
                 self.ax_activity.set_ylabel(ylabel)
                 self.ax_activity.set_title(f"{metric_title} - {device_sn}")
                 self.ax_activity.grid(True)
@@ -1283,7 +1321,7 @@ class DBViewWindow(QMainWindow):
                 self.ax_activity.text(
                     0.5,
                     0.5,
-                    "Немає коректних даних для графіка",
+                    self.tr("db_no_correct_data"),
                     transform=self.ax_activity.transAxes,
                     ha="center"
                 )
@@ -1347,10 +1385,10 @@ class DBViewWindow(QMainWindow):
             # --------------------------------------------------------
 
             if row[4] == "full":
-                fullness = "Повна"
+                fullness = self.tr("barrel_full")
 
             elif row[4] == "empty":
-                fullness = "Не повна"
+                fullness = self.tr("barrel_empty")
 
             else:
                 fullness = "—"
@@ -1413,15 +1451,15 @@ class DBViewWindow(QMainWindow):
                         composition_parts.append(
                             (
                                 f"{isotope}: "
-                                f"{activity_text} Бк, "
-                                f"{concentration_text} Бк/л"
+                                f"{activity_text} {self.tr("bq")}, "
+                                f"{concentration_text} {self.tr("bq_l")}"
                             )
                         )
 
                 else:
 
                     composition_parts.append(
-                        "немає даних"
+                        self.tr("no_data")
                     )
 
             except (
@@ -1431,7 +1469,8 @@ class DBViewWindow(QMainWindow):
             ):
 
                 composition_parts.append(
-                    "помилка даних"
+                    #"помилка даних"
+                    self.tr("db_data_error")
                 )
 
             composition_str = "; ".join(
@@ -1493,8 +1532,8 @@ class DBViewWindow(QMainWindow):
         if date_from > date_to:
             QMessageBox.warning(
                 self,
-                "Попередження",
-                "Початкова дата не може бути пізніше кінцевої."
+                self.tr("warning"),
+                self.tr("db_start_date_error")
             )
             return
 
@@ -1506,8 +1545,10 @@ class DBViewWindow(QMainWindow):
             self.ui.combo_event_type.currentText()
         )
 
-        if event_type == "All":
-            event_type = None
+        # if event_type == "All":
+        #     event_type = None
+        if event_type == self.tr("db_all"):
+                event_type = None
 
         # ------------------------------------------------------------
         # 3. ПРИБОР
@@ -1530,8 +1571,8 @@ class DBViewWindow(QMainWindow):
             if device_id is None:
                 QMessageBox.warning(
                     self,
-                    "Помилка",
-                    "Прилад не знайдено в базі даних."
+                    self.tr("error"),
+                    self.tr("db_device_not_found")
                 )
                 return
 
@@ -1606,8 +1647,9 @@ class DBViewWindow(QMainWindow):
 
             QMessageBox.critical(
                 self,
-                "Помилка",
-                f"Не вдалося прочитати системні події:\n{e}"
+                self.tr("error"),
+                #f"Не вдалося прочитати системні події:\n{e}"
+                f"{self.tr("db_events_unreadable")}\n{e}"
             )
             return
 
@@ -1850,7 +1892,7 @@ class DBViewWindow(QMainWindow):
             model = self.ui.tableView_events.model()
         
         if not model:
-            QMessageBox.warning(self, "Помилка", "Немає даних для експорту")
+            QMessageBox.warning(self, self.tr("error"), self.tr("db_export_no_data"))
             return
         
         try:
@@ -1867,9 +1909,9 @@ class DBViewWindow(QMainWindow):
                         row_data.append(model.data(idx))
                     writer.writerow(row_data)
             
-            QMessageBox.information(self, "Успіх", f"Дані збережено у {file_path}")
+            QMessageBox.information(self, self.tr("replace_success_title"), f"{self.tr("db_data_saved")} {file_path}")
         except Exception as e:
-            QMessageBox.critical(self, "Помилка", f"Не вдалося зберегти CSV: {e}")
+            QMessageBox.critical(self, self.tr("error"), f"{self.tr("db_data_not_saved")} {e}")
     
     def export_png(self, tab):
         """Экспорт графика в PNG"""
@@ -1882,6 +1924,6 @@ class DBViewWindow(QMainWindow):
                 self.figure_paed.savefig(file_path, dpi=150, bbox_inches='tight')
             else:
                 self.figure_activity.savefig(file_path, dpi=150, bbox_inches='tight')
-            QMessageBox.information(self, "Успіх", f"Графік збережено у {file_path}")
+            QMessageBox.information(self, self.tr("replace_success_title"), f"{self.tr("db_graph_saved")} {file_path}")
         except Exception as e:
-            QMessageBox.critical(self, "Помилка", f"Не вдалося зберегти графік: {e}")
+            QMessageBox.critical(self, self.tr("error"), f"{self.tr("db_graph_not_saved")} {e}")

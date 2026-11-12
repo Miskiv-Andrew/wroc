@@ -1,7 +1,7 @@
 # app.py
 
 import sys
-from PySide6.QtWidgets import QApplication, QComboBox, QWidget, QGridLayout, QVBoxLayout, QPushButton, QLabel, QSizePolicy, QSpacerItem, QDialog, QLineEdit, QMessageBox, QHBoxLayout, QSpinBox, QMenu, QCheckBox, QTableWidget, QTableWidgetItem
+from PySide6.QtWidgets import QApplication, QComboBox, QWidget, QGridLayout, QVBoxLayout, QPushButton, QLabel, QSizePolicy, QSpacerItem, QDialog, QLineEdit, QMessageBox, QHBoxLayout, QSpinBox, QDoubleSpinBox, QMenu, QCheckBox, QTableWidget, QTableWidgetItem, QHeaderView
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtCore import QFile, QThread, QMetaObject, QTimer , Qt, QObject, Signal, QDateTime, QProcess
 from devices.device_manager import DeviceManager
@@ -139,7 +139,7 @@ class SpectrumWidget(QWidget):
             #self.ax.set_xlabel("Канал")
             #self.ax.set_ylabel("Кількість імпульсів")
         else:
-            self.ax.text(0.5, 0.5, "Немає даних", transform=self.ax.transAxes, ha='center')
+            self.ax.text(0.5, 0.5, self.tr("no_data"), transform=self.ax.transAxes, ha='center')
         self.canvas.draw()
 
 class DeviceCardBarrel(QWidget):
@@ -231,6 +231,7 @@ class DeviceCardBarrel(QWidget):
         self.spectrum_start_monotonic = None
 
         self.spectrum_session_started_at = None
+        self.spectrum_session_start_monotonic = None
         # ------------------------------------------------------------
         # ФАКТИЧЕСКАЯ ДЛИТЕЛЬНОСТЬ ЗАВЕРШЁННОГО ЦИКЛА
         # ------------------------------------------------------------
@@ -265,15 +266,13 @@ class DeviceCardBarrel(QWidget):
         return TRANSLATIONS["uk"].get(key, key)
 
     def start_spectrum_display(self):
-        self.spectrum_start_monotonic = time.monotonic()
+        cycle_started_at = time.monotonic()
+        self.spectrum_start_monotonic = cycle_started_at
         self.spectrum_elapsed_time = 0.0
 
-        # if self.spectrum_started_label:
-        #     self.spectrum_started_label.setText(
-        #         QDateTime.currentDateTime().toString(
-        #             "dd-MM-yyyy, HH:mm:ss"
-        #         )
-        #     )
+        if self.spectrum_session_start_monotonic is None:
+            self.spectrum_session_start_monotonic = cycle_started_at
+
         if self.spectrum_session_started_at is None:
             self.spectrum_session_started_at = QDateTime.currentDateTime()
             if self.spectrum_started_label:
@@ -287,19 +286,20 @@ class DeviceCardBarrel(QWidget):
         self.spectrum_display_timer.start()
 
     def update_spectrum_ongoing_time(self):
-        if self.spectrum_start_monotonic is None:
+        if self.spectrum_session_start_monotonic is None:
             return
 
         elapsed_seconds = max(
             0,
-            int(time.monotonic() - self.spectrum_start_monotonic)
+            int(time.monotonic() - self.spectrum_session_start_monotonic)
         )
+        days, remainder = divmod(elapsed_seconds, 86400)
         hours, remainder = divmod(elapsed_seconds, 3600)
         minutes, seconds = divmod(remainder, 60)
 
         if self.spectrum_ongoing_label:
             self.spectrum_ongoing_label.setText(
-                f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+                f"{days:02d}:{hours:02d}:{minutes:02d}:{seconds:02d}"
             )
 
     def clear_history(self):
@@ -760,9 +760,7 @@ class DeviceCardBarrel(QWidget):
             ):
                 self.parent_app.ui.textEdit.append(
                     (
-                        "Помилка: отримано GetSpectre без "
-                        "підтвердженого StartSpectre для "
-                        f"SN {self.serial_number}."
+                        f"{self.tr("get_spectre_error")} {self.serial_number}."
                     )
                 )
 
@@ -933,13 +931,13 @@ class DeviceCardBarrel(QWidget):
 
         self.spectrum_start_monotonic = None
 
-        self.spectrum_display_timer.stop()
+        #self.spectrum_display_timer.stop()
 
         # if self.spectrum_started_label:
         #     self.spectrum_started_label.setText("—")
 
-        if self.spectrum_ongoing_label:
-            self.spectrum_ongoing_label.setText("—")
+        # if self.spectrum_ongoing_label:
+        #     self.spectrum_ongoing_label.setText("—")
 
         # ============================================================
         # 5. ФАКТИЧЕСКОЕ ВРЕМЯ ЗАВЕРШЁННОГО ЦИКЛА
@@ -2014,22 +2012,26 @@ class DeviceCardBarrel(QWidget):
         ):
 
             activity_json = json.dumps(
-                activity_dict,
+                #activity_dict,
+                {isotope: max(0.0, value) for isotope, value in activity_dict.items()},
                 ensure_ascii=False
             )
 
             concentration_json = json.dumps(
-                concentration_dict,
+                #concentration_dict,
+                {isotope: max(0.0, value) for isotope, value in concentration_dict.items()},
                 ensure_ascii=False
             )
 
             activity_upper_json = json.dumps(
-                activity_upper_dict,
+                #activity_upper_dict,
+                {isotope: max(0.0, value) for isotope, value in activity_upper_dict.items()},
                 ensure_ascii=False
             )
 
             concentration_upper_json = json.dumps(
-                concentration_upper_dict,
+                #concentration_upper_dict,
+                {isotope: max(0.0, value) for isotope, value in concentration_upper_dict.items()},
                 ensure_ascii=False
             )
 
@@ -2228,6 +2230,7 @@ class DeviceCardBarrel(QWidget):
         if table is None:
             return
 
+        table.setHorizontalHeaderLabels([self.tr("table_isotope"), self.tr("table_concentration"), self.tr("table_activity")])
         isotopes = result.get("isotopes", [])
 
         table.setRowCount(len(isotopes))  #кількість рядків
@@ -2238,21 +2241,32 @@ class DeviceCardBarrel(QWidget):
             available = data.get("available", True)
 
             if not available:
-                values = [isotope, "—", "—", "Недоступно"]
+                values = [isotope, "—", "—"]
             else:
-                activity = data.get("activity")
-                concentration = data.get("concentration")
-                detected = data.get("detected", "—")
+                conc_lower = float(data.get("conc_lower", 0))
+                conc_upper = float(data.get("conc_upper", 0))
 
-                #підготовка значень
+                activity_lower = float(data.get("activity_lower", 0))
+                activity_upper = float(data.get("activity_upper", 0))
+
+                # Concentration range
+                if conc_upper < 0:
+                    concentration = "≈ 0"
+                else:
+                    concentration = f"{max(0, conc_lower):.2f} ÷ {conc_upper:.2f}"
+
+                # Activity range
+                if activity_upper < 0:
+                    activity = "≈ 0"
+                else:
+                    activity = f"{max(0, activity_lower):.2f} ÷ {activity_upper:.2f}"
+
                 values = [
                     isotope,
-                    f"{float(concentration):.2f}",
-                    f"{float(activity):.2f}",
-                    detected
+                    concentration,
+                    activity
                 ]
 
-            #вивід рядків
             for column, value in enumerate(values):
                 table.setItem(
                     row,
@@ -2261,6 +2275,7 @@ class DeviceCardBarrel(QWidget):
                 )
 
         table.resizeColumnsToContents()
+        #table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
 
 
     # def plot_activity_histogram(self):
@@ -2327,14 +2342,17 @@ class DeviceCardBarrel(QWidget):
         if layout is None:
             layout = QVBoxLayout(concentration_widget)
 
-        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setContentsMargins(3, 3, 3, 3)
 
         # Selector and logarithmic-scale checkbox on the same row
         controls_layout = QHBoxLayout()
 
+        self.visual_thresholds = {}
+
         self.concentration_selector = QComboBox(concentration_widget)
         self.concentration_selector.currentTextChanged.connect(
-            self.plot_concentration_history
+            #self.plot_concentration_history
+            self._on_threshold_context_changed
         )
         controls_layout.addWidget(self.concentration_selector)
 
@@ -2342,7 +2360,8 @@ class DeviceCardBarrel(QWidget):
         self.metric_selector.addItem(self.tr("concentration"), "concentration")
         self.metric_selector.addItem(self.tr("activity"), "activity")
         self.metric_selector.currentIndexChanged.connect(
-            lambda _index: self.plot_concentration_history()
+            #lambda _index: self.plot_concentration_history()
+            self._on_threshold_context_changed
         )
         controls_layout.addWidget(self.metric_selector)
 
@@ -2351,6 +2370,19 @@ class DeviceCardBarrel(QWidget):
             lambda checked: self.plot_concentration_history()
         )
         controls_layout.addWidget(self.concentration_log_checkbox)
+
+        self.threshold_enabled = QCheckBox(self.tr("show_threshold"), concentration_widget)
+        self.threshold_enabled.toggled.connect(self._save_threshold)
+        controls_layout.addWidget(self.threshold_enabled)
+
+        self.threshold_value = QDoubleSpinBox(concentration_widget)
+        self.threshold_value.setRange(0.0, 1_000_000_000_000.0)
+        self.threshold_value.setDecimals(2)
+        self.threshold_value.setSingleStep(100.0)
+        self.threshold_value.setSuffix(" Bq")
+        self.threshold_value.valueChanged.connect(self._save_threshold)
+        controls_layout.addWidget(self.threshold_value)
+
         layout.addLayout(controls_layout)
 
         self.concentration_figure = Figure()
@@ -2571,6 +2603,44 @@ class DeviceCardBarrel(QWidget):
     #     self.concentration_figure.tight_layout()
     #     self.concentration_canvas.draw()
 
+    def _save_threshold(self, _value=None):
+        isotope = self.concentration_selector.currentText()
+        metric = self.metric_selector.currentData()
+
+        if not isotope or not metric:
+            return
+
+        self.visual_thresholds.setdefault(isotope, {})[metric] = {
+            "enabled": self.threshold_enabled.isChecked(),
+            "value": self.threshold_value.value(),
+        }
+        self.plot_concentration_history()
+
+
+    def _on_threshold_context_changed(self):
+        isotope = self.concentration_selector.currentText()
+        metric = self.metric_selector.currentData()
+
+        threshold = (
+            self.visual_thresholds
+            .get(isotope, {})
+            .get(metric, {"enabled": False, "value": 0.0})
+        )
+
+        self.threshold_enabled.blockSignals(True)
+        self.threshold_value.blockSignals(True)
+
+        self.threshold_enabled.setChecked(threshold["enabled"])
+        self.threshold_value.setValue(threshold["value"])
+        self.threshold_value.setSuffix(
+            self.tr("bq") if metric == "activity" else self.tr("bq_l")
+        )
+
+        self.threshold_enabled.blockSignals(False)
+        self.threshold_value.blockSignals(False)
+
+        self.plot_concentration_history()
+
     def plot_concentration_history(self, isotope=None):
         isotope = isotope or self.concentration_selector.currentText()
         points = self.concentration_history.get(isotope, [])
@@ -2581,14 +2651,14 @@ class DeviceCardBarrel(QWidget):
                 "conc_lower",
                 "conc_upper",
                 "Концентрація, Бк/л",
-                "Концентрація",
+                self.tr("table_concentration"),
             ),
             "activity": (
                 "activity",
                 "activity_lower",
                 "activity_upper",
                 "Активність, Бк",
-                "Активність",
+                self.tr("table_activity"),
             ),
         }
 
@@ -2649,7 +2719,8 @@ class DeviceCardBarrel(QWidget):
             color="#7a8793",
             linewidth=1.5,
             capstyle="butt",
-            label="Статистичні межі",
+            #label="Статистичні межі",
+            label = self.tr("stat_bounds")
         )
 
         measured = [
@@ -2691,8 +2762,28 @@ class DeviceCardBarrel(QWidget):
             [],
             color="#d17a22",
             linewidth=1.5,
-            label="Екстраполяція",
+            #label="Екстраполяція",
+            label = self.tr("extrapolate")
         )
+
+        threshold = (
+            self.visual_thresholds
+            .get(isotope, {})
+            .get(metric)
+        )
+
+        if threshold and threshold["enabled"]:
+            threshold_value = threshold["value"]
+
+            if not self.concentration_log_checkbox.isChecked() or threshold_value > 0:
+                unit = self.tr("bq") if metric == "activity" else self.tr("bq_l")
+                self.concentration_ax.axhline(
+                    y=threshold_value,
+                    color="red",
+                    linestyle="--",
+                    linewidth=1.2,
+                    label=f"{self.tr("threshold")} {threshold_value:g} {unit}",
+                )
 
         #self.concentration_ax.set_ylabel(y_label)
         self.concentration_ax.xaxis_date()
@@ -2738,6 +2829,7 @@ class DeviceCardBarrel(QWidget):
         self.ui.tabWidget.setTabText(0,self.tr("graph_activity"))
         self.ui.tabWidget.setTabText(1,self.tr("graph_spectre"))
         self.concentration_log_checkbox.setText(self.tr("log_scale"))
+        self.threshold_enabled.setText(self.tr("show_threshold"))
         self.plot_concentration_history()
         self.spectrum.plot()
         
@@ -3063,10 +3155,10 @@ class DeviceCardWall(QWidget):
                     "icondoseLabel": "paed_name",
                     "doseLabel": "paed_values",
                     "icontempLabel": "temperature_name",
-                    "lowDetectorLabel": "low_detector",
-                    "highDetectorLabel": "high_detector",
-                    "validityLabel": "result_validity",
-                    "statusLabel": "device_status",
+                    "lowDetectorLabel": "low_detector_wall",
+                    "highDetectorLabel": "high_detector_wall",
+                    "validityLabel": "result_validity_wall",
+                    "statusLabel": "device_status_wall",
                 }
     
             for object_name, translation_key in captions.items():
@@ -3131,10 +3223,13 @@ class App(QObject):
         # атрибут - словарь состояния цистерн - формат : номер - флаг ( 1 : True, 2 : False) 
         self.cistern_dict = {}  
 
+        # мова 
+        self.language = "uk"
+
         # атрибут - объект для работы с базами данных
         self.db_manager = DatabaseManager()
 
-        self.db_manager.save_system_event(None, "app_start", "Програма запущена")
+        self.db_manager.save_system_event(None, "app_start", self.tr("db_program_start"))
 
         self.current_columns = 1   
 
@@ -3148,9 +3243,6 @@ class App(QObject):
 
         # загрузка формы из .ui файла
         self.load_ui() 
-        
-        # мова 
-        self.language = "uk"
 
         # Create an exclusive group: only one language can be checked.
         self.language_group = QActionGroup(self)
@@ -3209,13 +3301,13 @@ class App(QObject):
         # Пользователь может изменить его через диалог интервалов.
         # Новое значение применяется сразу, в том числе к уже
         # выполняющемуся спектральному циклу.
-        self.spectrum_accumulation_time = 120
+        self.spectrum_accumulation_time = 60
 
         # ------------------------------------------------------------
         # НОВЫЕ АТРИБУТЫ ДЛЯ ИНТЕРВАЛОВ СОХРАНЕНИЯ В БД
         # ------------------------------------------------------------
         self.cistern_save_interval = 3600   # секунды (по умолчанию 1 час)
-        self.wall_save_interval = 1800      # секунды (по умолчанию 30 минут)
+        self.wall_save_interval = 60      # секунды (по умолчанию 30 минут)
 
         # Устанавливаем интервалы в DatabaseManager
         self.db_manager.set_cistern_save_interval(self.cistern_save_interval)
@@ -3404,7 +3496,8 @@ class App(QObject):
         # это НЕ удаляет записи из SQLite и никак не влияет
         # на историю измерений или системных событий.
         # ============================================================
-
+        self.ui.splitter_2.setSizes([1000, 25])
+        self.ui.splitter.setSizes([1500, 350])
         if hasattr(self.ui, "textEdit"):
 
             self.ui.textEdit.document().setMaximumBlockCount(
@@ -3633,8 +3726,7 @@ class App(QObject):
 
         self.ui.textEdit.append(
             (
-                "[Bridge] Автоматичне відновлення "
-                "буде виконано через 5 секунд."
+                self.tr("bridge_reconnect")
             )
         )
 
@@ -3710,8 +3802,9 @@ class App(QObject):
 
             self.ui.textEdit.append(
                 (
-                    "[Bridge] Автоматичне відновлення неможливе: "
-                    "IP-адреса PLC порожня."
+                    # "[Bridge] Автоматичне відновлення неможливе: "
+                    # "IP-адреса PLC порожня."
+                    self.tr("ip_recover_empty")
                 )
             )
 
@@ -3726,8 +3819,9 @@ class App(QObject):
 
             self.ui.textEdit.append(
                 (
-                    "[Bridge] Автоматичне відновлення неможливе: "
-                    f"некоректна IPv4-адреса '{ip}'."
+                    # "[Bridge] Автоматичне відновлення неможливе: "
+                    # f"некоректна IPv4-адреса '{ip}'."
+                    f"{self.tr("ip_recover_incorrect")} '{ip}'."
                 )
             )
 
@@ -3739,7 +3833,8 @@ class App(QObject):
         # ============================================================
 
         self.ui.textEdit.append(
-            "[Bridge] Спроба автоматичного перезапуску..."
+            # "[Bridge] Спроба автоматичного перезапуску..."
+            self.tr("bridge_restarting")
         )
 
         if not self.start_bridge(
@@ -3756,8 +3851,9 @@ class App(QObject):
 
             self.ui.textEdit.append(
                 (
-                    "[Bridge] Автоматичний перезапуск "
-                    "не вдався."
+                    # "[Bridge] Автоматичний перезапуск "
+                    # "не вдався."
+                    self.tr("bridge_restart_failed")
                 )
             )
 
@@ -3769,7 +3865,8 @@ class App(QObject):
         # ============================================================
 
         self.ui.textEdit.append(
-            "[Bridge] Процес автоматично відновлено."
+            #"[Bridge] Процес автоматично відновлено."
+            self.tr("bridge_process_recovered")
         )
 
         # ============================================================
@@ -3802,9 +3899,10 @@ class App(QObject):
 
             self.ui.textEdit.append(
                 (
-                    "[Bridge] Процес відновлено, але "
-                    "TCP-з'єднання поки не встановлено: "
-                    f"{e}"
+                    # "[Bridge] Процес відновлено, але "
+                    # "TCP-з'єднання поки не встановлено: "
+                    # f"{e}"
+                    f"{self.tr("bridge_tcp_disconnected")} {e}"
                 )
             )
 
@@ -3828,7 +3926,7 @@ class App(QObject):
         if self.bridge_process is not None:
             state = self.bridge_process.state()
             if state == QProcess.ProcessState.Running or state == QProcess.ProcessState.Starting:
-                self.ui.textEdit.append("ModBusBridgeService вже запущений")
+                self.ui.textEdit.append("bridge_already_started")
                 return False
         
         # --------------------------------------------------------------------
@@ -3836,7 +3934,7 @@ class App(QObject):
         # --------------------------------------------------------------------
         executable = os.path.join("ModBusBridgeService_Runtime", "ModBusBridgeService.exe")
         if not os.path.exists(executable):
-            self.ui.textEdit.append(f"Помилка: файл {executable} не знайдено")
+            self.ui.textEdit.append(f"{self.tr("error")}: {self.tr("file")} {executable} {self.tr("not_found")}")
             return False
         
         # --------------------------------------------------------------------
@@ -3844,7 +3942,7 @@ class App(QObject):
         # --------------------------------------------------------------------
         args = [str(plc_ip), str(plc_port)]
         
-        self.ui.textEdit.append(f"Запуск {executable} з аргументами: {args}")
+        self.ui.textEdit.append(f"{self.tr("plc_start")} {executable} {self.tr("plc_arg")} {args}")
         
         # --------------------------------------------------------------------
         # 4. Створюємо та налаштовуємо QProcess
@@ -3871,11 +3969,11 @@ class App(QObject):
         # 7. Чекаємо, поки процес запуститься (неблокуюче очікування)
         # --------------------------------------------------------------------
         if not self.bridge_process.waitForStarted(3000):
-            self.ui.textEdit.append("Помилка: не вдалося запустити ModBusBridgeService")
+            self.ui.textEdit.append(self.tr("bridge_start_error"))
             self.bridge_process = None
             return False
         
-        self.ui.textEdit.append("ModBusBridgeService успішно запущено")
+        self.ui.textEdit.append(self.tr("bridge_started_success"))
         return True
 
 
@@ -3888,11 +3986,11 @@ class App(QObject):
         
         state = self.bridge_process.state()
         if state == QProcess.ProcessState.NotRunning:
-            self.ui.textEdit.append("ModBusBridgeService вже зупинено")
+            self.ui.textEdit.append(self.tr("bridge_already_stopped"))
             self.bridge_process = None
             return
         
-        self.ui.textEdit.append("Зупинка ModBusBridgeService...")
+        self.ui.textEdit.append(self.tr("bridge_stopping"))
         
         # Відправляємо сигнал завершення
         self.bridge_process.terminate()
@@ -3900,11 +3998,11 @@ class App(QObject):
         # Чекаємо 3 секунди
         if not self.bridge_process.waitForFinished(3000):
             # Якщо не завершився — примусово завершуємо
-            self.ui.textEdit.append("Примусове завершення ModBusBridgeService")
+            self.ui.textEdit.append("bridge_emergency_exit")
             self.bridge_process.kill()
             self.bridge_process.waitForFinished(1000)
         
-        self.ui.textEdit.append("ModBusBridgeService зупинено")
+        self.ui.textEdit.append(self.tr("bridge_stopped"))
         self.bridge_process = None
 
 
@@ -3912,7 +4010,7 @@ class App(QObject):
         """
         Обробник сигналу started — процес C++ запущено.
         """
-        self.ui.textEdit.append("[Bridge] Процес запущено")
+        self.ui.textEdit.append(self.tr("bridge_started"))
 
 
 
@@ -3950,15 +4048,14 @@ class App(QObject):
         # ============================================================
 
         status_text = (
-            "нормально"
+            self.tr("bridge_normal")
             if exit_status == QProcess.ExitStatus.NormalExit
-            else "аварійно"
+            else self.tr("bridge_faulty")
         )
 
         self.ui.textEdit.append(
             (
-                "[Bridge] Процес завершено "
-                f"з кодом {exit_code} ({status_text})"
+                f"{self.tr("bridge_process_end")} {exit_code} ({status_text})"
             )
         )
 
@@ -4014,8 +4111,9 @@ class App(QObject):
 
         self.ui.textEdit.append(
             (
-                "[Bridge] Процес завершився під час "
-                "активного PLC-сеансу."
+                # "[Bridge] Процес завершився під час "
+                # "активного PLC-сеансу."
+                self.tr("bridge_ended_during_active")
             )
         )
 
@@ -4062,27 +4160,33 @@ class App(QObject):
 
         error_map = {
             QProcess.ProcessError.FailedToStart:
-                "Не вдалося запустити процес",
+                # "Не вдалося запустити процес",
+                self.tr("bridge_error_ui_1"),
 
             QProcess.ProcessError.Crashed:
-                "Процес аварійно завершився",
+                # "Процес аварійно завершився",
+                self.tr("bridge_error_ui_2"),
 
             QProcess.ProcessError.Timedout:
-                "Таймаут під час очікування",
+                # "Таймаут під час очікування",
+                self.tr("bridge_error_ui_3"),
 
             QProcess.ProcessError.WriteError:
-                "Помилка запису в процес",
+                # "Помилка запису в процес",
+                self.tr("bridge_error_ui_4"),
 
             QProcess.ProcessError.ReadError:
-                "Помилка читання з процес",
+                # "Помилка читання з процес",
+                self.tr("bridge_error_ui_5"),
 
             QProcess.ProcessError.UnknownError:
-                "Невідома помилка"
+                # "Невідома помилка"
+                self.tr("bridge_error_ui_6")
         }
 
         error_text = error_map.get(
             error,
-            f"Помилка: {error}"
+            f"{self.tr("error")} {error}"
         )
 
         self.ui.textEdit.append(
@@ -4194,12 +4298,14 @@ class App(QObject):
             self.indicator_plc.setStyleSheet(
                 "background-color: #4CAF50; border-radius: 5px; min-width: 16px; min-height: 16px;"
             )
-            self.indicator_plc.setToolTip("PLC підключено")
+            # self.indicator_plc.setToolTip("PLC підключено")
+            self.indicator_plc.setToolTip(self.tr("plc_ui_indicator_1"))
         else:
             self.indicator_plc.setStyleSheet(
                 "background-color: #f44336; border-radius: 5px; min-width: 16px; min-height: 16px;"
             )
-            self.indicator_plc.setToolTip("PLC не підключено")
+            #self.indicator_plc.setToolTip("PLC не підключено")
+            self.indicator_plc.setToolTip(self.tr("plc_ui_indicator_2"))
 
         # --------------------------------------------------------------------
         # Індикатор Bridge (підключення Python → C++)
@@ -4208,12 +4314,14 @@ class App(QObject):
             self.indicator_bridge.setStyleSheet(
                 "background-color: #4CAF50; border-radius: 5px; min-width: 16px; min-height: 16px;"
             )
-            self.indicator_bridge.setToolTip("З'єднання з Bridge встановлено")
+            # self.indicator_bridge.setToolTip("З'єднання з Bridge встановлено")
+            self.indicator_bridge.setToolTip(self.tr("bridge_ui_indicator_1"))
         else:
             self.indicator_bridge.setStyleSheet(
                 "background-color: #f44336; border-radius: 5px; min-width: 16px; min-height: 16px;"
             )
-            self.indicator_bridge.setToolTip("З'єднання з Bridge відсутнє")
+            #self.indicator_bridge.setToolTip("З'єднання з Bridge відсутнє")
+            self.indicator_bridge.setToolTip(self.tr("bridge_ui_indicator_2"))
 
 
 
@@ -4300,11 +4408,12 @@ class App(QObject):
                     card.clear_history()
                     reset_count += 1
 
-                self.ui.textEdit.append(
-                    "Змінено час накопичення спектру: "
-                    "історію динамічного розрахунку Tc "
-                    f"скинуто для {reset_count} цистерн."
-                )
+                # self.ui.textEdit.append(
+                #     "Змінено час накопичення спектру: "
+                #     "історію динамічного розрахунку Tc "
+                #     f"скинуто для {reset_count} цистерн."
+                # )
+                self.ui.textEdit.append( f"{self.tr("intervals_acc_time_changed")} ({reset_count}).")
 
             # ========================================================
             # 4. ЗАСТОСОВУЄМО ІНТЕРВАЛИ ДО БД
@@ -4324,15 +4433,15 @@ class App(QObject):
             # ========================================================
 
             self.ui.textEdit.append(
-                f"Налаштування інтервалів збережено: "
-                f"спектр={self.spectrum_accumulation_time}с, "
-                f"ZB={self.zb_send_interval}с, "
-                f"CZ={self.cz_send_interval}с, "
-                f"БД={self.db_write_interval}хв, "
-                f"збереження цистерн="
-                f"{self.cistern_save_interval}с, "
-                f"збереження приміщення="
-                f"{self.wall_save_interval}с"
+                f"{self.tr("intervals_saved")} "
+                # f"спектр={self.spectrum_accumulation_time}с, "
+                # f"ZB={self.zb_send_interval}с, "
+                # f"CZ={self.cz_send_interval}с, "
+                # f"БД={self.db_write_interval}хв, "
+                # f"збереження цистерн="
+                # f"{self.cistern_save_interval}с, "
+                # f"збереження приміщення="
+                # f"{self.wall_save_interval}с"
             )
 
 
@@ -4352,13 +4461,24 @@ class App(QObject):
         #ui_path = resource_path("_UI/about_dialog.ui")
 
         loader = QUiLoader()
-        ui_file = QFile(
-                    "_UI/about_dialog.ui"
-                )
+        ui_file = QFile("_UI/about_dialog.ui")
         dialog = loader.load(ui_file)
 
         if dialog is None:
             raise RuntimeError(f"Failed to load About dialog: {ui_file}")
+        
+        dialog.setWindowTitle(self.tr("about_dialog_title"))
+
+        labels = {
+            "label": "about_app_name",
+            "label_2": "about_version",
+            "label_3": "about_copyright",
+            "label_4": "about_oss_intro",
+        }
+        for object_name, key in labels.items():
+            label = dialog.findChild(QLabel, object_name)
+            if label:
+                label.setText(self.tr(key))
 
         dialog.dialogClose.clicked.connect(dialog.close)
 
@@ -4370,7 +4490,7 @@ class App(QObject):
         """
         self.device_manager_thread = QThread()     
         # self.device_manager = DeviceManager()  
-        self.device_manager = DeviceManager(self.db_manager)   
+        self.device_manager = DeviceManager(self.db_manager, self.tr)   
         self.device_manager.moveToThread(self.device_manager_thread)
         self.device_manager_thread.finished.connect(self.device_manager.deleteLater)
         self.device_manager_thread.start()        
@@ -4451,7 +4571,7 @@ class App(QObject):
             self.modbus_client.errorOccurred.connect(self.on_bridge_error_message)
             self.modbus_client.logMessage.connect(self.on_bridge_log_message)
         else:
-            self.ui.textEdit.append("Увага: ModBusBridgeClient не створено")
+            self.ui.textEdit.append(self.tr("bridge_not_created"))
 
 
         self.spectrum_cycle_finished.connect(self.device_manager.finish_spectrum_cycle, Qt.ConnectionType.QueuedConnection )
@@ -4514,7 +4634,7 @@ class App(QObject):
         ):
 
             self.ui.textEdit.append(
-                "[PLC] Відключення від PLC..."
+                self.tr("plc_disconnecting")
             )
 
             # --------------------------------------------------------
@@ -4559,8 +4679,7 @@ class App(QObject):
 
                     self.ui.textEdit.append(
                         (
-                            "[Bridge] Помилка під час "
-                            f"відключення: {e}"
+                            f"{self.tr("bridge_disconnect_error")} {e}"
                         )
                     )
 
@@ -4576,8 +4695,7 @@ class App(QObject):
 
                 self.ui.textEdit.append(
                     (
-                        "[Bridge] Помилка під час "
-                        f"зупинки процесу: {e}"
+                        f"{self.tr("bridge_stop_error")} {e}"
                     )
                 )
 
@@ -4595,7 +4713,7 @@ class App(QObject):
             )
 
             self.ui.textEdit.append(
-                "[PLC] Відключено"
+                self.tr("plc_disconnected")
             )
 
             return
@@ -4614,7 +4732,7 @@ class App(QObject):
         if not ip:
 
             self.ui.textEdit.append(
-                "Помилка: IP-адреса не може бути порожньою"
+                self.tr("ip_empty")
             )
 
             return
@@ -4627,8 +4745,7 @@ class App(QObject):
 
             self.ui.textEdit.append(
                 (
-                    f"Помилка: '{ip}' "
-                    "не є коректною IPv4-адресою"
+                    f"{self.tr("error")} '{ip}' {self.tr("ip_incorrect")}"
                 )
             )
 
@@ -4641,11 +4758,11 @@ class App(QObject):
         self._plc_connection_requested = True
 
         self.btn_connect_plc.setText(
-            "Disconnect PLC"
+            self.tr("disconnect_plc")
         )
 
         self.ui.textEdit.append(
-            f"Підключення до ПЛК {ip}:{port}"
+            f"{self.tr("plc_connected")} {ip}:{port}"
         )
 
         # ============================================================
@@ -4666,8 +4783,7 @@ class App(QObject):
 
             self.ui.textEdit.append(
                 (
-                    "[Bridge] Початковий запуск не вдався. "
-                    "Автоматичне відновлення продовжується."
+                    self.tr("bridge_started_fail")
                 )
             )
 
@@ -4685,7 +4801,7 @@ class App(QObject):
         # ============================================================
 
         self.ui.textEdit.append(
-            "[Bridge] Спроба підключення до Bridge..."
+            self.tr("bridge_connect_try")
         )
 
         max_attempts = 3
@@ -4698,8 +4814,8 @@ class App(QObject):
 
             self.ui.textEdit.append(
                 (
-                    f"[Bridge] Спроба {attempt} "
-                    f"з {max_attempts}..."
+                    f"[Bridge] {self.tr("bridge_try")} {attempt} "
+                    f"{self.tr("from")} {max_attempts}..."
                 )
             )
 
@@ -4721,7 +4837,7 @@ class App(QObject):
         if connected:
 
             self.ui.textEdit.append(
-                "[Bridge] Підключення до Bridge успішне"
+                self.tr("bridge_connected")
             )
 
             # connected дополнительно вызовет on_bridge_connected().
@@ -4730,8 +4846,7 @@ class App(QObject):
 
             self.ui.textEdit.append(
                 (
-                    "[Bridge] Початкове підключення не вдалося. "
-                    "Автоматичне відновлення з'єднання продовжується."
+                    self.tr("bridge_connection_fail")
                 )
             )
 
@@ -4763,7 +4878,7 @@ class App(QObject):
             )
 
         self.ui.textEdit.append(
-            "[Bridge] З'єднання з Bridge встановлено"
+            self.tr("bridge_connection_established")
         )
 
         # ============================================================
@@ -4843,8 +4958,7 @@ class App(QObject):
 
                 self.ui.textEdit.append(
                     (
-                        "[PLC] Не вдалося відправити "
-                        "початковий запит fullness."
+                        self.tr("plc_fullness_initial_failed")
                     )
                 )
 
@@ -4852,8 +4966,7 @@ class App(QObject):
 
             self.ui.textEdit.append(
                 (
-                    "[PLC] Помилка початкового "
-                    f"запиту fullness: {e}"
+                    f"{self.tr("plc_fullness_initial_error")} {e}"
                 )
             )
 
@@ -4918,7 +5031,7 @@ class App(QObject):
         if connection_requested:
 
             self.ui.textEdit.append(
-                "[Bridge] З'єднання з Bridge втрачено"
+                self.tr("bridge_connection_lost")
             )
 
             self.btn_connect_plc.setText(
@@ -4926,7 +5039,7 @@ class App(QObject):
             )
 
             self.ui.textEdit.append(
-                "[Bridge] Очікування автоматичного відновлення з'єднання..."
+                self.tr("bridge_connection_waiting")
             )
 
             return
@@ -4936,7 +5049,7 @@ class App(QObject):
         # ============================================================
 
         self.ui.textEdit.append(
-            "[Bridge] Відключено від Bridge"
+            self.tr("bridge_disconnected")
         )
 
         self.btn_connect_plc.setText(
@@ -4971,8 +5084,7 @@ class App(QObject):
             if not isinstance(data, dict):
 
                 self.ui.textEdit.append(
-                    "[Bridge] Помилка: отримано повідомлення "
-                    "некоректного формату."
+                    self.tr("bridge_error_format")
                 )
 
                 return
@@ -4996,8 +5108,9 @@ class App(QObject):
 
                     self.ui.textEdit.append(
                         (
-                            "[Bridge] Отримано повідомлення "
-                            f"типу '{msg_type}'"
+                            # "[Bridge] Отримано повідомлення "
+                            # f"типу '{msg_type}'"
+                            f"{self.tr("bridge_received_message")} '{msg_type}'"
                         )
                     )
 
@@ -5017,8 +5130,7 @@ class App(QObject):
             ):
 
                 self.ui.textEdit.append(
-                    "[Bridge] Помилка: поле 'data' "
-                    "має некоректний формат."
+                    self.tr("bridge_error_data")
                 )
 
                 return
@@ -5037,8 +5149,7 @@ class App(QObject):
             ):
 
                 self.ui.textEdit.append(
-                    "[Bridge] Помилка: поле 'zb' "
-                    "не є списком."
+                    self.tr("bridge_error_field")
                 )
 
                 return
@@ -5059,8 +5170,7 @@ class App(QObject):
 
                     self.ui.textEdit.append(
                         (
-                            "[Bridge] Помилка: некоректний "
-                            f"елемент ZB: {zb}"
+                            f"{self.tr("bridge_error_element")} {zb}"
                         )
                     )
 
@@ -5081,8 +5191,7 @@ class App(QObject):
 
                     self.ui.textEdit.append(
                         (
-                            "[Bridge] Помилка: неповні "
-                            f"дані ZB: {zb}"
+                            f"{self.tr("bridge_error_data_notfull")} {zb}"
                         )
                     )
 
@@ -5092,8 +5201,7 @@ class App(QObject):
 
                     self.ui.textEdit.append(
                         (
-                            "[Bridge] Помилка: некоректний "
-                            f"номер ZB '{number}'."
+                            f"{self.tr("bridge_error_number_incorrect")} '{number}'."
                         )
                     )
 
@@ -5103,8 +5211,8 @@ class App(QObject):
 
                     self.ui.textEdit.append(
                         (
-                            "[Bridge] Помилка: номер "
-                            f"ZB{number} поза діапазоном 1..9."
+                            
+                            f" {self.tr("bridge_error_number_title")} ZB{number} {self.tr("bridge_error_number_range")}"
                         )
                     )
 
@@ -5117,8 +5225,7 @@ class App(QObject):
 
                     self.ui.textEdit.append(
                         (
-                            "[Bridge] Помилка: некоректний "
-                            f"fullness={fullness} для ZB{number}."
+                            f" {self.tr("bridge_error_incorrect")} fullness={fullness} {self.tr("for")} ZB{number}."
                         )
                     )
 
@@ -5149,9 +5256,10 @@ class App(QObject):
 
                 self.ui.textEdit.append(
                     (
-                        f"[Bridge] Помилка: ZB{number} "
-                        "повторюється в одному повідомленні. "
-                        "Стан проігноровано."
+                        # f"[Bridge] Помилка: ZB{number} "
+                        # "повторюється в одному повідомленні. "
+                        # "Стан проігноровано."
+                        f"[Bridge] {self.tr("error")}: ZB{number} {self.tr("ui_zb_duplicate")}"
                     )
                 )
 
@@ -5221,10 +5329,7 @@ class App(QObject):
 
                 self.ui.textEdit.append(
                     (
-                        "[Bridge] Увага: PLC не підтвердив "
-                        f"стан {missing_text}. "
-                        "Попереднє фізичне значення збережено, "
-                        "але не використовується для спектрального режиму."
+                        f"{self.tr("bridge_error_not_confirmed")} {missing_text}. {self.tr("bridge_error_state_previous")}"
                     )
                 )
 
@@ -5271,8 +5376,7 @@ class App(QObject):
 
                 self.ui.textEdit.append(
                     (
-                        "[PLC] Відновлено актуальне "
-                        f"підтвердження fullness: {recovered_text}."
+                        f"{self.tr("plc_recover_fullness")} {recovered_text}."
                     )
                 )
 
@@ -5393,8 +5497,7 @@ class App(QObject):
 
                 self.ui.textEdit.append(
                     (
-                        "[Bridge] Помилка збереження "
-                        f"стану цистерн: {e}"
+                        f"{self.tr("bridge_error_cistern_state")} {e}"
                     )
                 )
 
@@ -5431,8 +5534,7 @@ class App(QObject):
 
             self.ui.textEdit.append(
                 (
-                    "[Bridge] Помилка при обробці "
-                    f"даних: {e}"
+                    f"{self.tr("bridge_error_process")} {e}"
                 )
             )
 
@@ -5595,9 +5697,10 @@ class App(QObject):
 
             self.ui.textEdit.append(
                 (
-                    "[PLC] Втрачено актуальне підтвердження "
-                    f"fullness: {text}. "
-                    "Спектральний режим для цих ZB заблоковано."
+                    # "[PLC] Втрачено актуальне підтвердження "
+                    # f"fullness: {text}. "
+                    # "Спектральний режим для цих ZB заблоковано."
+                    f"{self.tr("plc_lost_fullness")} {text}. {self.tr("plc_spectre_blocked")}"
                 )
             )
 
@@ -5624,7 +5727,8 @@ class App(QObject):
         calib_dir = "calibration"
 
         if not os.path.isdir(calib_dir):
-            self.ui.textEdit.append("Помилка: папка calibration/ не знайдена")
+            #self.ui.textEdit.append("Помилка: папка calibration/ не знайдена")
+            self.ui.textEdit.append(self.tr("ui_calibration_not_found"))
             return
 
         # Сортування робить порядок повідомлень відтворюваним.
@@ -5668,14 +5772,15 @@ class App(QObject):
                 name = os.path.splitext(filename)[0]
                 self.calibration_spectra[name] = data.copy()
 
-                self.ui.textEdit.append(
-                    f"Завантажено еталон: {name} "
-                    #f"час набору: {data[1023]} сек"
-                )
+                # self.ui.textEdit.append(
+                #     f"Завантажено еталон: {name} "
+                #     #f"час набору: {data[1023]} сек"
+                # )
 
             except (OSError, ValueError, TypeError) as e:
                 self.ui.textEdit.append(
-                    f"Помилка завантаження калібрування {filename}: {e}"
+                    #f"Помилка завантаження калібрування {filename}: {e}"
+                    f"{self.tr("ui_calibration_error")} {filename}: {e}"
                 )
 
 
@@ -5724,8 +5829,9 @@ class App(QObject):
 
             self.ui.textEdit.append(
                 (
-                    "Помилка зупинки системи: "
-                    f"{e}"
+                    # "Помилка зупинки системи: "
+                    # f"{e}"
+                    f"{self.tr("ui_system_stopped_error")} {e}"
                 )
             )
 
@@ -5738,8 +5844,9 @@ class App(QObject):
         if not invoked:
 
             self.ui.textEdit.append(
-                "Помилка: не вдалося передати команду "
-                "зупинки в потік DeviceManager"
+                # "Помилка: не вдалося передати команду "
+                # "зупинки в потік DeviceManager"
+                self.tr("ui_system_stopped_send_error")
             )
 
             return
@@ -5749,7 +5856,7 @@ class App(QObject):
         # ============================================================
 
         self.ui.textEdit.append(
-            "Систему зупинено"
+            self.tr("ui_system_stopped")
         )
 
         if self.butt_replace_device:
@@ -5849,8 +5956,9 @@ class App(QObject):
 
             self.ui.textEdit.append(
                 (
-                    "Помилка: не знайдено картку "
-                    f"для приладу SN {sn}."
+                    # "Помилка: не знайдено картку "
+                    # f"для приладу SN {sn}."
+                    f"{self.tr("ui_card_absent")} {sn}."
                 )
             )
 
@@ -5935,8 +6043,9 @@ class App(QObject):
 
                     self.ui.textEdit.append(
                         (
-                            "Помилка: прилад "
-                            f"{sn} не знайдено в БД."
+                            # "Помилка: прилад "
+                            # f"{sn} не знайдено в БД."
+                            f" {self.tr("device_error_device")} {sn} {self.tr("device_error_not_bd")}."
                         )
                     )
 
@@ -6085,10 +6194,11 @@ class App(QObject):
 
                     self.ui.textEdit.append(
                         (
-                            "Помилка температури для "
-                            f"SN {sn}: дані недійсні "
-                            "або термодатчик повідомив "
-                            "про відмову."
+                            # "Помилка температури для "
+                            # f"SN {sn}: дані недійсні "
+                            # "або термодатчик повідомив "
+                            # "про відмову."
+                            f"{self.tr("device_error_temp_1")} {sn}: {self.tr("device_error_temp_2")}"
                         )
                     )
 
@@ -6108,9 +6218,10 @@ class App(QObject):
 
                     self.ui.textEdit.append(
                         (
-                            "Помилка перетворення "
-                            "температури для "
-                            f"SN {sn}: {temperature}"
+                            # "Помилка перетворення "
+                            # "температури для "
+                            # f"SN {sn}: {temperature}"
+                            f" {self.tr("device_error_temp_3")} {sn}: {temperature}"
                         )
                     )
 
@@ -6174,8 +6285,9 @@ class App(QObject):
 
                 self.ui.textEdit.append(
                     (
-                        "Початок збору спектру "
-                        f"для SN {sn}."
+                        # "Початок збору спектру "
+                        # f"для SN {sn}."
+                        f"{self.tr("ui_spectre_started")} {sn}"
                     )
                 )
 
@@ -6193,9 +6305,10 @@ class App(QObject):
 
                     self.ui.textEdit.append(
                         (
-                            "Помилка: некоректні дані "
-                            "GetSpectre для "
-                            f"SN {sn}."
+                            # "Помилка: некоректні дані "
+                            # "GetSpectre для "
+                            # f"SN {sn}."
+                            f"{self.tr("device_error_spectre_data")} {sn}."
                         )
                     )
 
@@ -6249,9 +6362,10 @@ class App(QObject):
 
                     self.ui.textEdit.append(
                         (
-                            "Помилка: некоректна "
-                            "структура спектру для "
-                            f"SN {sn}."
+                            # "Помилка: некоректна "
+                            # "структура спектру для "
+                            # f"SN {sn}."
+                            f"{self.tr("device_error_spectre_struct")} {sn}."
                         )
                     )
 
@@ -6373,8 +6487,9 @@ class App(QObject):
 
                     self.ui.textEdit.append(
                         (
-                            "Помилка: прилад "
-                            f"{sn} не знайдено в БД."
+                            # "Помилка: прилад "
+                            # f"{sn} не знайдено в БД."
+                            f"{self.tr("device_error_device")} {sn} {self.tr("device_error_not_bd")}"
                         )
                     )
 
@@ -6388,9 +6503,10 @@ class App(QObject):
 
                         self.ui.textEdit.append(
                             (
-                                "Помилка: неможливо визначити "
-                                "час спектрального циклу для "
-                                f"SN {sn}."
+                                # "Помилка: неможливо визначити "
+                                # "час спектрального циклу для "
+                                # f"SN {sn}."
+                                f"{self.tr("device_error_spectre_time_1")} {sn}."
                             )
                         )
 
@@ -6410,9 +6526,11 @@ class App(QObject):
 
                         self.ui.textEdit.append(
                             (
-                                "Помилка: некоректний фактичний "
-                                "час накопичення спектру для "
-                                f"SN {sn}: "
+                                # "Помилка: некоректний фактичний "
+                                # "час накопичення спектру для "
+                                # f"SN {sn}: "
+                                # f"{card.spectrum_elapsed_time}"
+                                f"{self.tr("device_error_spectre_time_2")} {sn}: "
                                 f"{card.spectrum_elapsed_time}"
                             )
                         )
@@ -6494,8 +6612,10 @@ class App(QObject):
 
                 self.ui.textEdit.append(
                     (
-                        "Помилка: невідомий режим "
-                        f"'{mode}' для SN {sn}."
+                        # "Помилка: невідомий режим "
+                        # f"'{mode}' для SN {sn}."
+                        f"{self.tr("device_error_modeunknown")} "
+                        f"'{mode}',  SN {sn}."
                     )
                 )
 
@@ -6511,8 +6631,7 @@ class App(QObject):
 
             self.ui.textEdit.append(
                 (
-                    "Error parsing packet for "
-                    f"{sn}: {e}\n"
+                    f"{self.tr("error_parsing")} {sn}: {e}\n"
                     "-------------------"
                 )
             )
@@ -6601,8 +6720,7 @@ class App(QObject):
         if not devices:
 
             self.ui.textEdit.append(
-                "Прилади не знайдено. "
-                "Перевірте підключення та спробуйте ще раз."
+                self.tr("ui_search_no_devices")
             )
 
             # Поиск завершён — кнопку поиска снова разрешаем.
@@ -6618,7 +6736,7 @@ class App(QObject):
             return
 
         self.ui.textEdit.append(
-            "Знайдено прилади:"
+            self.tr("ui_devices_found")
         )
 
         # ============================================================
@@ -6711,7 +6829,8 @@ class App(QObject):
                 # к падению всей процедуры поиска.
                 self.ui.textEdit.append(
                     (
-                        "Помилка створення картки "
+                        #"Помилка створення картки "
+                        f"{self.tr("device_error_card_gui")}"
                         f"SN {device.get('serial_number')}: {e}"
                     )
                 )
@@ -6804,7 +6923,7 @@ class App(QObject):
             card.retranslate_ui()
 
             if isinstance(card, DeviceCardBarrel):
-                card.setMinimumSize(950,500)
+                card.setMinimumSize(1000,600)
             else:
                 card.setMinimumSize(0,0)
             # card.setMinimumSize(
@@ -6858,8 +6977,8 @@ class App(QObject):
 
             self.ui.textEdit.append(
                 (
-                    f"Порт: {device.get('port')}, "
-                    f"Адреса: {device.get('address')}, "
+                    f"{self.tr("port")}: {device.get('port')}, "
+                    f"{self.tr("address")}: {device.get('address')}, "
                     f"SN: {device.get('serial_number')}"
                 )
             )
@@ -6898,8 +7017,9 @@ class App(QObject):
 
             self.ui.textEdit.append(
                 (
-                    "Помилка: прилади знайдено, "
-                    "але жодну GUI-картку створити не вдалося."
+                    # "Помилка: прилади знайдено, "
+                    # "але жодну GUI-картку створити не вдалося."
+                    self.tr("ui_device_cards_error")
                 )
             )
 
@@ -6969,8 +7089,9 @@ class App(QObject):
             
             Выводит сообщение в textEdit, чтобы администратор видел проблему.
         """
-        self.ui.textEdit.append(f"Помилка в  {source} : {message}")
-
+        #self.ui.textEdit.append(f"Помилка в  {source} : {message}")
+        if getattr(self.device_manager, "running", False):
+            return
         # Разблокируем кнопку поиска при ошибке        
         self.butt_search_dev.setEnabled(True)
 
@@ -7544,8 +7665,13 @@ class App(QObject):
 
                 if not new_full:
                     card.spectrum_session_started_at = None
+                    card.spectrum_session_start_monotonic = None
+                    card.spectrum_display_timer.stop()
+
                     if card.spectrum_started_label:
                         card.spectrum_started_label.setText("—")
+                    if card.spectrum_ongoing_label:
+                        card.spectrum_ongoing_label.setText("—")
 
                 # ====================================================
                 # 9. СБРАСЫВАЕМ ИСТОРИЮ АЛГОРИТМА
@@ -7670,9 +7796,11 @@ class App(QObject):
 
                     self.ui.textEdit.append(
                         (
-                            f"Цистерна №{posit} заповнена. "
-                            "Спектр, історію та попередні "
-                            "результати ідентифікації скинуто."
+                            # f"Цистерна №{posit} заповнена. "
+                            # "Спектр, історію та попередні "
+                            # "результати ідентифікації скинуто."
+                            f"{self.tr("barrel_name")} №{posit} {self.tr("cistern_full")}. "
+                            f"{self.tr("spectre_reset")}"
                         )
                     )
 
@@ -7680,9 +7808,11 @@ class App(QObject):
 
                     self.ui.textEdit.append(
                         (
-                            f"Цистерна №{posit} спорожнена. "
-                            "Спектр, історію та попередні "
-                            "результати ідентифікації скинуто."
+                            # f"Цистерна №{posit} спорожнена. "
+                            # "Спектр, історію та попередні "
+                            # "результати ідентифікації скинуто."
+                            f"{self.tr("barrel_name")} №{posit} {self.tr("cistern_emptied")}. "
+                            f"{self.tr("spectre_reset")}"
                         )
                     )
 
@@ -7695,7 +7825,7 @@ class App(QObject):
                     event_type = "cistern_filled"
 
                     event_description = (
-                        f"Цистерна ZB{posit} заповнена."
+                        f"{self.tr("cistern_label")} {posit} {self.tr("cistern_full")}."
                     )
 
                 else:
@@ -7703,7 +7833,7 @@ class App(QObject):
                     event_type = "cistern_drained"
 
                     event_description = (
-                        f"Цистерна ZB{posit} спорожнена."
+                        f"{self.tr("cistern_label")}{posit} {self.tr("cistern_emptied")}."
                     )
 
                 # ====================================================
@@ -7726,7 +7856,8 @@ class App(QObject):
 
                     self.ui.textEdit.append(
                         (
-                            "[DB] Помилка збереження системної події "
+                            #"[DB] Помилка збереження системної події "
+                            f"{self.tr("error_system_event_save")}"
                             f"'{event_type}' для ZB{posit}, "
                             f"SN {serial_number}: {event_error}"
                         )
@@ -7740,8 +7871,9 @@ class App(QObject):
 
                 self.ui.textEdit.append(
                     (
-                        "Помилка синхронізації "
-                        f"ZB для SN {serial_number}: {e}"
+                        # "Помилка синхронізації "
+                        # f"ZB для SN {serial_number}: {e}"
+                         f"{self.tr("error_sync_cist")} {serial_number}: {e}"
                     )
                 )
 
@@ -7842,21 +7974,24 @@ class App(QObject):
             try:
 
                 self.ui.textEdit.append(
-                    "[Bridge] Закриття з'єднання з Bridge..."
+                    #"[Bridge] Закриття з'єднання з Bridge..."
+                    self.tr("bridge_connection_closing")
                 )
 
                 self.modbus_client.shutdown()
 
                 self.ui.textEdit.append(
-                    "[Bridge] З'єднання з Bridge закрито"
+                    # "[Bridge] З'єднання з Bridge закрито"
+                    self.tr("bridge_connection_closed")
                 )
 
             except Exception as e:
 
                 self.ui.textEdit.append(
                     (
-                        "[Bridge] Помилка завершення "
-                        f"ModBusBridgeClient: {e}"
+                        # "[Bridge] Помилка завершення "
+                        # f"ModBusBridgeClient: {e}"
+                        f"{self.tr("bridge_closing_error_client")} {e}"
                     )
                 )
 
@@ -7876,8 +8011,9 @@ class App(QObject):
 
             self.ui.textEdit.append(
                 (
-                    "[Bridge] Помилка завершення "
-                    f"ModBusBridgeService: {e}"
+                    # "[Bridge] Помилка завершення "
+                    # f"ModBusBridgeService: {e}"
+                    f"{self.tr("bridge_closing_error_service")} {e}"
                 )
             )
 
@@ -7933,8 +8069,9 @@ class App(QObject):
 
                 self.ui.textEdit.append(
                     (
-                        "Помилка при зупинці "
-                        f"DeviceManager: {e}"
+                        # "Помилка при зупинці "
+                        # f"DeviceManager: {e}"
+                         f"{self.tr("bridge_error_devicemanager_stop")} {e}"
                     )
                 )
 
@@ -7981,9 +8118,10 @@ class App(QObject):
 
                 self.ui.textEdit.append(
                     (
-                        "Попередження: потік DeviceManager "
-                        "не завершився штатно. "
-                        "Виконується аварійна зупинка."
+                        # "Попередження: потік DeviceManager "
+                        # "не завершився штатно. "
+                        # "Виконується аварійна зупинка."
+                        self.tr("bridge_error_devicemanager_thread")
                     )
                 )
 
@@ -8014,15 +8152,16 @@ class App(QObject):
                 db_manager.save_system_event(
                     None,
                     "app_stop",
-                    "Програма зупинена"
+                    self.tr("db_program_stop")
                 )
 
             except Exception as e:
 
                 self.ui.textEdit.append(
                     (
-                        "[DB] Помилка збереження події "
-                        f"app_stop: {e}"
+                        # "[DB] Помилка збереження події "
+                        # f"app_stop: {e}"
+                        f"{self.tr("bridge_error_systemevent_save")} {e}"
                     )
                 )
 
@@ -8056,8 +8195,9 @@ class App(QObject):
                 # Но обязательно фиксируем её для оператора/лога.
                 self.ui.textEdit.append(
                     (
-                        "[DB] Помилка при завершенні "
-                        f"роботи бази даних: {e}"
+                        # "[DB] Помилка при завершенні "
+                        # f"роботи бази даних: {e}"
+                        f"{self.tr("bridge_error_db_save")} {e}"
                     )
                 )
 
@@ -8066,7 +8206,8 @@ class App(QObject):
         # ============================================================
 
         self.ui.textEdit.append(
-            "Програма завершена"
+            # "Програма завершена"
+            self.tr("ui_program_ended")
         )
 
 
@@ -8099,7 +8240,8 @@ class App(QObject):
         if self.device_manager is None:
 
             self.ui.textEdit.append(
-                "Помилка: DeviceManager не створено"
+                #"Помилка: DeviceManager не створено"
+                self.tr("ui_polling_error_1")
             )
 
             return
@@ -8120,7 +8262,8 @@ class App(QObject):
 
             self.ui.textEdit.append(
                 (
-                    "Помилка запуску системи: "
+                    #"Помилка запуску системи: "
+                    f"{self.tr("ui_polling_error_2")}"
                     f"{e}"
                 )
             )
@@ -8134,8 +8277,9 @@ class App(QObject):
         if not invoked:
 
             self.ui.textEdit.append(
-                "Помилка: не вдалося передати команду "
-                "запуску в потік DeviceManager"
+                # "Помилка: не вдалося передати команду "
+                # "запуску в потік DeviceManager"
+                self.tr("ui_polling_error_3")
             )
 
             return
@@ -8157,7 +8301,7 @@ class App(QObject):
             self.butt_system_stop.setEnabled(True)
 
         self.ui.textEdit.append(
-            "Систему запущено"
+            self.tr("ui_system_started")
         )
                    
     def on_device_connection_status(
@@ -8303,8 +8447,9 @@ class App(QObject):
                 serial_number,
                 "connection_restored",
                 (
-                    "Зв'язок з приладом відновлено "
-                    "після підтвердженої втрати зв'язку."
+                    # "Зв'язок з приладом відновлено "
+                    # "після підтвердженої втрати зв'язку."
+                    self.tr("ui_system_event_connection_established")
                 )
             )
 
@@ -8315,8 +8460,9 @@ class App(QObject):
 
             self.ui.textEdit.append(
                 (
-                    "[DB] Помилка збереження системної події "
-                    f"'connection_restored' для SN "
+                    # "[DB] Помилка збереження системної події "
+                    # f"'connection_restored' для SN "
+                    f"{self.tr("ui_system_event_error_saving")}"
                     f"{serial_number}: {e}"
                 )
             )
@@ -8401,8 +8547,9 @@ class App(QObject):
 
             self.ui.textEdit.append(
                 (
-                    "Помилка обробки втрати зв'язку: "
-                    f"картку приладу SN {serial_number} не знайдено."
+                    # "Помилка обробки втрати зв'язку: "
+                    # f"картку приладу SN {serial_number} не знайдено."
+                    f"{self.tr("ui_ondevice_error_1")} {serial_number} {self.tr("not_found")}."
                 )
             )
 
@@ -8434,9 +8581,10 @@ class App(QObject):
 
             self.ui.textEdit.append(
                 (
-                    "Накопичення спектру перервано: "
-                    f"прилад SN {serial_number} "
-                    "не відповів 5 разів поспіль."
+                    # "Накопичення спектру перервано: "
+                    # f"прилад SN {serial_number} "
+                    # "не відповів 5 разів поспіль."
+                    f"{self.tr("ui_ondevice_error_2")} {serial_number} {self.tr("ui_ondevice_error_2_1")}"
                 )
             )
 
@@ -8453,9 +8601,11 @@ class App(QObject):
 
             self.ui.textEdit.append(
                 (
-                    "Помилка передачі стану несправного приладу "
-                    f"SN {serial_number}: "
-                    f"некоректна позиція '{card.posit_number}'."
+                    # "Помилка передачі стану несправного приладу "
+                    # f"SN {serial_number}: "
+                    # f"некоректна позиція '{card.posit_number}'."
+                    f"{self.tr("ui_ondevice_error_3")} {serial_number}: "
+                    f"{self.tr("ui_ondevice_error_3_1")} '{card.posit_number}'."
                 )
             )
 
@@ -8480,9 +8630,11 @@ class App(QObject):
 
                 self.ui.textEdit.append(
                     (
-                        "Помилка передачі стану несправного приладу "
-                        f"SN {serial_number}: "
-                        f"позиція ZB{position} поза діапазоном 1..9."
+                        # "Помилка передачі стану несправного приладу "
+                        # f"SN {serial_number}: "
+                        # f"позиція ZB{position} поза діапазоном 1..9."
+                        f"{self.tr("ui_ondevice_error_4")} {serial_number}: "
+                        f"{self.tr("ui_ondevice_error_4_1")}{position} {self.tr("ui_ondevice_error_4_2")}"
                     )
                 )
 
@@ -8506,10 +8658,12 @@ class App(QObject):
                 # оно уже сохранено в Python-кэше.
                 self.ui.textEdit.append(
                     (
-                        "[ZB] Стан втрати зв'язку збережено локально "
-                        f"для SN {serial_number}, ZB{position}. "
-                        "Передача в PLC буде виконана після "
-                        "відновлення Bridge."
+                        # "[ZB] Стан втрати зв'язку збережено локально "
+                        # f"для SN {serial_number}, ZB{position}. "
+                        # "Передача в PLC буде виконана після "
+                        # "відновлення Bridge."
+                        f"{self.tr("ui_ondevice_error_5")} {serial_number}, ZB{position}. "
+                        f"{self.tr("ui_ondevice_error_5_2")}"
                     )
                 )
 
@@ -8525,9 +8679,11 @@ class App(QObject):
 
                 self.ui.textEdit.append(
                     (
-                        "Помилка передачі стану несправного приладу "
-                        f"SN {serial_number}: "
-                        f"позиція CZ{position} поза діапазоном 1..3."
+                        # "Помилка передачі стану несправного приладу "
+                        # f"SN {serial_number}: "
+                        # f"позиція CZ{position} поза діапазоном 1..3."
+                        f"{self.tr("ui_ondevice_error_4")} {serial_number}: "
+                        f"{self.tr("ui_ondevice_error_4_1_1")}{position} {self.tr("ui_ondevice_error_4_3")}"
                     )
                 )
 
@@ -8544,10 +8700,12 @@ class App(QObject):
 
                 self.ui.textEdit.append(
                     (
-                        "[CZ] Стан втрати зв'язку збережено локально "
-                        f"для SN {serial_number}, CZ{position}. "
-                        "Передача в PLC буде виконана після "
-                        "відновлення Bridge."
+                        # "[CZ] Стан втрати зв'язку збережено локально "
+                        # f"для SN {serial_number}, CZ{position}. "
+                        # "Передача в PLC буде виконана після "
+                        # "відновлення Bridge."
+                        f"{self.tr("ui_ondevice_error_5_1")} {serial_number}, ZB{position}. "
+                        f"{self.tr("ui_ondevice_error_5_2")}"
                     )
                 )
 
@@ -8559,9 +8717,11 @@ class App(QObject):
 
         self.ui.textEdit.append(
             (
-                "Помилка передачі стану несправного приладу "
-                f"SN {serial_number}: "
-                f"невідомий location_type '{card.location_type}'."
+                # "Помилка передачі стану несправного приладу "
+                # f"SN {serial_number}: "
+                # f"невідомий location_type '{card.location_type}'."
+                f"{self.tr("ui_ondevice_error_3")} {serial_number}: "
+                f"{self.tr("ui_ondevice_error_6")} '{card.location_type}'."
             )
         )
 
@@ -8589,103 +8749,129 @@ class App(QObject):
         # 1. ПОЛУЧАЕМ МНОЖЕСТВО ПОДТВЕРЖДЁННО НЕИСПРАВНЫХ ПРИБОРОВ
         # ============================================================
 
-        failed_serials = set(
-            getattr(
-                self,
-                "_confirmed_offline_devices",
-                set()
-            )
-        )
+        # failed_serials = set(
+        #     getattr(
+        #         self,
+        #         "_confirmed_offline_devices",
+        #         set()
+        #     )
+        # )
 
-        # ============================================================
-        # 2. ЗАМЕНА РАЗРЕШЕНА ТОЛЬКО ПОСЛЕ ПОДТВЕРЖДЁННОГО ОТКАЗА
-        # ============================================================
+        # # ============================================================
+        # # 2. ЗАМЕНА РАЗРЕШЕНА ТОЛЬКО ПОСЛЕ ПОДТВЕРЖДЁННОГО ОТКАЗА
+        # # ============================================================
 
         # if not failed_serials:
 
         #     QMessageBox.warning(
         #         self.ui,
-        #         "Замена прибора",
+        #         self.tr("ui_replace_title"),
         #         (
-        #             "Нет приборов, для которых подтверждён отказ связи.\n\n"
-        #             "Замена исправного прибора не разрешена."
+        #             self.tr("ui_replace_not_found")
         #         )
         #     )
 
         #     return
 
-        # ============================================================
-        # 3. ПОЛУЧАЕМ АКТИВНЫЕ ПРИБОРЫ ИЗ БД
-        # ============================================================
+        # # ============================================================
+        # # 3. ПОЛУЧАЕМ АКТИВНЫЕ ПРИБОРЫ ИЗ БД
+        # # ============================================================
 
-        active_devices = (
-            self.db_manager.get_all_active_devices()
-        )
+        # active_devices = (
+        #     self.db_manager.get_all_active_devices()
+        # )
 
-        # ============================================================
-        # 4. ОСТАВЛЯЕМ ТОЛЬКО ПОДТВЕРЖДЁННО НЕИСПРАВНЫЕ
-        # ============================================================
+        # # ============================================================
+        # # 4. ОСТАВЛЯЕМ ТОЛЬКО ПОДТВЕРЖДЁННО НЕИСПРАВНЫЕ
+        # # ============================================================
 
-        failed_devices = []
+        # failed_devices = []
 
-        for device in active_devices:
+        # for device in active_devices:
 
-            serial_number = str(
-                device.get(
-                    "serial_number",
-                    ""
-                )
-            )
+        #     serial_number = str(
+        #         device.get(
+        #             "serial_number",
+        #             ""
+        #         )
+        #     )
 
-            if serial_number in failed_serials:
-                failed_devices.append(
-                    device
-                )
+        #     if serial_number in failed_serials:
+        #         failed_devices.append(
+        #             device
+        #         )
 
-        # ============================================================
-        # 5. ЗАЩИТА ОТ РАССИНХРОНИЗАЦИИ СОСТОЯНИЯ И БД
-        # ============================================================
-
+        # # ============================================================
+        # # 5. ЗАЩИТА ОТ РАССИНХРОНИЗАЦИИ СОСТОЯНИЯ И БД
+        # # ============================================================
+        
+        
         # if not failed_devices:
 
         #     QMessageBox.warning(
         #         self.ui,
-        #         "Замена прибора",
+        #         self.tr("ui_replace_title"),
         #         (
-        #             "Подтверждённо неисправные приборы "
-        #             "не найдены среди активных приборов БД."
+        #             self.tr("ui_replace_not_found_db")
         #         )
         #     )
 
         #     return
 
-        # ============================================================
-        # 6. ПОЛУЧАЕМ НЕАКТИВНЫЕ ПРИБОРЫ
-        # ============================================================
+        # # ============================================================
+        # # 6. ПОЛУЧАЕМ НЕАКТИВНЫЕ ПРИБОРЫ
+        # # ============================================================
 
-        inactive_devices = (
-            self.db_manager.get_inactive_devices()
+        # inactive_devices = (
+        #     self.db_manager.get_inactive_devices()
+        # )
+
+        # # ============================================================
+        # # 7. ОТКРЫВАЕМ ДИАЛОГ
+        # # ============================================================
+        # #
+        # # В active_devices диалога передаём НЕ все активные приборы,
+        # # а только подтверждённо неисправные.
+        # #
+        # # Поэтому combo_old_device физически не сможет предложить
+        # # оператору исправный прибор для замены.
+        # # ============================================================
+
+        # dialog = DeviceReplaceDialog(
+        #     self.db_manager,
+        #     failed_devices,
+        #     inactive_devices,
+        #     parent=self.ui,
+        #     app=self
+        # )
+
+        # dialog.exec()
+        failed_serials = set(
+            getattr(self, "_confirmed_offline_devices", set())
         )
 
-        # ============================================================
-        # 7. ОТКРЫВАЕМ ДИАЛОГ
-        # ============================================================
-        #
-        # В active_devices диалога передаём НЕ все активные приборы,
-        # а только подтверждённо неисправные.
-        #
-        # Поэтому combo_old_device физически не сможет предложить
-        # оператору исправный прибор для замены.
-        # ============================================================
+        active_devices = self.db_manager.get_all_active_devices()
+        failed_devices = [
+            device for device in active_devices
+            if str(device.get("serial_number", "")) in failed_serials
+        ]
+        inactive_devices = self.db_manager.get_inactive_devices()
+
+        if not failed_devices and not inactive_devices:
+            QMessageBox.warning(
+                self.ui,
+                self.tr("ui_replace_title"),
+                self.tr("ui_replace_not_found_db"),
+            )
+            return
 
         dialog = DeviceReplaceDialog(
             self.db_manager,
             failed_devices,
             inactive_devices,
             parent=self.ui,
-            app=self
+            app=self,
         )
-
         dialog.exec()
 
 
@@ -8699,7 +8885,7 @@ class App(QObject):
         self.butt_system_start.setEnabled(False)    
         self.butt_system_stop.setEnabled(False)
 
-        self.ui.textEdit.append("Пошук приладів...")
+        self.ui.textEdit.append(self.tr("ui_search_started"))
         # Запускаем поиск
         self.search_devices.emit()           
 
@@ -12482,7 +12668,8 @@ class App(QObject):
 
         if not isinstance(zb_list, list):
             self.ui.textEdit.append(
-                "[ZB] Помилка: очікується список даних ZB."
+                #"[ZB] Помилка: очікується список даних ZB."
+                self.tr("ui_sendzb_error_1")
             )
             return
 
@@ -12506,7 +12693,8 @@ class App(QObject):
 
             if not isinstance(update, dict):
                 self.ui.textEdit.append(
-                    "[ZB] Помилка: некоректний об'єкт ZB."
+                    #"[ZB] Помилка: некоректний об'єкт ZB."
+                    self.tr("ui_sendzb_error_2")
                 )
                 continue
 
@@ -12516,13 +12704,15 @@ class App(QObject):
                 number = int(number)
             except (TypeError, ValueError):
                 self.ui.textEdit.append(
-                    "[ZB] Помилка: некоректний номер ZB."
+                    #"[ZB] Помилка: некоректний номер ZB."
+                    self.tr("ui_sendzb_error_3")
                 )
                 continue
 
             if not 1 <= number <= 9:
                 self.ui.textEdit.append(
-                    f"[ZB] Помилка: номер ZB{number} поза діапазоном 1..9."
+                    #f"[ZB] Помилка: номер ZB{number} поза діапазоном 1..9."
+                    f"{self.tr("ui_sendzb_error_4")} {number} {self.tr("ui_sendzb_error_4_1")}"
                 )
                 continue
 
@@ -12569,7 +12759,8 @@ class App(QObject):
 
         if not self.is_bridge_connected():
             self.ui.textEdit.append(
-                "[ZB] Bridge не підключений, дані збережено для ресинхронізації"
+                #"[ZB] Bridge не підключений, дані збережено для ресинхронізації"
+                self.tr("ui_sendzb_error_5")
             )
             return
 
@@ -12584,13 +12775,15 @@ class App(QObject):
             ):
 
                 self.ui.textEdit.append(
-                    "[ZB] Помилка при відправці даних"
+                    #"[ZB] Помилка при відправці даних"
+                    self.tr("ui_sendzb_error_6")
                 )
 
         except Exception as e:
 
             self.ui.textEdit.append(
-                f"[ZB] Виняток при відправці: {e}"
+                #f"[ZB] Виняток при відправці: {e}"
+                f"{self.tr("ui_sendzb_error_7")} {e}"
             )
 
 
@@ -12629,7 +12822,8 @@ class App(QObject):
         if not isinstance(cz_list, list):
 
             self.ui.textEdit.append(
-                "[CZ] Помилка: очікується список даних CZ."
+                #"[CZ] Помилка: очікується список даних CZ."
+                self.tr("ui_sendcz_error_1")
             )
 
             return
@@ -12666,7 +12860,8 @@ class App(QObject):
             ):
 
                 self.ui.textEdit.append(
-                    "[CZ] Помилка: некоректний об'єкт CZ."
+                    #"[CZ] Помилка: некоректний об'єкт CZ."
+                    self.tr("ui_sendcz_error_2")
                 )
 
                 continue
@@ -12688,7 +12883,8 @@ class App(QObject):
             except (TypeError, ValueError):
 
                 self.ui.textEdit.append(
-                    "[CZ] Помилка: некоректний номер CZ."
+                    #"[CZ] Помилка: некоректний номер CZ."
+                    self.tr("ui_sendcz_error_3")
                 )
 
                 continue
@@ -12708,9 +12904,10 @@ class App(QObject):
 
                 self.ui.textEdit.append(
                     (
-                        "[CZ] Помилка: "
-                        f"номер CZ{number} "
-                        "поза допустимим діапазоном 1..3."
+                        # "[CZ] Помилка: "
+                        # f"номер CZ{number} "
+                        # "поза допустимим діапазоном 1..3."
+                        f"{self.tr("ui_sendcz_error_4")}{number} {self.tr("ui_sendcz_error_4_1")}"
                     )
                 )
 
@@ -12796,8 +12993,9 @@ class App(QObject):
 
             self.ui.textEdit.append(
                 (
-                    "[CZ] Bridge не підключений, "
-                    "дані збережено для ресинхронізації"
+                    # "[CZ] Bridge не підключений, "
+                    # "дані збережено для ресинхронізації"
+                    self.tr("ui_sendcz_error_5")
                 )
             )
 
@@ -12814,15 +13012,17 @@ class App(QObject):
             ):
 
                 self.ui.textEdit.append(
-                    "[CZ] Помилка при відправці даних"
+                    #"[CZ] Помилка при відправці даних"
+                    self.tr("ui_sendcz_error_6")
                 )
 
         except Exception as e:
 
             self.ui.textEdit.append(
                 (
-                    "[CZ] Виняток при відправці: "
-                    f"{e}"
+                    # "[CZ] Виняток при відправці: "
+                    # f"{e}"
+                    f"{self.tr("ui_sendcz_error_7")} {e}"
                 )
             )
 
@@ -12913,22 +13113,25 @@ class App(QObject):
 
                     self.ui.textEdit.append(
                         (
-                            "[Bridge] Ресинхронізація ZB завершена: "
-                            f"{len(zb_snapshot)} позицій."
+                            # "[Bridge] Ресинхронізація ZB завершена: "
+                            # f"{len(zb_snapshot)} позицій."
+                            f" {self.tr("bridge_resync_zb_complete")} {len(zb_snapshot)} {self.tr("bridge_resync_position")}."
                         )
                     )
 
                 else:
 
                     self.ui.textEdit.append(
-                        "[Bridge] Помилка ресинхронізації ZB."
+                        #"[Bridge] Помилка ресинхронізації ZB."
+                        self.tr("bridge_resync_zb_error")
                     )
 
             except Exception as e:
 
                 self.ui.textEdit.append(
                     (
-                        "[Bridge] Виняток при ресинхронізації ZB: "
+                        #"[Bridge] Виняток при ресинхронізації ZB: "
+                        f"{self.tr("bridge_resync_zb_exception")}"
                         f"{e}"
                     )
                 )
@@ -12947,22 +13150,25 @@ class App(QObject):
 
                     self.ui.textEdit.append(
                         (
-                            "[Bridge] Ресинхронізація CZ завершена: "
-                            f"{len(cz_snapshot)} позицій."
+                            # "[Bridge] Ресинхронізація CZ завершена: "
+                            # f"{len(cz_snapshot)} позицій."
+                            f" {self.tr("bridge_resync_cz_complete")} {len(zb_snapshot)} {self.tr("bridge_resync_position")}."
                         )
                     )
 
                 else:
 
                     self.ui.textEdit.append(
-                        "[Bridge] Помилка ресинхронізації CZ."
+                        #"[Bridge] Помилка ресинхронізації CZ."
+                        self.tr("bridge_resync_cz_error")
                     )
 
             except Exception as e:
 
                 self.ui.textEdit.append(
                     (
-                        "[Bridge] Виняток при ресинхронізації CZ: "
+                        #"[Bridge] Виняток при ресинхронізації CZ: "
+                        f"{self.tr("bridge_resync_cz_exception")}"
                         f"{e}"
                     )
                 )
@@ -13309,8 +13515,9 @@ class App(QObject):
         """
         if not self.is_bridge_connected():
             self.ui.textEdit.append(
-                f"[REPLACEMENT] Bridge не подключен, "
-                f"данные о замене ZB{zb_number}->{new_sn} не отправлены"
+                # f"[REPLACEMENT] Bridge не подключен, "
+                # f"данные о замене ZB{zb_number}->{new_sn} не отправлены"
+                f"{self.tr("bridge_replacement_disconnected")}{zb_number}->{new_sn} {self.tr("bridge_replacement_not_sent")}"
             )
             return
         
@@ -13318,11 +13525,13 @@ class App(QObject):
             success = self.modbus_client.send_replacement(zb_number, new_sn)
             if not success:
                 self.ui.textEdit.append(
-                    f"[REPLACEMENT] Ошибка при отправке замены ZB{zb_number}->{new_sn}"
+                    # f"[REPLACEMENT] Ошибка при отправке замены ZB{zb_number}->{new_sn}"
+                    f"{self.tr("bridge_replacement_error")} {zb_number}->{new_sn}"
                 )
         except Exception as e:
             self.ui.textEdit.append(
-                f"[REPLACEMENT] Исключение при отправке замены ZB{zb_number}->{new_sn}: {e}"
+                # f"[REPLACEMENT] Исключение при отправке замены ZB{zb_number}->{new_sn}: {e}"
+                f"{self.tr("bridge_replacement_exception")}{zb_number}->{new_sn}: {e}"
             )
 
     
@@ -13496,13 +13705,15 @@ def main():
     #         card.plot_concentration_history()
     #         print(f"Concentration history: {card.concentration_history}")
     #         print(f"Position {position}, cycle {cycle}: {history}")
-    # card = DeviceCardBarrel(parent_app=window)
-    # #run_series(1, [r"test_spectra\A_cycle1.txt", r"test_spectra\A_cycle2.txt", r"test_spectra\A_cycle3.txt", r"test_spectra\A_cycle4.txt" ])
-    # run_series(1, card, [r"test_spectra\A_cycle1_alim.txt", r"test_spectra\A_cycle2_alim.txt", r"test_spectra\A_cycle3_alim.txt", r"test_spectra\A_cycle4_alim.txt", r"test_spectra\A_cycle5_alim.txt", r"test_spectra\A_cycle6_alim.txt", r"test_spectra\A_cycle7_alim.txt", r"test_spectra\A_cycle8_alim.txt", r"test_spectra\A_cycle9_alim.txt", r"test_spectra\A_cycle10_alim.txt",
-    #                     r"test_spectra\A_cycle11_alim.txt", r"test_spectra\A_cycle12_alim.txt", r"test_spectra\A_cycle13_alim.txt", r"test_spectra\A_cycle14_alim.txt", r"test_spectra\A_cycle15_alim.txt", r"test_spectra\A_cycle16_alim.txt", r"test_spectra\A_cycle17_alim.txt", r"test_spectra\A_cycle18_alim.txt", r"test_spectra\A_cycle19_alim.txt", r"test_spectra\A_cycle20_alim.txt",
+    #card = DeviceCardBarrel(parent_app=window)
+    #run_series(1, card, [r"test_spectra\A_cycle1.txt", r"test_spectra\A_cycle2.txt", r"test_spectra\A_cycle3.txt", r"test_spectra\A_cycle4.txt" ])
+    #run_series(1, card, [
+                        #r"test_spectra\A_cycle1_alim.txt", r"test_spectra\A_cycle2_alim.txt", r"test_spectra\A_cycle3_alim.txt", r"test_spectra\A_cycle4_alim.txt", r"test_spectra\A_cycle5_alim.txt", r"test_spectra\A_cycle6_alim.txt", r"test_spectra\A_cycle7_alim.txt", r"test_spectra\A_cycle8_alim.txt", r"test_spectra\A_cycle9_alim.txt", r"test_spectra\A_cycle10_alim.txt",
+                        #r"test_spectra\A_cycle11_alim.txt", r"test_spectra\A_cycle12_alim.txt", r"test_spectra\A_cycle13_alim.txt", 
+                        #r"test_spectra\A_cycle14_alim.txt", r"test_spectra\A_cycle15_alim.txt", r"test_spectra\A_cycle16_alim.txt", r"test_spectra\A_cycle17_alim.txt", r"test_spectra\A_cycle18_alim.txt", r"test_spectra\A_cycle19_alim.txt", r"test_spectra\A_cycle20_alim.txt",
     #                     r"test_spectra\A_cycle21_alim.txt", r"test_spectra\A_cycle22_alim.txt", r"test_spectra\A_cycle23_alim.txt", r"test_spectra\A_cycle24_alim.txt", r"test_spectra\A_cycle25_alim.txt", r"test_spectra\A_cycle26_alim.txt", r"test_spectra\A_cycle27_alim.txt", r"test_spectra\A_cycle28_alim.txt", r"test_spectra\A_cycle29_alim.txt", r"test_spectra\A_cycle30_alim.txt",
     #                     r"test_spectra\A_cycle31_alim.txt", r"test_spectra\A_cycle32_alim.txt", r"test_spectra\A_cycle33_alim.txt", r"test_spectra\A_cycle34_alim.txt", r"test_spectra\A_cycle35_alim.txt", r"test_spectra\A_cycle36_alim.txt", r"test_spectra\A_cycle37_alim.txt", r"test_spectra\A_cycle38_alim.txt", r"test_spectra\A_cycle39_alim.txt", r"test_spectra\A_cycle40_alim.txt"
-    #                     ])
+    #                ])
     # run_series(3, card, [r"test_spectra\R_cycle1_alim.txt", r"test_spectra\R_cycle2_alim.txt", r"test_spectra\R_cycle3_alim.txt", r"test_spectra\R_cycle4_alim.txt", r"test_spectra\R_cycle5_alim.txt", r"test_spectra\R_cycle6_alim.txt", r"test_spectra\R_cycle7_alim.txt", r"test_spectra\R_cycle8_alim.txt", r"test_spectra\R_cycle9_alim.txt", r"test_spectra\R_cycle10_alim.txt",
     #                     r"test_spectra\R_cycle11_alim.txt", r"test_spectra\R_cycle12_alim.txt", r"test_spectra\R_cycle13_alim.txt", r"test_spectra\R_cycle14_alim.txt", r"test_spectra\R_cycle15_alim.txt", r"test_spectra\R_cycle16_alim.txt", r"test_spectra\R_cycle17_alim.txt", r"test_spectra\R_cycle18_alim.txt", r"test_spectra\R_cycle19_alim.txt", r"test_spectra\R_cycle20_alim.txt",
     #                     r"test_spectra\R_cycle21_alim.txt", r"test_spectra\R_cycle22_alim.txt", r"test_spectra\R_cycle23_alim.txt", r"test_spectra\R_cycle24_alim.txt", r"test_spectra\R_cycle25_alim.txt", r"test_spectra\R_cycle26_alim.txt", r"test_spectra\R_cycle27_alim.txt", r"test_spectra\R_cycle28_alim.txt", r"test_spectra\R_cycle29_alim.txt", r"test_spectra\R_cycle30_alim.txt",
@@ -13513,7 +13724,7 @@ def main():
     #                     r"test_spectra\R_cycle71_alim.txt", r"test_spectra\R_cycle72_alim.txt", r"test_spectra\R_cycle73_alim.txt", r"test_spectra\R_cycle74_alim.txt", r"test_spectra\R_cycle75_alim.txt", r"test_spectra\R_cycle76_alim.txt", r"test_spectra\R_cycle77_alim.txt", r"test_spectra\R_cycle78_alim.txt", r"test_spectra\R_cycle79_alim.txt", r"test_spectra\R_cycle80_alim.txt",
     #                     r"test_spectra\R_cycle81_alim.txt", r"test_spectra\R_cycle82_alim.txt", r"test_spectra\R_cycle83_alim.txt", r"test_spectra\R_cycle84_alim.txt", r"test_spectra\R_cycle85_alim.txt", r"test_spectra\R_cycle86_alim.txt", r"test_spectra\R_cycle87_alim.txt", r"test_spectra\R_cycle88_alim.txt", r"test_spectra\R_cycle89_alim.txt", r"test_spectra\R_cycle90_alim.txt",
     #                     r"test_spectra\R_cycle91_alim.txt", r"test_spectra\R_cycle92_alim.txt", r"test_spectra\R_cycle93_alim.txt", r"test_spectra\R_cycle94_alim.txt", r"test_spectra\R_cycle95_alim.txt", r"test_spectra\R_cycle96_alim.txt", r"test_spectra\R_cycle97_alim.txt", r"test_spectra\R_cycle98_alim.txt", r"test_spectra\R_cycle99_alim.txt", r"test_spectra\R_cycle100_alim.txt"
-    #                     ])
+    #                    ])
     # run_series(3, card, [r"test_spectra\R_cycle1.txt", r"test_spectra\R_cycle2.txt", r"test_spectra\R_cycle3.txt", r"test_spectra\R_cycle4.txt", r"test_spectra\R_cycle5.txt", r"test_spectra\R_cycle6.txt", r"test_spectra\R_cycle7.txt", r"test_spectra\R_cycle8.txt" ])
     #print(f"Concentration history: {card.concentration_history}")
     # Перед повним завершенням QApplication викликаємо cleanup(),

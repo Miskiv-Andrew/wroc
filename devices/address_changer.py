@@ -16,9 +16,9 @@ class AddressChanger(QObject):
     #     super().__init__()
     #     self.device_manager = DeviceManager()
 
-    def __init__(self, db_manager):
+    def __init__(self, db_manager, translate):
         super().__init__()
-        self.device_manager = DeviceManager(db_manager)
+        self.device_manager = DeviceManager(db_manager, translate)
     
     def find_new_device(self, addresses=[200, 201], timeout=0.5):
         available_ports = self._get_available_ports()
@@ -35,12 +35,30 @@ class AddressChanger(QObject):
                         ser.write(packet)
                         time.sleep(timeout)
                         
-                        response = ser.read(COMMAND_SER_NUM.length)
-                        if len(response) != COMMAND_SER_NUM.length:
+                        #response = ser.read(COMMAND_SER_NUM.length)
+                        response = self.device_manager.try_request(
+                            ser=ser,
+                            package=COMMAND_SER_NUM.data,
+                            addr=addr,
+                            pause=timeout,
+                            expected_length=COMMAND_SER_NUM.length,
+                        )
+
+                        # crc_ok = (
+                        #     #len(response) == COMMAND_SER_NUM.length
+                        #     #self.device_manager.verify_crc(bytearray(response))
+                        # )
+                        # print(
+                        #     f"port={port_name}, address={addr}, "
+                        #     f"bytes={len(response)}, response={response.hex(' ')}, crc_ok={crc_ok}"
+                        # )
+                        # if len(response) != COMMAND_SER_NUM.length:
+                        #     continue
+                        if response is None:
                             continue
                         
-                        if not self.device_manager.verify_crc(bytearray(response)):
-                            continue
+                        # if not self.device_manager.verify_crc(bytearray(response)):
+                        #     continue
                         
                         serial_number = self._extract_serial_number(response)
                         
@@ -50,6 +68,7 @@ class AddressChanger(QObject):
                             return (port_name, serial_number, addr)
                             
                 except serial.SerialException as e:
+                    print(f"port={port_name}, serial error={e}")
                     self.error.emit(f"Помилка порту {port_name}: {e}")
                     continue
         
@@ -57,61 +76,141 @@ class AddressChanger(QObject):
         return (None, None, None)
     
    
-    def change_address(self, port, old_address, new_address, expected_sn, timeout=1.0, retries=3):
-        for attempt in range(retries):
-            self.status.emit(f"[Спроба {attempt+1}/{retries}] Початок зміни адреси {old_address} -> {new_address}")
+    # def change_address(self, port, old_address, new_address, expected_sn, timeout=1.0, retries=3):
+    #     for attempt in range(retries):
+    #         self.status.emit(f"[Спроба {attempt+1}/{retries}] Початок зміни адреси {old_address} -> {new_address}")
             
-            try:
-                self.status.emit(f"[Спроба {attempt+1}] Відкриття порту {port}")
-                with serial.Serial(port, baudrate=19200, timeout=timeout) as ser:
+    #         try:
+    #             self.status.emit(f"[Спроба {attempt+1}] Відкриття порту {port}")
+    #             with serial.Serial(port, baudrate=19200, timeout=timeout) as ser:
                     
-                    # Формуємо команду
-                    cmd = bytearray(COMMAND_CHANGE_ADDRESS.data)
-                    cmd[3] = old_address
-                    cmd[5] = new_address
-                    self.status.emit(f"[Спроба {attempt+1}] Сформовано команду: {cmd.hex()}")
+    #                 # Формуємо команду
+    #                 cmd = bytearray(COMMAND_CHANGE_ADDRESS.data)
+    #                 cmd[3] = old_address
+    #                 cmd[5] = new_address
+    #                 self.status.emit(f"[Спроба {attempt+1}] Сформовано команду: {cmd.hex()}")
                     
-                    # Розрахунок CRC
-                    crc = self.device_manager.calc_crc(cmd)
-                    cmd.append(crc)
-                    self.status.emit(f"[Спроба {attempt+1}] Команда з CRC: {cmd.hex()}")
+    #                 # Розрахунок CRC
+    #                 crc = self.device_manager.calc_crc(cmd)
+    #                 cmd.append(crc)
+    #                 self.status.emit(f"[Спроба {attempt+1}] Команда з CRC: {cmd.hex()}")
                     
-                    # Відправка
-                    ser.write(cmd)
-                    self.status.emit(f"[Спроба {attempt+1}] Команду відправлено, очікування {timeout} сек")
-                    time.sleep(timeout)
+    #                 # Відправка
+    #                 ser.write(cmd)
+    #                 self.status.emit(f"[Спроба {attempt+1}] Команду відправлено, очікування {timeout} сек")
+    #                 time.sleep(timeout)
                     
-                    # Читання відповіді
-                    response = ser.read(COMMAND_CHANGE_ADDRESS.length)
-                    self.status.emit(f"[Спроба {attempt+1}] Отримано відповідь: {len(response)} байт, hex: {response.hex()}")
+    #                 # Читання відповіді
+    #                 response = ser.read(COMMAND_CHANGE_ADDRESS.length)
+    #                 self.status.emit(f"[Спроба {attempt+1}] Отримано відповідь: {len(response)} байт, hex: {response.hex()}")
                     
-                    if len(response) != COMMAND_CHANGE_ADDRESS.length:
-                        self.status.emit(f"[Спроба {attempt+1}] Неправильна довжина відповіді: очікувалось {COMMAND_CHANGE_ADDRESS.length}, отримано {len(response)}")
-                        continue
+    #                 if len(response) != COMMAND_CHANGE_ADDRESS.length:
+    #                     self.status.emit(f"[Спроба {attempt+1}] Неправильна довжина відповіді: очікувалось {COMMAND_CHANGE_ADDRESS.length}, отримано {len(response)}")
+    #                     continue
                     
-                    # Перевірка CRC
-                    if not self.device_manager.verify_crc(bytearray(response)):
-                        self.status.emit(f"[Спроба {attempt+1}] Помилка CRC")
-                        continue
-                    self.status.emit(f"[Спроба {attempt+1}] CRC пройдено")
+    #                 # Перевірка CRC
+    #                 if not self.device_manager.verify_crc(bytearray(response)):
+    #                     self.status.emit(f"[Спроба {attempt+1}] Помилка CRC")
+    #                     continue
+    #                 self.status.emit(f"[Спроба {attempt+1}] CRC пройдено")
                     
-                    # Перевірка адреси у відповіді
-                    self.status.emit(f"[Спроба {attempt+1}] response[3] = {response[3]}, очікувалось {old_address}")
-                    if response[3] != old_address:
-                        self.status.emit(f"[Спроба {attempt+1}] Неправильна адреса у відповіді")
-                        continue
+    #                 # Перевірка адреси у відповіді
+    #                 self.status.emit(f"[Спроба {attempt+1}] response[3] = {response[3]}, очікувалось {old_address}")
+    #                 if response[3] != old_address:
+    #                     self.status.emit(f"[Спроба {attempt+1}] Неправильна адреса у відповіді")
+    #                     continue
                     
-                    self.status.emit(f"[Спроба {attempt+1}] УСПІХ: адресу приладу {expected_sn} змінено з {old_address} на {new_address}")
-                    return True
+    #                 self.status.emit(f"[Спроба {attempt+1}] УСПІХ: адресу приладу {expected_sn} змінено з {old_address} на {new_address}")
+    #                 return True
                     
-            except serial.SerialException as e:
-                self.status.emit(f"[Спроба {attempt+1}] Помилка порту: {e}")
-                continue
-            except Exception as e:
-                self.status.emit(f"[Спроба {attempt+1}] Непередбачена помилка: {e}")
-                continue
+    #         except serial.SerialException as e:
+    #             self.status.emit(f"[Спроба {attempt+1}] Помилка порту: {e}")
+    #             continue
+    #         except Exception as e:
+    #             self.status.emit(f"[Спроба {attempt+1}] Непередбачена помилка: {e}")
+    #             continue
         
-        self.status.emit(f"НЕВДАЧА: не вдалося змінити адресу після {retries} спроб")
+    #     self.status.emit(f"НЕВДАЧА: не вдалося змінити адресу після {retries} спроб")
+    #     return False
+    def change_address(self, port, old_address, new_address, expected_sn, timeout=1.0, retries=3):
+        expected_sn = str(expected_sn).strip()
+
+        def read_serial_number(ser, address):
+            response = self.device_manager.try_request(
+                ser=ser,
+                package=COMMAND_SER_NUM.data,
+                addr=address,
+                pause=timeout,
+                expected_length=COMMAND_SER_NUM.length,
+            )
+            if response is None:
+                return None
+            return self._extract_serial_number(response)
+
+        try:
+            with serial.Serial(port, baudrate=19200, timeout=timeout) as ser:
+                # The command may have succeeded previously even if its ACK was rejected.
+                target_sn = read_serial_number(ser, new_address)
+                if target_sn == expected_sn:
+                    self.status.emit(
+                        f"Verified SN {expected_sn} already at address {new_address}"
+                    )
+                    return True
+
+                if target_sn is not None:
+                    self.status.emit(
+                        f"Address {new_address} belongs to unexpected SN {target_sn}"
+                    )
+                    return False
+
+                current_sn = read_serial_number(ser, old_address)
+                if current_sn != expected_sn:
+                    self.status.emit(
+                        f"Expected SN {expected_sn} at address {old_address}; "
+                        f"received {current_sn}"
+                    )
+                    return False
+
+                cmd = bytearray(COMMAND_CHANGE_ADDRESS.data)
+                cmd[3] = old_address
+                cmd[5] = new_address
+                cmd.append(self.device_manager.calc_crc(cmd))
+
+                ser.reset_input_buffer()
+                written = ser.write(cmd)
+                if written != len(cmd):
+                    self.status.emit(
+                        f"Incomplete command write: {written}/{len(cmd)} bytes"
+                    )
+                    return False
+
+                self.status.emit(
+                    f"Sent address-change command {old_address} -> {new_address}; "
+                    "verifying new address"
+                )
+
+                # Do not resend the change command: it may have succeeded without
+                # a readable acknowledgment. Retry only the harmless serial query.
+                for attempt in range(1, max(1, retries) + 1):
+                    time.sleep(timeout)
+                    found_sn = read_serial_number(ser, new_address)
+
+                    if found_sn == expected_sn:
+                        self.status.emit(
+                            f"Verified SN {expected_sn} at address {new_address}"
+                        )
+                        return True
+
+                    self.status.emit(
+                        f"Verification {attempt}/{retries}: "
+                        f"address {new_address} returned {found_sn}"
+                    )
+
+        except serial.SerialException as error:
+            self.status.emit(f"Serial port error on {port}: {error}")
+        except Exception as error:
+            self.status.emit(f"Unexpected address-change error: {error}")
+
         return False
     
     def _get_available_ports(self):

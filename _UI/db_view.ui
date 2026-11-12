@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1094</width>
-    <height>737</height>
+    <width>1072</width>
+    <height>724</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -52,6 +52,9 @@
             <widget class="QLabel" name="label_date_to_paed">
              <property name="text">
               <string>Дата до:</string>
+             </property>
+             <property name="alignment">
+              <set>Qt::AlignmentFlag::AlignRight|Qt::AlignmentFlag::AlignTrailing|Qt::AlignmentFlag::AlignVCenter</set>
              </property>
             </widget>
            </item>
@@ -102,6 +105,9 @@
             <widget class="QLabel" name="label_device_paed">
              <property name="text">
               <string>Прилад:</string>
+             </property>
+             <property name="alignment">
+              <set>Qt::AlignmentFlag::AlignRight|Qt::AlignmentFlag::AlignTrailing|Qt::AlignmentFlag::AlignVCenter</set>
              </property>
             </widget>
            </item>
@@ -232,28 +238,6 @@
                <property name="bottomMargin">
                 <number>2</number>
                </property>
-               <item>
-                <widget class="QLabel" name="label_plot_placeholder_paed">
-                 <property name="sizePolicy">
-                  <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
-                   <horstretch>0</horstretch>
-                   <verstretch>0</verstretch>
-                  </sizepolicy>
-                 </property>
-                 <property name="frameShape">
-                  <enum>QFrame::Shape::Box</enum>
-                 </property>
-                 <property name="frameShadow">
-                  <enum>QFrame::Shadow::Sunken</enum>
-                 </property>
-                 <property name="text">
-                  <string>Тут буде графік ПАЕД</string>
-                 </property>
-                 <property name="alignment">
-                  <set>Qt::AlignmentFlag::AlignCenter</set>
-                 </property>
-                </widget>
-               </item>
               </layout>
              </widget>
             </item>
@@ -344,61 +328,8 @@
              </property>
             </spacer>
            </item>
-           <item row="0" column="1">
-            <widget class="QDateTimeEdit" name="dateFrom_activity">
-             <property name="displayFormat">
-              <string>dd.MM.yyyy HH:mm</string>
-             </property>
-             <property name="calendarPopup">
-              <bool>true</bool>
-             </property>
-            </widget>
-           </item>
-           <item row="2" column="4">
-            <spacer name="horizontalSpacer_group_activity_2">
-             <property name="orientation">
-              <enum>Qt::Orientation::Horizontal</enum>
-             </property>
-             <property name="sizeHint" stdset="0">
-              <size>
-               <width>40</width>
-               <height>20</height>
-              </size>
-             </property>
-            </spacer>
-           </item>
-           <item row="2" column="5">
-            <spacer name="horizontalSpacer_group_activity_3">
-             <property name="orientation">
-              <enum>Qt::Orientation::Horizontal</enum>
-             </property>
-             <property name="sizeHint" stdset="0">
-              <size>
-               <width>40</width>
-               <height>20</height>
-              </size>
-             </property>
-            </spacer>
-           </item>
            <item row="1" column="1" colspan="2">
             <widget class="QComboBox" name="combo_device_activity"/>
-           </item>
-           <item row="0" column="4">
-            <widget class="QDateTimeEdit" name="dateTo_activity">
-             <property name="displayFormat">
-              <string>dd.MM.yyyy HH:mm</string>
-             </property>
-             <property name="calendarPopup">
-              <bool>true</bool>
-             </property>
-            </widget>
-           </item>
-           <item row="0" column="5">
-            <widget class="QPushButton" name="btn_all_period_activity">
-             <property name="text">
-              <string>За весь період</string>
-             </property>
-            </widget>
            </item>
            <item row="2" column="0">
             <widget class="QLabel" name="label_group_activity">
@@ -411,6 +342,80 @@
             <widget class="QLabel" name="label_device_activity">
              <property name="text">
               <string>Цистерна (прилад):</string>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="7">
+            <widget class="QPushButton" name="btn_all_period_activity">
+             <property name="text">
+              <string>За весь період</string>
+             </property>
+            </widget>
+           </item>
+           <item row="2" column="4">
+            <widget class="QComboBox" name="combo_activity_metric"/>
+           </item>
+           <item row="2" column="3">
+            <widget class="QLabel" name="activityGraphLabel">
+             <property name="text">
+              <string>TextLabel</string>
+             </property>
+            </widget>
+           </item>
+           <item row="2" column="7">
+            <spacer name="horizontalSpacer_group_activity_3">
+             <property name="orientation">
+              <enum>Qt::Orientation::Horizontal</enum>
+             </property>
+             <property name="sizeHint" stdset="0">
+              <size>
+               <width>40</width>
+               <height>20</height>
+              </size>
+             </property>
+            </spacer>
+           </item>
+           <item row="1" column="7">
+            <widget class="QPushButton" name="btn_apply_activity">
+             <property name="text">
+              <string>Показати</string>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="0">
+            <widget class="QLabel" name="label_date_from_activity">
+             <property name="text">
+              <string>Дата від:</string>
+             </property>
+            </widget>
+           </item>
+           <item row="2" column="6">
+            <spacer name="horizontalSpacer_group_activity_2">
+             <property name="orientation">
+              <enum>Qt::Orientation::Horizontal</enum>
+             </property>
+             <property name="sizeHint" stdset="0">
+              <size>
+               <width>40</width>
+               <height>20</height>
+              </size>
+             </property>
+            </spacer>
+           </item>
+           <item row="0" column="1">
+            <widget class="QDateTimeEdit" name="dateFrom_activity">
+             <property name="displayFormat">
+              <string>dd.MM.yyyy HH:mm</string>
+             </property>
+             <property name="calendarPopup">
+              <bool>true</bool>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="4">
+            <widget class="QLabel" name="label_date_to_activity">
+             <property name="text">
+              <string>Дата до:</string>
              </property>
             </widget>
            </item>
@@ -438,29 +443,22 @@
              </item>
             </widget>
            </item>
-           <item row="1" column="5">
-            <widget class="QPushButton" name="btn_apply_activity">
+           <item row="2" column="5">
+            <widget class="QCheckBox" name="activity_log_checkbox">
              <property name="text">
-              <string>Показати</string>
+              <string>CheckBox</string>
              </property>
             </widget>
            </item>
-           <item row="0" column="0">
-            <widget class="QLabel" name="label_date_from_activity">
-             <property name="text">
-              <string>Дата від:</string>
+           <item row="0" column="5">
+            <widget class="QDateTimeEdit" name="dateTo_activity">
+             <property name="displayFormat">
+              <string>dd.MM.yyyy HH:mm</string>
+             </property>
+             <property name="calendarPopup">
+              <bool>true</bool>
              </property>
             </widget>
-           </item>
-           <item row="0" column="2">
-            <widget class="QLabel" name="label_date_to_activity">
-             <property name="text">
-              <string>Дата до:</string>
-             </property>
-            </widget>
-           </item>
-           <item row="2" column="3">
-            <widget class="QComboBox" name="combo_activity_metric"/>
            </item>
           </layout>
          </widget>
@@ -505,28 +503,6 @@
                <property name="bottomMargin">
                 <number>2</number>
                </property>
-               <item>
-                <widget class="QLabel" name="label_plot_placeholder_activity">
-                 <property name="sizePolicy">
-                  <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
-                   <horstretch>0</horstretch>
-                   <verstretch>0</verstretch>
-                  </sizepolicy>
-                 </property>
-                 <property name="frameShape">
-                  <enum>QFrame::Shape::Box</enum>
-                 </property>
-                 <property name="frameShadow">
-                  <enum>QFrame::Shadow::Sunken</enum>
-                 </property>
-                 <property name="text">
-                  <string>Тут буде графік Активності</string>
-                 </property>
-                 <property name="alignment">
-                  <set>Qt::AlignmentFlag::AlignCenter</set>
-                 </property>
-                </widget>
-               </item>
               </layout>
              </widget>
             </item>

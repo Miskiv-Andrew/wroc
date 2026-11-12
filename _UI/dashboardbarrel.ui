@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>973</width>
-    <height>462</height>
+    <width>1000</width>
+    <height>500</height>
    </rect>
   </property>
   <property name="sizePolicy">
@@ -74,7 +74,7 @@ background-color: rgb(248, 248, 249);
      <property name="frameShadow">
       <enum>QFrame::Shadow::Raised</enum>
      </property>
-     <layout class="QGridLayout" name="gridLayout_3" rowstretch="1,2,3,1,1">
+     <layout class="QGridLayout" name="gridLayout_3" rowstretch="1,2,5,1,1">
       <property name="leftMargin">
        <number>5</number>
       </property>
@@ -106,40 +106,19 @@ border-radius: 8px
         </property>
         <layout class="QHBoxLayout" name="horizontalLayout_15">
          <property name="leftMargin">
-          <number>5</number>
+          <number>3</number>
          </property>
          <property name="topMargin">
-          <number>5</number>
+          <number>1</number>
          </property>
          <property name="rightMargin">
-          <number>5</number>
+          <number>3</number>
          </property>
          <property name="bottomMargin">
-          <number>5</number>
+          <number>1</number>
          </property>
          <item>
           <layout class="QHBoxLayout" name="horizontalLayout_14">
-           <item>
-            <widget class="QWidget" name="widgetTotalActivity" native="true">
-             <layout class="QHBoxLayout" name="horizontalLayout_17">
-              <property name="leftMargin">
-               <number>5</number>
-              </property>
-              <property name="topMargin">
-               <number>5</number>
-              </property>
-              <property name="rightMargin">
-               <number>5</number>
-              </property>
-              <property name="bottomMargin">
-               <number>5</number>
-              </property>
-              <item>
-               <layout class="QHBoxLayout" name="horizontalLayout_16"/>
-              </item>
-             </layout>
-            </widget>
-           </item>
            <item>
             <widget class="QWidget" name="widget" native="true">
              <layout class="QVBoxLayout" name="verticalLayout_22">
@@ -212,7 +191,7 @@ border-radius: 8px
                           <string notr="true">font: 600 9pt &quot;Segoe UI&quot;;</string>
                          </property>
                          <property name="text">
-                          <string>Пройдений час 1 циклу вимірювання:</string>
+                          <string>Пройдений час вимірювання:</string>
                          </property>
                          <property name="alignment">
                           <set>Qt::AlignmentFlag::AlignCenter</set>
@@ -641,17 +620,12 @@ border: 1px solid #bbb;
              </column>
              <column>
               <property name="text">
-               <string>Концентрація (Бк/л)</string>
+               <string>Питома активність (Бк/кг)</string>
               </property>
              </column>
              <column>
               <property name="text">
                <string>Активність (Бк)</string>
-              </property>
-             </column>
-             <column>
-              <property name="text">
-               <string>Статус</string>
               </property>
              </column>
             </widget>
@@ -677,16 +651,16 @@ border-radius: 8px
         </property>
         <layout class="QHBoxLayout" name="horizontalLayout_5">
          <property name="leftMargin">
-          <number>5</number>
+          <number>3</number>
          </property>
          <property name="topMargin">
-          <number>5</number>
+          <number>3</number>
          </property>
          <property name="rightMargin">
-          <number>5</number>
+          <number>3</number>
          </property>
          <property name="bottomMargin">
-          <number>5</number>
+          <number>3</number>
          </property>
          <item>
           <layout class="QHBoxLayout" name="horizontalLayout_2">
@@ -867,16 +841,16 @@ border-radius: 8px
         </property>
         <layout class="QHBoxLayout" name="horizontalLayout_4">
          <property name="leftMargin">
-          <number>5</number>
+          <number>3</number>
          </property>
          <property name="topMargin">
-          <number>5</number>
+          <number>3</number>
          </property>
          <property name="rightMargin">
-          <number>5</number>
+          <number>3</number>
          </property>
          <property name="bottomMargin">
-          <number>5</number>
+          <number>3</number>
          </property>
          <item>
           <layout class="QHBoxLayout" name="horizontalLayout_3">

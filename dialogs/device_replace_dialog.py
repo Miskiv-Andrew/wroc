@@ -22,7 +22,7 @@ class DeviceReplaceDialog(QDialog):
         self.inactive_devices = inactive_devices  # для активации
         self.app = app                            # ссылка на App для отправки в Bridge
         self.new_device_info = None               # (port, serial_number, address)
-        self.address_changer = AddressChanger(db_manager)
+        self.address_changer = AddressChanger(db_manager, self.tr)
 
         
         # Загружаем UI
@@ -126,7 +126,7 @@ class DeviceReplaceDialog(QDialog):
     def find_new_device(self):
         """Пошук нового приладу на адресах 200-201"""
         self.ui.btn_find_new.setEnabled(False)
-        self.ui.label_status.setText("Пошук нового приладу...")
+        self.ui.label_status.setText(self.tr("replace_searching"))
         self.ui.label_status.setStyleSheet("background-color: #fff3cd; color: #856404;")
         
         # Запускаємо пошук (синхронно, але з обробкою сигналів)
@@ -139,12 +139,12 @@ class DeviceReplaceDialog(QDialog):
             self.new_device_info = (port, sn, addr)
             self.ui.edit_new_sn.setText(sn)
             self.ui.btn_replace.setEnabled(True)
-            self.ui.label_status.setText("Новий прилад знайдено. Натисніть 'Виконати заміну'")
+            self.ui.label_status.setText(self.tr("replace_searching_found"))
             self.ui.label_status.setStyleSheet("background-color: #d4edda; color: #155724;")
         else:
             self.new_device_info = None
             self.ui.btn_replace.setEnabled(False)
-            self.ui.label_status.setText("Новий прилад не знайдено. Перевірте підключення.")
+            self.ui.label_status.setText(self.tr("replace_searching_not_found"))
             self.ui.label_status.setStyleSheet("background-color: #f8d7da; color: #721c24;")
         
         self.ui.btn_find_new.setEnabled(True)
@@ -176,8 +176,8 @@ class DeviceReplaceDialog(QDialog):
         if not old_sn:
             QMessageBox.warning(
                 self,
-                "Ошибка",
-                "Не выбран старый прибор"
+                self.tr("error"),
+                self.tr("replace_old_not_chosen")
             )
             return
 
@@ -195,8 +195,8 @@ class DeviceReplaceDialog(QDialog):
         if not old_device:
             QMessageBox.warning(
                 self,
-                "Ошибка",
-                "Старый прибор не найден в конфигурации"
+                self.tr("error"),
+                self.tr("replace_old_not_found")
             )
             return
 
@@ -207,8 +207,8 @@ class DeviceReplaceDialog(QDialog):
         if not self.new_device_info:
             QMessageBox.warning(
                 self,
-                "Ошибка",
-                "Не найден новый прибор"
+                self.tr("error"),
+                self.tr("replace_not_found")
             )
             return
 
@@ -221,15 +221,14 @@ class DeviceReplaceDialog(QDialog):
         if old_sn == new_sn:
             QMessageBox.warning(
                 self,
-                "Ошибка",
+                self.tr("error"),
                 (
-                    "Старый и новый приборы имеют одинаковый "
-                    "серийный номер. Замена невозможна."
+                    self.tr("replace_identical_sn")
                 )
             )
 
             self.ui.label_status.setText(
-                "Ошибка: одинаковые SN"
+                self.tr("replace_identical_error")
             )
 
             self.ui.btn_replace.setEnabled(True)
@@ -247,10 +246,11 @@ class DeviceReplaceDialog(QDialog):
         if target_address is None:
             QMessageBox.warning(
                 self,
-                "Ошибка",
+                self.tr("error"),
                 (
-                    f"Не удалось найти адрес для "
-                    f"{old_sn} в config.txt"
+                    # f"Не удалось найти адрес для "
+                    # f"{old_sn} в config.txt"
+                    f"{self.tr("replace_not_found_config_1")} {old_sn} {self.tr("replace_not_found_config_2")}"
                 )
             )
             return
@@ -262,7 +262,7 @@ class DeviceReplaceDialog(QDialog):
         self.ui.btn_replace.setEnabled(False)
 
         self.ui.label_status.setText(
-            "Изменение адреса прибора..."
+            self.tr("replace_changing")
         )
 
         self.ui.label_status.setStyleSheet(
@@ -271,10 +271,10 @@ class DeviceReplaceDialog(QDialog):
 
         QMessageBox.information(
             self,
-            "Внимание",
+            self.tr("warning"),
             (
-                f"Будет изменен адрес прибора {new_sn} "
-                f"с {old_addr} на {target_address}"
+                f"{self.tr("replace_pending")} {new_sn} ,"
+                f"{old_addr} - {target_address}"
             )
         )
 
@@ -287,7 +287,7 @@ class DeviceReplaceDialog(QDialog):
 
         if not success:
             self.ui.label_status.setText(
-                "Ошибка при изменении адреса. Попробуйте еще раз."
+                self.tr("replace_error")
             )
 
             self.ui.label_status.setStyleSheet(
@@ -347,7 +347,7 @@ class DeviceReplaceDialog(QDialog):
             # ========================================================
 
             self.ui.label_status.setText(
-                "Замена выполнена. Необходимо перезапустить программу."
+                self.tr("replace_success")
             )
 
             self.ui.label_status.setStyleSheet(
@@ -359,19 +359,24 @@ class DeviceReplaceDialog(QDialog):
 
             QMessageBox.information(
                 self,
-                "Успех",
+                self.tr("replace_success_title"),
                 (
-                    f"Замена прибора выполнена успешно.\n"
-                    f"Старый SN: {old_sn}\n"
-                    f"Новый SN: {new_sn}\n\n"
-                    f"Необходимо перезапустить программу."
+                    # f"Замена прибора выполнена успешно.\n"
+                    # f"Старый SN: {old_sn}\n"
+                    # f"Новый SN: {new_sn}\n\n"
+                    # f"Необходимо перезапустить программу."
+                    f"{self.tr("replace_success_1")}\n"
+                    f"{self.tr("replace_success_2")} {old_sn}\n"
+                    f"{self.tr("replace_success_3")} {new_sn}\n\n"
+                    f"{self.tr("replace_success_4")}"
                 )
             )
 
         except Exception as e:
 
             self.ui.label_status.setText(
-                f"Ошибка при обновлении конфигурации: {e}"
+                #f"Ошибка при обновлении конфигурации: {e}"
+                f"{self.tr("replace_error_config")} {e}"
             )
 
             self.ui.label_status.setStyleSheet(
@@ -646,9 +651,9 @@ class DeviceReplaceDialog(QDialog):
             new_device_id,
             "device_replaced",
             (
-                f"Заміна приладу: "
+                f"{self.tr("replace_title")} "
                 f"{old_sn} -> {new_sn}, "
-                f"позиція {old_device['position_number']}"
+                f"{self.tr("position")} {old_device['position_number']}"
             )
         )
 
@@ -665,23 +670,70 @@ class DeviceReplaceDialog(QDialog):
     def on_device_found(self, port, sn, addr):
         pass  # оброблено в find_new_device
 
+    # def activate_device(self):
+    #     """Активує вибраний неактивний прилад"""
+    #     sn = self.ui.combo_inactive_device.currentData()
+    #     if not sn:
+    #         QMessageBox.warning(self, self.tr("error"), self.tr("activate_choose"))
+    #         return
+        
+    #     # reply = QMessageBox.question(self, self.tr("confirmation"), 
+    #     #                             f"{self.tr("activate_device")} {sn}?",
+    #     #                             QMessageBox.Yes | QMessageBox.No)
+    #     msg_box = QMessageBox(self)
+    #     msg_box.setWindowTitle(self.tr("confirmation"))
+    #     msg_box.setText(f"{self.tr('activate_device')} {sn}?")
+    #     msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+
+    #     msg_box.button(QMessageBox.Yes).setText(self.tr("yes"))
+    #     msg_box.button(QMessageBox.No).setText(self.tr("no"))
+
+    #     reply = msg_box.exec()
+        
+    #     if reply != QMessageBox.Yes:
+    #         return
+        
+    #     self.db_manager.activate_device(sn)
+    #     self.db_manager.reload_devices_map()
+        
+    #     self.db_manager.save_system_event(None, "device_activated", f"{self.tr("device_paed")} {sn} {self.tr("activated")}")
+        
+    #     QMessageBox.information(self, self.tr("replace_success_title"), f"{self.tr("device_paed")} {sn} {self.tr("activated")}. {self.tr("need_reboot")}")
+    #     self.ui.label_status.setText(self.tr("activate_success"))
+    
     def activate_device(self):
-        """Активує вибраний неактивний прилад"""
         sn = self.ui.combo_inactive_device.currentData()
         if not sn:
-            QMessageBox.warning(self, "Помилка", "Не вибрано прилад для активації")
+            QMessageBox.warning(self, self.tr("error"), self.tr("activate_choose"))
             return
-        
-        reply = QMessageBox.question(self, "Підтвердження", 
-                                    f"Активувати прилад {sn}?",
-                                    QMessageBox.Yes | QMessageBox.No)
-        if reply != QMessageBox.Yes:
+
+        answer = QMessageBox.question(
+            self,
+            self.tr("confirmation"),
+            f"{self.tr('activate_device')} {sn}?",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        if answer != QMessageBox.Yes:
             return
-        
-        self.db_manager.activate_device(sn)
-        self.db_manager.reload_devices_map()
-        
-        self.db_manager.save_system_event(None, "device_activated", f"Прилад {sn} активовано")
-        
-        QMessageBox.information(self, "Успіх", f"Прилад {sn} активовано. Необхідно перезапустити програму.")
-        self.ui.label_status.setText("Прилад активовано. Перезапустіть програму.")
+
+        try:
+            # This manager method should update config.txt, hash.txt,
+            # and the database, then refresh its active-device map.
+            self.db_manager.activate_device(sn)
+
+            self.db_manager.save_system_event(
+                None,
+                "device_activated",
+                f"{self.tr('device_paed')} {sn} {self.tr('activated')}"
+            )
+        except Exception as e:
+            QMessageBox.warning(self, self.tr("error"), str(e))
+            return
+
+        QMessageBox.information(
+            self,
+            self.tr("replace_success_title"),
+            f"{self.tr('device_paed')} {sn} {self.tr('activated')}. "
+            f"{self.tr('need_reboot')}"
+        )
+        self.ui.label_status.setText(self.tr("activate_success"))

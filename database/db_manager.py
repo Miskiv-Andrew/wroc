@@ -1789,15 +1789,118 @@ class DatabaseManager:
         return [dict(row) for row in rows]
         
 
+    # def activate_device(self, serial_number: str):
+    #     """
+    #         Активує прилад (безпечний для різних потоків)
+    #     """
+    #     conn = sqlite3.connect(self.db_path)
+    #     cursor = conn.cursor()
+    #     cursor.execute("UPDATE devices SET is_active = 1 WHERE serial_number = ?", (serial_number,))
+    #     conn.commit()
+    #     conn.close()  
+
     def activate_device(self, serial_number: str):
-        """
-            Активує прилад (безпечний для різних потоків)
-        """
+        config_path = os.path.join("config", "config.txt")
+        hash_path = os.path.join("config", "hash.txt")
+        config_written = False
+
         conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute("UPDATE devices SET is_active = 1 WHERE serial_number = ?", (serial_number,))
-        conn.commit()
-        conn.close()   
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+
+            device = conn.execute(
+                """
+                SELECT location_type, position_number
+                FROM devices
+                WHERE serial_number = ? AND is_active = 0
+                """,
+                (serial_number,)
+            ).fetchone()
+
+            if device is None:
+                raise ValueError(f"Inactive device not found: {serial_number}")
+
+            location_type, position_number = device
+
+            with open(config_path, "rb") as f:
+                original_config = f.read()
+
+            try:
+                with open(hash_path, "rb") as f:
+                    original_hash = f.read()
+            except FileNotFoundError:
+                original_hash = None
+
+            lines = original_config.decode("utf-8").splitlines(keepends=True)
+            updated_lines = []
+            matches = 0
+
+            for line in lines:
+                parts = line.strip().split(";")
+
+                if (
+                    len(parts) == 4
+                    and parts[1] == location_type
+                    and parts[2] == str(position_number)
+                ):
+                    ending = (
+                        "\r\n" if line.endswith("\r\n")
+                        else "\n" if line.endswith("\n")
+                        else ""
+                    )
+                    line = f"{serial_number};{';'.join(parts[1:])}{ending}"
+                    matches += 1
+
+                updated_lines.append(line)
+
+            if matches != 1:
+                raise ValueError(
+                    f"Expected one config row for {location_type} "
+                    f"position {position_number}; found {matches}"
+                )
+
+            config_bytes = "".join(updated_lines).encode("utf-8")
+            with open(config_path, "wb") as f:
+                f.write(config_bytes)
+            config_written = True
+
+            with open(hash_path, "w", encoding="utf-8") as f:
+                f.write(hashlib.sha256(config_bytes).hexdigest())
+
+            conn.execute(
+                """
+                UPDATE devices
+                SET is_active = 0
+                WHERE location_type = ? AND position_number = ?
+                  AND is_active = 1 AND serial_number <> ?
+                """,
+                (location_type, position_number, serial_number)
+            )
+
+            cursor = conn.execute(
+                "UPDATE devices SET is_active = 1 WHERE serial_number = ?",
+                (serial_number,)
+            )
+            if cursor.rowcount != 1:
+                raise ValueError(f"Could not activate device: {serial_number}")
+
+            conn.commit()
+
+        except Exception:
+            conn.rollback()
+
+            if config_written:
+                with open(config_path, "wb") as f:
+                    f.write(original_config)
+
+                if original_hash is not None:
+                    with open(hash_path, "wb") as f:
+                        f.write(original_hash)
+
+            raise
+        finally:
+            conn.close()
+
 
     def reload_devices_map(self):
         """

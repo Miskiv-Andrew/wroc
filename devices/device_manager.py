@@ -8,6 +8,8 @@ import serial.tools.list_ports
 from devices.device_info import DeviceInfo
 from devices.device_package import DevicePacket
 
+from collections.abc import Callable
+
 from devices.commands import (
     COMMAND_RAD_DOSE,
     COMMAND_SER_NUM,
@@ -66,11 +68,12 @@ class DeviceManager(QObject):
     device_missing = Signal(str)  # serial_number
                            
 
-    def __init__(self, db_manager):
+    def __init__(self, db_manager, translate: Callable[[str], str],):
         super().__init__()
 
         # ссылка на db_manager - для работы с БД - проверка активности приборов
         self.db_manager = db_manager
+        self.translate = translate
 
         # список найденных устройств
         self.devices: list[DeviceInfo] = []
@@ -123,7 +126,7 @@ class DeviceManager(QObject):
         # # # Список приборов в помещении
         # # self.room_dict    = {"2400126" : 1, "2400127" : 2}   
 
-        self.debug_mode: int | None = 1        
+        #self.debug_mode: int | None = 1        
         self.room_dict    = {
             "2600030" : 1, "2600031" : 2,  "2600032" : 3
             }
@@ -135,13 +138,14 @@ class DeviceManager(QObject):
             "2600024": {"position": 4, "isotopes": ["133I", "177Lu", "90Y"], "group": "B"},
             "2600025": {"position": 5, "isotopes": ["133I", "177Lu", "90Y"], "group": "B"},
             "2600026": {"position": 6, "isotopes": ["133I", "177Lu", "90Y"], "group": "B"},
-            #"2600027": {"position": 7, "isotopes": ["133I", "177Lu", "90Y"], "group": "B"},
+            "2600027": {"position": 7, "isotopes": ["133I", "177Lu", "90Y"], "group": "B"},
             "2600028": {"position": 8, "isotopes": ["133I", "177Lu", "90Y"], "group": "B"},
-            #"2600029": {"position": 9, "isotopes": ["133I", "177Lu", "90Y"], "group": "B"},
+            "2600029": {"position": 9, "isotopes": ["133I", "177Lu", "90Y"], "group": "B"},
+
         }
 
 
-        #self.debug_mode =  None # =  рабочий режим
+        self.debug_mode =  None # =  рабочий режим
         # self.debug_mode: int | None = None   
 
 
@@ -321,7 +325,9 @@ class DeviceManager(QObject):
 
             self.device_error.emit(
                 "find_rpii_ports",
-                f"Помилка отримання списку COM-портів: {e}"
+                #f"Помилка отримання списку COM-портів: {e}"
+                f"{self.translate("dm_error_com")} {e}"
+                
             )
 
             return
@@ -389,7 +395,8 @@ class DeviceManager(QObject):
 
         self.device_error.emit(
             "find_rpii_ports",
-            "Не знайдено жодного розширювача портів RTII"
+            #"Не знайдено жодного розширювача портів RTII"
+            self.translate("dm_error_rpii")
         )
         
 
@@ -621,12 +628,14 @@ class DeviceManager(QObject):
                 return True
             else:
                 # Если не совпадает — отправляем сигнал об ошибке
-                self.device_error.emit("config.txt", "Помилка у конфігураційному файлі,\nфайл було змінено")
+                #self.device_error.emit("config.txt", "Помилка у конфігураційному файлі,\nфайл було змінено")
+                self.device_error.emit("config.txt", self.translate("dm_error_config"))
                 return False
 
         except Exception as e:
             # Если произошла ошибка при чтении или вычислении — отправляем сигнал
-            self.device_error.emit("config.txt", f"Помилка при відкритті конфігураційних файлів: {e}")
+            #self.device_error.emit("config.txt", f"Помилка при відкритті конфігураційних файлів: {e}")
+            self.device_error.emit("config.txt", f"{self.translate("dm_error_config_open")} {e}")
             return False
         
 
@@ -739,8 +748,9 @@ class DeviceManager(QObject):
                             self.device_error.emit(
                                 port_name,
                                 (
-                                    "Некоректний серійний номер "
-                                    f"у відповіді приладу з адресою {addr}"
+                                    # "Некоректний серійний номер "
+                                    # f"у відповіді приладу з адресою {addr}"
+                                     f"{self.translate("dm_error_serial_incorrect")} {addr}"
                                 )
                             )
 
@@ -812,7 +822,8 @@ class DeviceManager(QObject):
 
                 self.device_error.emit(
                     port_name,
-                    f"Помилка відкриття або роботи з портом: {e}"
+                    #f"Помилка відкриття або роботи з портом: {e}"
+                    f"{self.translate("dm_error_port")} {e}"
                 )
 
                 continue
@@ -828,7 +839,8 @@ class DeviceManager(QObject):
 
                 self.device_error.emit(
                     port_name,
-                    f"Непередбачена помилка сканування порту: {e}"
+                    #f"Непередбачена помилка сканування порту: {e}"
+                    f"{self.translate("dm_polling_error_scan")} {e}"
                 )
 
                 continue
@@ -844,7 +856,8 @@ class DeviceManager(QObject):
 
             self.device_error.emit(
                 "scan_devices",
-                "Порти RTII знайдено, але жодного приладу не виявлено."
+                #"Порти RTII знайдено, але жодного приладу не виявлено."
+                self.translate("dm_error_device_not_found")
             )
 
             return
@@ -1160,7 +1173,8 @@ class DeviceManager(QObject):
 
             self.device_error.emit(
                 "config.txt",
-                f"Помилка конфігурації: {e}"
+                #f"Помилка конфігурації: {e}"
+                f"{self.translate("dm_config_error")} {e}"
             )
 
             # Критично важливо:
@@ -1175,7 +1189,8 @@ class DeviceManager(QObject):
 
             self.device_error.emit(
                 "config.txt",
-                f"Помилка відкриття конфігураційного файлу: {e}"
+                #f"Помилка відкриття конфігураційного файлу: {e}"
+                f"{self.translate("dm_config_error_open")} {e}"
             )
 
             return {}
@@ -1188,7 +1203,8 @@ class DeviceManager(QObject):
 
             self.device_error.emit(
                 "config.txt",
-                f"Непередбачена помилка завантаження конфігурації: {e}"
+                #f"Непередбачена помилка завантаження конфігурації: {e}"
+                f"{self.translate("dm_config_error_load")} {e}"
             )
 
             return {}
@@ -1230,8 +1246,9 @@ class DeviceManager(QObject):
             self.device_error.emit(
                 "config.txt",
                 (
-                    "Порти RTII знайдено, але жодного приладу "
-                    "не виявлено. Конфігурацію не оновлено."
+                    # "Порти RTII знайдено, але жодного приладу "
+                    # "не виявлено. Конфігурацію не оновлено."
+                    self.translate("dm_error_device_not_found_config")
                 )
             )
 
@@ -1274,10 +1291,11 @@ class DeviceManager(QObject):
                 self.device_error.emit(
                     "config.txt",
                     (
-                        "Конфігураційні файли НЕ створено.\n"
-                        "Один або декілька серійних номерів "
-                        "виявлено більше одного разу:\n"
-                        f"{duplicates_text}"
+                        # "Конфігураційні файли НЕ створено.\n"
+                        # "Один або декілька серійних номерів "
+                        # "виявлено більше одного разу:\n"
+                        # f"{duplicates_text}"
+                        f"{self.translate("dm_error_config_duplicate")}\n {duplicates_text}"
                     )
                 )
 
@@ -1310,10 +1328,11 @@ class DeviceManager(QObject):
                 self.device_error.emit(
                     "config.txt",
                     (
-                        "Конфігураційні файли НЕ створено.\n"
-                        "Виявлено прилади з невідомими "
-                        "серійними номерами:\n"
-                        f"{unknown_text}"
+                        # "Конфігураційні файли НЕ створено.\n"
+                        # "Виявлено прилади з невідомими "
+                        # "серійними номерами:\n"
+                        # f"{unknown_text}"
+                        f"{self.translate("dm_error_config_unknown")}\n {unknown_text}"
                     )
                 )
 
@@ -1334,10 +1353,11 @@ class DeviceManager(QObject):
                 self.device_error.emit(
                     "config.txt",
                     (
-                        "Конфігураційні файли НЕ створено.\n"
-                        "Не знайдено всі прилади системи.\n"
-                        "Відсутні серійні номери:\n"
-                        f"{missing_text}"
+                        # "Конфігураційні файли НЕ створено.\n"
+                        # "Не знайдено всі прилади системи.\n"
+                        # "Відсутні серійні номери:\n"
+                        # f"{missing_text}"
+                        f"{self.translate("dm_error_config_not_found_all")}\n {missing_text}"
                     )
                 )
 
@@ -1354,9 +1374,10 @@ class DeviceManager(QObject):
                 self.device_error.emit(
                     "config.txt",
                     (
-                        "Конфігураційні файли НЕ створено.\n"
-                        f"Очікується {expected_device_count} приладів, "
-                        f"фактично знайдено {len(self.devices)}."
+                        # "Конфігураційні файли НЕ створено.\n"
+                        # f"Очікується {expected_device_count} приладів, "
+                        # f"фактично знайдено {len(self.devices)}."
+                        f"{self.translate("dm_error_config_expect")} {expected_device_count} {self.translate("dm_error_config_expect1")} {len(self.devices)}."
                     )
                 )
 
@@ -1366,7 +1387,8 @@ class DeviceManager(QObject):
             # 3. ВСЕ ПРИБОРЫ НАЙДЕНЫ
             # ========================================================
 
-            found_text = "Знайдено всі прилади системи:\n"
+            #found_text = "Знайдено всі прилади системи:\n"
+            found_text = self.translate("dm_commissioning_header") + "\n"
 
             lines = []
 
@@ -1374,9 +1396,14 @@ class DeviceManager(QObject):
 
             for device in self.devices:
 
+                # found_text += (
+                #     f"Порт: {device.port}, "
+                #     f"Адреса: {device.address}, "
+                #     f"SN: {device.serial_number}\n"
+                # )
                 found_text += (
-                    f"Порт: {device.port}, "
-                    f"Адреса: {device.address}, "
+                    f"{self.translate("port")}: {device.port}, "
+                    f"{self.translate("address")}: {device.address}, "
                     f"SN: {device.serial_number}\n"
                 )
 
@@ -1541,7 +1568,8 @@ class DeviceManager(QObject):
 
                 self.device_error.emit(
                     "config",
-                    f"Помилка запису файлів: {e}"
+                    #f"Помилка запису файлів: {e}"
+                    f"{self.translate("dm_write_error")} {e}"
                 )
 
                 return
@@ -1550,11 +1578,18 @@ class DeviceManager(QObject):
             # 5. УСПЕШНЫЙ COMMISSIONING
             # ========================================================
 
+            # self.device_info.emit(
+            #     (
+            #         f"{found_text}\n"
+            #         "Усі прилади знайдено.\n"
+            #         "Нові дані занесено у файли конфігурації."
+            #     )
+            # )
             self.device_info.emit(
                 (
                     f"{found_text}\n"
-                    "Усі прилади знайдено.\n"
-                    "Нові дані занесено у файли конфігурації."
+                    f"{self.translate("dm_commissioning_success")}\n"
+                    f"{self.translate("dm_config_saved")}"
                 )
             )
 
@@ -1582,7 +1617,8 @@ class DeviceManager(QObject):
             self.device_found.emit([])
 
             self.device_info.emit(
-                "Прилади не пройшли перевірку конфігурації."
+                #"Прилади не пройшли перевірку конфігурації."
+                self.translate("dm_config_rejected")
             )
 
             return
@@ -1600,8 +1636,9 @@ class DeviceManager(QObject):
                 self.device_error.emit(
                     "config.txt",
                     (
-                        f"SN {device.serial_number} знайдено, "
-                        "але він відсутній у конфігурації."
+                        # f"SN {device.serial_number} знайдено, "
+                        # "але він відсутній у конфігурації."
+                        f"SN {device.serial_number} {self.translate("dm_config_found_another")}"
                     )
                 )
 
@@ -1638,10 +1675,14 @@ class DeviceManager(QObject):
                 self.device_error.emit(
                     "config.txt",
                     (
-                        f"Несовпадение адреса для SN "
+                        # f"Несовпадение адреса для SN "
+                        # f"{device.serial_number}: "
+                        # f"ожидался {device.expected_address}, "
+                        # f"найден {device.address}"
+                        f"{self.translate("dm_config_comparison")} "
                         f"{device.serial_number}: "
-                        f"ожидался {device.expected_address}, "
-                        f"найден {device.address}"
+                        f"{self.translate("dm_config_device_expected")} {device.expected_address}, "
+                        f"{self.translate("dm_config_device_found")} {device.address}"
                     )
                 )
 
@@ -1671,8 +1712,10 @@ class DeviceManager(QObject):
                     device.serial_number,
                     "device_activated",
                     (
-                        f"Прилад {device.serial_number} "
-                        "автоматично активовано при пошуку"
+                        # f"Прилад {device.serial_number} "
+                        # "автоматично активовано при пошуку"
+                        f"{self.translate("device_paed")} {device.serial_number} {"dm_device_activated"}"
+
                     )
                 )
 
@@ -1759,11 +1802,15 @@ class DeviceManager(QObject):
             self.device_error.emit(
                 serial_number,
                 (
-                    f"Прилад {position_name}, "
+                    # f"Прилад {position_name}, "
+                    # f"SN {serial_number}, "
+                    # f"очікувана адреса {expected_address} "
+                    # "присутній у config.txt, "
+                    # "але фізично не знайдений."
+                    f"{self.translate("device_paed")} {position_name}, "
                     f"SN {serial_number}, "
-                    f"очікувана адреса {expected_address} "
-                    "присутній у config.txt, "
-                    "але фізично не знайдений."
+                    f"{self.translate("dm_address_expected")} {expected_address} "
+                    f"{self.translate("dm_config_present_not_found")}"
                 )
             )
 
@@ -1782,9 +1829,12 @@ class DeviceManager(QObject):
                 serial_number,
                 "device_not_found",
                 (
-                    f"Прилад {position_name}, "
-                    f"SN {serial_number} "
-                    "не знайдений під час пошуку."
+                    # f"Прилад {position_name}, "
+                    # f"SN {serial_number} "
+                    # "не знайдений під час пошуку."
+                    f"{self.translate("device_paed")} {position_name}, "
+                    f"SN {serial_number} {self.translate("dm_device_not_found")}"
+                    
                 )
             )
 
@@ -1800,8 +1850,9 @@ class DeviceManager(QObject):
 
             self.device_info.emit(
                 (
-                    "Прилади не знайдено або "
-                    "не пройшли перевірку конфігурації."
+                    # "Прилади не знайдено або "
+                    # "не пройшли перевірку конфігурації."
+                    self.translate("dm_no_valid_devices")
                 )
             )
 
@@ -1825,9 +1876,11 @@ class DeviceManager(QObject):
 
             self.device_info.emit(
                 (
-                    f"Пошук завершено. "
-                    f"Працюючих приладів: {len(valid_devices)}. "
-                    f"Не знайдено: {len(missing_serials)}."
+                    # f"Пошук завершено. "
+                    # f"Працюючих приладів: {len(valid_devices)}. "
+                    # f"Не знайдено: {len(missing_serials)}."
+                    f"{self.translate("dm_search_partial")} {len(valid_devices)}. "
+                    f"{self.translate("dm_seacrh_missing")} {len(missing_serials)}."
                 )
             )
 
@@ -1835,8 +1888,9 @@ class DeviceManager(QObject):
 
             self.device_info.emit(
                 (
-                    f"Пошук завершено успішно. "
-                    f"Знайдено {len(valid_devices)} приладів."
+                    # f"Пошук завершено успішно. "
+                    # f"Знайдено {len(valid_devices)} приладів."
+                    f"{self.translate("dm_search_success")} {len(valid_devices)} {self.translate("dm_search_success_devices")}"
                 )
             )
 
@@ -2447,9 +2501,10 @@ class DeviceManager(QObject):
 
                         self.device_info.emit(
                             (
-                                f"ZB{posit}: актуальний стан "
-                                "цистерни від PLC втрачено. "
-                                "Спектральний цикл зупинено."
+                                # f"ZB{posit}: актуальний стан "
+                                # "цистерни від PLC втрачено. "
+                                # "Спектральний цикл зупинено."
+                                f"ZB{posit}: {self.translate("dm_plc_state_lost")}"
                             )
                         )
 
@@ -2503,8 +2558,9 @@ class DeviceManager(QObject):
 
                         self.device_info.emit(
                             (
-                                f"ZB{posit}: актуальний стан "
-                                "цистерни від PLC відновлено."
+                                # f"ZB{posit}: актуальний стан "
+                                # "цистерни від PLC відновлено."
+                                f"ZB{posit}: {self.translate("dm_plc_state_restored")}"
                             )
                         )
 
@@ -2526,16 +2582,20 @@ class DeviceManager(QObject):
                 dev.start_spectre_retries = 0
 
                 state_text = (
-                    "full"
+                    #"full"
+                    self.translate("barrel_full")
                     if new_full
-                    else "empty"
+                    #else "empty"
+                    else self.translate("barrel_empty")
                 )
 
                 self.device_info.emit(
                     (
-                        f"ZB{posit}: стан цистерни "
-                        f"змінено на '{state_text}'. "
-                        "Спектральний цикл скинуто."
+                        # f"ZB{posit}: стан цистерни "
+                        # f"змінено на '{state_text}'. "
+                        # "Спектральний цикл скинуто."
+                        f"ZB{posit}: {self.translate("dm_cistern_state_changed")}'{state_text}'. "
+                        f"{self.translate("dm_cistern_state_reset")}"
                     )
                 )
 
@@ -2548,8 +2608,9 @@ class DeviceManager(QObject):
                         "unknown"
                     ),
                     (
-                        "Помилка синхронізації стану "
-                        f"цистерни для SN "
+                        # "Помилка синхронізації стану "
+                        # f"цистерни для SN "
+                        f"{self.translate("dm_error_sync_state")}"
                         f"{getattr(dev, 'serial_number', 'unknown')}: "
                         f"{e}"
                     )
@@ -2839,8 +2900,9 @@ class DeviceManager(QObject):
             self.current_index = -1
 
             self.device_info.emit(
-                "Немає приладів для опитування. "
-                "Виконайте пошук приладів."
+                # "Немає приладів для опитування. "
+                # "Виконайте пошук приладів."
+                self.translate("dm_no_devices_to_poll")
             )
 
             return
@@ -2984,8 +3046,10 @@ class DeviceManager(QObject):
                     self.device_error.emit(
                         device.port,
                         (
-                            f"Не вдалося відкрити порт {device.port}. "
-                            "Можливо, порт зайнятий іншим процесом."
+                            # f"Не вдалося відкрити порт {device.port}. "
+                            # "Можливо, порт зайнятий іншим процесом."
+                            f"{self.translate("dm_error_port_busy")} {device.port}."
+                            f"{self.translate("dm_error_port_busy_process")}"
                         )
                     )
 
@@ -3058,7 +3122,8 @@ class DeviceManager(QObject):
                     "unknown"
                 ),
                 (
-                    "Помилка виконання циклу опитування "
+                    #"Помилка виконання циклу опитування "
+                    f"{self.translate("dm_error_cycle")}"
                     f"SN {getattr(device, 'serial_number', 'unknown')}: "
                     f"{e}"
                 )
@@ -3072,7 +3137,8 @@ class DeviceManager(QObject):
                 ),
                 "polling_error",
                 (
-                    "Помилка виконання кроку опитування: "
+                    #"Помилка виконання кроку опитування: "
+                    f"{self.translate("dm_polling_error")}"
                     f"{e}"
                 )
             )
@@ -3159,8 +3225,9 @@ class DeviceManager(QObject):
             self.device_error.emit(
                 "unknown",
                 (
-                    "Внутрішня помилка опитування: "
-                    "таймаут отримано без коректного поточного приладу."
+                    # "Внутрішня помилка опитування: "
+                    # "таймаут отримано без коректного поточного приладу."
+                    self.translate("dm_error_internal")
                 )
             )
 
@@ -3274,7 +3341,8 @@ class DeviceManager(QObject):
                 self.system_event.emit(
                     device.serial_number,
                     "connection_error",
-                    "Прилад не відповів 5 разів поспіль."
+                    #"Прилад не відповів 5 разів поспіль."
+                    self.translate("dm_error_5times")
                 )
 
         # ============================================================
@@ -3284,9 +3352,11 @@ class DeviceManager(QObject):
         self.device_error.emit(
             device.port,
             (
-                "Прилад не відповів "
+                #"Прилад не відповів "
+                f"{self.translate("dm_error_device_silent")}"
                 f"(SN: {device.serial_number}, "
-                f"кількість неответів: {device.no_answer_count})."
+                #f"кількість неответів: {device.no_answer_count})."
+                f"{self.translate("dm_error_device_silent_quantity")} {device.no_answer_count})."
             )
         )
 
@@ -3358,7 +3428,8 @@ class DeviceManager(QObject):
 
                 self.device_error.emit(
                     "unknown",
-                    "Отримано дані, але список приладів порожній."
+                    #"Отримано дані, але список приладів порожній."
+                    self.translate("dm_error_data_devices_empty")
                 )
 
                 self._finish_current_poll()
@@ -3371,7 +3442,8 @@ class DeviceManager(QObject):
 
                 self.device_error.emit(
                     "unknown",
-                    "Отримано дані без коректного поточного приладу."
+                    #"Отримано дані без коректного поточного приладу."
+                    self.translate("dm_error_data_device_current")
                 )
 
                 self._finish_current_poll()
@@ -3381,7 +3453,8 @@ class DeviceManager(QObject):
 
                 self.device_error.emit(
                     "unknown",
-                    "Отримано дані без визначеної поточної команди."
+                    #"Отримано дані без визначеної поточної команди."
+                    self.translate("dm_error_data_command_current")
                 )
 
                 self._finish_current_poll()
@@ -3420,7 +3493,8 @@ class DeviceManager(QObject):
                 self.device_error.emit(
                     device.port,
                     (
-                        "Буфер приймання переповнений "
+                        #"Буфер приймання переповнений "
+                        f"{self.translate("dm_buffer_overflow")}"
                         f"({len(self.rx_buffer)} байт)."
                     )
                 )
@@ -3429,7 +3503,8 @@ class DeviceManager(QObject):
                     device.serial_number,
                     "rx_buffer_overflow",
                     (
-                        "Переповнення буфера приймання: "
+                        #"Переповнення буфера приймання: "
+                        f"{self.translate()}"
                         f"{len(self.rx_buffer)} байт."
                     )
                 )
@@ -3545,9 +3620,10 @@ class DeviceManager(QObject):
                 self.device_error.emit(
                     device.port,
                     (
-                        "Помилка CRC: "
-                        f"отримано {crc_recv}, "
-                        f"обчислено {crc_calc}."
+                        #"Помилка CRC: "
+                        f"{self.translate("dm_crc_error")}"
+                        f"{self.translate("dm_received")} {crc_recv}, "
+                        f"{self.translate("dm_calculated")} {crc_calc}."
                     )
                 )
 
@@ -3555,9 +3631,10 @@ class DeviceManager(QObject):
                     device.serial_number,
                     "crc_error",
                     (
-                        "Помилка CRC: "
-                        f"отримано {crc_recv}, "
-                        f"обчислено {crc_calc}."
+                        #"Помилка CRC: "
+                        f"{self.translate("dm_crc_error")}"
+                        f"{self.translate("dm_received")} {crc_recv}, "
+                        f"{self.translate("dm_calculated")} {crc_calc}."
                     )
                 )
 
@@ -3573,9 +3650,13 @@ class DeviceManager(QObject):
                 self.device_error.emit(
                     device.port,
                     (
-                        "Отримано відповідь від іншої адреси: "
-                        f"очікувалась {device.address}, "
-                        f"отримано {packet_data[3]} "
+                        # "Отримано відповідь від іншої адреси: "
+                        # f"очікувалась {device.address}, "
+                        # f"отримано {packet_data[3]} "
+                        # f"(SN: {device.serial_number})."
+                        f"{self.translate("dm_address_another_received")}"
+                        f"{self.translate("dm_address_expected")} {device.address}, "
+                        f"{self.translate("dm_received")} {packet_data[3]} "
                         f"(SN: {device.serial_number})."
                     )
                 )
@@ -3584,8 +3665,10 @@ class DeviceManager(QObject):
                     device.serial_number,
                     "response_address_mismatch",
                     (
-                        f"Очікувана адреса {device.address}, "
-                        f"отримана {packet_data[3]}."
+                        # f"Очікувана адреса {device.address}, "
+                        # f"отримана {packet_data[3]}."
+                        f"{self.translate("dm_address_expected")} {device.address}, "
+                        f"{self.translate("dm_received")} {packet_data[3]}."
                     )
                 )
 
@@ -3656,12 +3739,18 @@ class DeviceManager(QObject):
                 self.device_error.emit(
                     device.port,
                     (
-                        "Отримано відповідь на іншу команду: "
-                        f"очікувався код відповіді "
+                        # "Отримано відповідь на іншу команду: "
+                        # f"очікувався код відповіді "
+                        # f"0x{expected_response_code:02X}, "
+                        # f"отримано "
+                        # f"0x{received_command_code:02X} "
+                        # f"(SN: {device.serial_number})."
+                        f"{self.translate("dm_code_another_command")} "
                         f"0x{expected_response_code:02X}, "
-                        f"отримано "
+                        f"{self.translate("dm_received")} "
                         f"0x{received_command_code:02X} "
                         f"(SN: {device.serial_number})."
+
                     )
                 )
 
@@ -3669,12 +3758,18 @@ class DeviceManager(QObject):
                     device.serial_number,
                     "response_command_mismatch",
                     (
-                        "Невідповідність коду відповіді: "
-                        f"код запиту "
+                        # "Невідповідність коду відповіді: "
+                        # f"код запиту "
+                        # f"0x{request_command_code:02X}, "
+                        # f"очікуваний код відповіді "
+                        # f"0x{expected_response_code:02X}, "
+                        # f"отриманий "
+                        # f"0x{received_command_code:02X}."
+                        f"{self.translate("dm_code_another_response")} "
                         f"0x{request_command_code:02X}, "
-                        f"очікуваний код відповіді "
+                        f"{self.translate("dm_expected_code")} "
                         f"0x{expected_response_code:02X}, "
-                        f"отриманий "
+                        f"{self.translate("dm_received")} "
                         f"0x{received_command_code:02X}."
                     )
                 )
@@ -3711,8 +3806,9 @@ class DeviceManager(QObject):
                 self.device_error.emit(
                     device.port,
                     (
-                        "Не вдалося визначити режим "
-                        f"отриманої відповіді для SN "
+                        # "Не вдалося визначити режим "
+                        # f"отриманої відповіді для SN "
+                        f"{self.translate("dm_error_mode")}"
                         f"{device.serial_number}."
                     )
                 )
@@ -3731,8 +3827,9 @@ class DeviceManager(QObject):
                     self.device_error.emit(
                         device.port,
                         (
-                            "Відповідь StartSpectre "
-                            "занадто коротка."
+                            # "Відповідь StartSpectre "
+                            # "занадто коротка."
+                            self.translate("dm_spectre_start_short")
                         )
                     )
 
@@ -3761,8 +3858,9 @@ class DeviceManager(QObject):
                         self.device_error.emit(
                             device.port,
                             (
-                                "Не вдалося запустити набір спектру "
-                                "після 3 спроб "
+                                # "Не вдалося запустити набір спектру "
+                                # "після 3 спроб "
+                                f"{self.translate("dm_spectre_failed_3times")}"
                                 f"(SN: {device.serial_number})."
                             )
                         )
@@ -3771,8 +3869,9 @@ class DeviceManager(QObject):
                             device.serial_number,
                             "start_spectre_failed",
                             (
-                                "Не вдалося запустити набір "
-                                "спектру після 3 спроб."
+                                # "Не вдалося запустити набір "
+                                # "спектру після 3 спроб."
+                                self.translate("dm_spectre_failed_3times")
                             )
                         )
 
@@ -3780,9 +3879,12 @@ class DeviceManager(QObject):
 
                         self.device_info.emit(
                             (
-                                "Повторна спроба запуску спектру "
-                                f"для {device.serial_number} "
-                                f"(спроба "
+                                # "Повторна спроба запуску спектру "
+                                # f"для {device.serial_number} "
+                                # f"(спроба "
+                                # f"{device.start_spectre_retries})."
+                                f"{self.translate("dm_spectrum_retry")} {device.serial_number} "
+                                f"({self.translate("dm_spectre_retry")} "
                                 f"{device.start_spectre_retries})."
                             )
                         )
@@ -3819,8 +3921,9 @@ class DeviceManager(QObject):
                     self.device_error.emit(
                         device.port,
                         (
-                            "Помилка парсингу спектру: "
-                            f"{e}"
+                            # "Помилка парсингу спектру: "
+                            # f"{e}"
+                            f"{self.translate("dm_error_spectre_parsing")} {e}"
                         )
                     )
 
@@ -3880,7 +3983,8 @@ class DeviceManager(QObject):
             self.device_error.emit(
                 port,
                 (
-                    "Помилка при обробці відповіді "
+                    #"Помилка при обробці відповіді "
+                    f"{self.translate("dm_response_error")}"
                     f"SN {serial_number}: {e}"
                 )
             )
@@ -4068,8 +4172,9 @@ class DeviceManager(QObject):
 
             self.device_info.emit(
                 (
-                    "Спектральний цикл завершено для "
-                    f"SN {serial_number}."
+                    # "Спектральний цикл завершено для "
+                    # f"SN {serial_number}."
+                    f"{self.translate("dm_spectrum_finished")} {serial_number}."
                 )
             )
 
