@@ -401,7 +401,7 @@ TRANSLATIONS = {
         "dm_no_valid_devices": "Прилади не знайдено або не пройшли перевірку конфігурації.",
         "dm_search_partial": "Пошук завершено. Працюючих приладів: ",
         "dm_seacrh_missing": " Не знайдено: ",
-        "dm_search_success": "Пошук завершено успішно. Знайдено ",
+        "dm_search_success": "Пошук завершено успішно. Знайдено",
         "dm_search_success_devices": "приладів.",
         "dm_plc_state_lost": "актуальний стан цистерни від PLC втрачено. Спектральний цикл зупинено.",
         "dm_plc_state_restored": "актуальний стан цистерни від PLC відновлено.",
@@ -466,6 +466,7 @@ TRANSLATIONS = {
 
 
 
+
         
     },
 
@@ -501,7 +502,7 @@ TRANSLATIONS = {
 
         # UI devices
         "barrel_name": "Tank",
-        "paed_name": "PAED",
+        "paed_name": "ADER",
         "group_A": "Diagnostics",
         "group_B": "Treatment",
         "group_R": "RESERVE",
@@ -557,7 +558,7 @@ TRANSLATIONS = {
 
         # Database
         "db_title": "Database - Data Viewer",
-        "db_tab_paed": "PAED",
+        "db_tab_paed": "ADER",
         "db_tab_activity": "Activity",
         "db_tab_events": "System Events",
         "db_filters": "Filters",
@@ -579,7 +580,7 @@ TRANSLATIONS = {
         "db_data_not_saved": "Failed to save CSV:",
         "db_graph_not_saved": "Failed to save graph:",
         "db_device_replaced": " [replaced]",
-        "db_paed_unreadable": "Failed to read PAED data:",
+        "db_paed_unreadable": "Failed to read ADER data:",
         "db_activity_unreadable": "Failed to read activity data:",
         "db_events_unreadable": "Failed to read system events:",
 
@@ -604,7 +605,7 @@ TRANSLATIONS = {
 
         # Database
         "db_time": "Time",
-        "db_paed": "PAED, µSv/h",
+        "db_paed": "ADER, µSv/h",
         "db_temp": "Temperature, °C",
         "db_device_state": "Detector Status",
         "db_composition": "Composition (activity, specific activity)",
@@ -623,8 +624,8 @@ TRANSLATIONS = {
         "interval_db": "Database Recording Interval, min",
         "interval_zb": "ZB Transmission Interval, s",
         "interval_cz": "CZ Transmission Interval, s",
-        "interval_cistern_save": "Tank Data Retention Period",
-        "interval_wall_save": "Room Data Retention Period",
+        "interval_cistern_save": "Tank Data Saving Period",
+        "interval_wall_save": "Room Data Saving Period",
         "save": "Save",
         "cancel": "Cancel",
         "intervals_saved": "Interval settings saved",
@@ -927,8 +928,8 @@ TRANSLATIONS = {
         "window_title": "Monitorowanie",
         "menu_devices": "Urządzenia",
         "menu_find_devices": "Wyszukaj urządzenia",
-        "menu_start_system": "Uruchom system",
-        "menu_stop_system": "Zatrzymaj system",
+        "menu_start_system": "Uruchom systemu",
+        "menu_stop_system": "Zatrzymaj systemu",
         "menu_intervals": "Ustawienia interwałów",
         "menu_device_replacement": "Wymiana urządzenia",
         "menu_database": "Baza danych",
@@ -947,7 +948,7 @@ TRANSLATIONS = {
 
         # UI devices
         "barrel_name": "Zbiornik",
-        "paed_name": "PAED",
+        "paed_name": "MPRD",
         "group_A": "Diagnostyka",
         "group_B": "Leczenie",
         "group_R": "REZERWA",
@@ -965,11 +966,11 @@ TRANSLATIONS = {
         "measure_ongoing": "Czas, który upłynął",
         "low_detector": "Detektor niskoczuły",
         "high_detector": "Detektor wysokoczuły",
-        "result_validity": "Poprawność wyników",
+        "result_validity": "Ważność wyników",
         "device_status": "Status",
         "low_detector_wall": "<div style='line-height:80%'>Detektor<br>niskoczuły</div>",
         "high_detector_wall": "<div style='line-height:80%'>Detektor<br>wysokoczuły</div>",
-        "result_validity_wall": "<div style='line-height:80%'>Poprawność<br>wyników</div>",
+        "result_validity_wall": "<div style='line-height:80%'>Ważność<br>wyników</div>",
         "device_status_wall": "<div style='line-height:80%'>Status<br></div>",
         "status_normal": "Prawidłowy",
         "status_failure": "Awaria",
@@ -1003,7 +1004,7 @@ TRANSLATIONS = {
 
         # Database
         "db_title": "Baza danych - przegląd danych",
-        "db_tab_paed": "PAED",
+        "db_tab_paed": "MPRD",
         "db_tab_activity": "Aktywność",
         "db_tab_events": "Zdarzenia systemowe",
         "db_filters": "Filtry",
@@ -1025,7 +1026,7 @@ TRANSLATIONS = {
         "db_data_not_saved": "Nie udało się zapisać pliku CSV:",
         "db_graph_not_saved": "Nie udało się zapisać wykresu:",
         "db_device_replaced": " [wymienione]",
-        "db_paed_unreadable": "Nie udało się odczytać danych PAED:",
+        "db_paed_unreadable": "Nie udało się odczytać danych MPRD:",
         "db_activity_unreadable": "Nie udało się odczytać danych aktywności:",
         "db_events_unreadable": "Nie udało się odczytać zdarzeń systemowych:",
 
@@ -1050,7 +1051,7 @@ TRANSLATIONS = {
 
         # Database
         "db_time": "Czas",
-        "db_paed": "PAED, µSv/h",
+        "db_paed": "MPRD, µSv/h",
         "db_temp": "Temperatura, °C",
         "db_device_state": "Stan detektorów",
         "db_composition": "Skład (aktywność, aktywność właściwa)",

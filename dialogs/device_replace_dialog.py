@@ -707,13 +707,17 @@ class DeviceReplaceDialog(QDialog):
             QMessageBox.warning(self, self.tr("error"), self.tr("activate_choose"))
             return
 
-        answer = QMessageBox.question(
-            self,
-            self.tr("confirmation"),
-            f"{self.tr('activate_device')} {sn}?",
-            QMessageBox.Yes | QMessageBox.No
-        )
-        if answer != QMessageBox.Yes:
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle(self.tr("confirmation"))
+        msg_box.setText(f"{self.tr('activate_device')} {sn}?")
+        msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+
+        msg_box.button(QMessageBox.Yes).setText(self.tr("yes"))
+        msg_box.button(QMessageBox.No).setText(self.tr("no"))
+
+        reply = msg_box.exec()
+        
+        if reply != QMessageBox.Yes:
             return
 
         try:

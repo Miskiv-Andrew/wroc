@@ -27,13 +27,13 @@ class AddressChanger(QObject):
             for addr in addresses:
                 try:
                     with serial.Serial(port_name, baudrate=19200, timeout=timeout) as ser:
-                        packet = bytearray(COMMAND_SER_NUM.data)
-                        packet[3] = addr
-                        crc = self.device_manager.calc_crc(packet)
-                        packet.append(crc)
+                        # packet = bytearray(COMMAND_SER_NUM.data)
+                        # packet[3] = addr
+                        # crc = self.device_manager.calc_crc(packet)
+                        # packet.append(crc)
                         
-                        ser.write(packet)
-                        time.sleep(timeout)
+                        # ser.write(packet)
+                        # time.sleep(timeout)
                         
                         #response = ser.read(COMMAND_SER_NUM.length)
                         response = self.device_manager.try_request(

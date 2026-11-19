@@ -273,6 +273,8 @@ class DatabaseManager:
 
                 temperature REAL NOT NULL,
 
+                temperature_valid INTEGER NOT NULL DEFAULT 0,
+
                 activity TEXT,
 
                 concentration TEXT,
@@ -282,6 +284,8 @@ class DatabaseManager:
                 concentration_upper TEXT,
 
                 result_meta TEXT,
+
+                tc_history TEXT,
 
                 low_status INTEGER NOT NULL,
 
@@ -324,6 +328,8 @@ class DatabaseManager:
             "result_meta": "TEXT",
             "ready_to_drain": "INTEGER",
             "measurement_valid": "INTEGER",
+            "temperature_valid": "INTEGER",
+            "tc_history": "TEXT",
         }
 
         try:
@@ -918,6 +924,7 @@ class DatabaseManager:
         device_id,
         paed,
         temperature,
+        temperature_valid,
         activity_json,
         concentration_json,
         low_status,
@@ -928,6 +935,7 @@ class DatabaseManager:
         activity_upper_json=None,
         concentration_upper_json=None,
         result_meta_json=None,
+        tc_history_json="[]",
         ready_to_drain=None,
         measurement_valid=None
     ):
@@ -1044,11 +1052,13 @@ class DatabaseManager:
                 timestamp,
                 paed,
                 temperature,
+                temperature_valid,
                 activity,
                 concentration,
                 activity_upper,
                 concentration_upper,
                 result_meta,
+                tc_history,
                 low_status,
                 high_status,
                 valid,
@@ -1057,18 +1067,20 @@ class DatabaseManager:
                 "group",
                 ready_to_drain
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 device_id,
                 timestamp,
                 paed,
                 temperature,
+                temperature_valid,
                 activity_json,
                 concentration_json,
                 activity_upper_json,
                 concentration_upper_json,
                 result_meta_json,
+                tc_history_json,
                 low_status,
                 high_status,
                 valid,
@@ -1362,6 +1374,7 @@ class DatabaseManager:
         device_id,
         paed,
         temperature,
+        temperature_valid,
         low_status,
         high_status,
         valid,
@@ -1421,6 +1434,7 @@ class DatabaseManager:
             "timestamp": timestamp,
             "paed": paed,
             "temperature": temperature,
+            "temperature_valid": temperature_valid,
             "low_status": low_status,
             "high_status": high_status,
             "valid": valid,
@@ -1497,6 +1511,7 @@ class DatabaseManager:
                         timestamp,
                         paed,
                         temperature,
+                        temperature_valid,
                         activity,
                         concentration,
                         activity_upper,
@@ -1511,7 +1526,7 @@ class DatabaseManager:
                         ready_to_drain
                     )
                     VALUES (
-                        ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?,
                         NULL, NULL, NULL, NULL, NULL,
                         ?, ?, ?,
                         NULL,
@@ -1524,6 +1539,7 @@ class DatabaseManager:
                         record["timestamp"],
                         record["paed"],
                         record["temperature"],
+                        record["temperature_valid"],
                         record["low_status"],
                         record["high_status"],
                         record["valid"],
@@ -1666,6 +1682,7 @@ class DatabaseManager:
                         timestamp,
                         paed,
                         temperature,
+                        temperature_valid,
                         activity,
                         concentration,
                         activity_upper,
@@ -1680,7 +1697,7 @@ class DatabaseManager:
                         ready_to_drain
                     )
                     VALUES (
-                        ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?,
                         NULL, NULL, NULL, NULL, NULL,
                         ?, ?, ?,
                         NULL,
@@ -1693,6 +1710,7 @@ class DatabaseManager:
                         record["timestamp"],
                         record["paed"],
                         record["temperature"],
+                        record["temperature_valid"],
                         record["low_status"],
                         record["high_status"],
                         record["valid"],
@@ -1769,16 +1787,40 @@ class DatabaseManager:
             self.wall_timer.start(seconds * 1000)
 
 
-    def get_device_active_status(self, serial_number: str) -> bool:
+    # def get_device_active_status(self, serial_number: str) -> bool:
+    #     """
+    #         Повертає is_active для приладу за SN (безпечний для використання в різних потоках)
+    #     """
+    #     conn = sqlite3.connect(self.db_path)
+    #     cursor = conn.cursor()
+    #     cursor.execute("SELECT is_active FROM devices WHERE serial_number = ?", (serial_number,))
+    #     row = cursor.fetchone()
+    #     conn.close()
+    #     return bool(row[0]) if row else True 
+
+    def get_device_active_status(self, serial_number: str ) -> bool | None:
         """
             Повертає is_active для приладу за SN (безпечний для використання в різних потоках)
         """
         conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute("SELECT is_active FROM devices WHERE serial_number = ?", (serial_number,))
-        row = cursor.fetchone()
-        conn.close()
-        return bool(row[0]) if row else True 
+
+        try:
+            row = conn.execute(
+                """
+                SELECT is_active
+                FROM devices
+                WHERE serial_number = ?
+                """,
+                (serial_number,)
+            ).fetchone()
+
+            if row is None:
+                return None
+
+            return bool(row[0])
+
+        finally:
+            conn.close()
 
     def get_inactive_devices(self):
         """

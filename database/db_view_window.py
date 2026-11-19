@@ -4,7 +4,7 @@ from datetime import datetime
 
 from PySide6.QtWidgets import QMainWindow, QFileDialog, QMessageBox, QHeaderView
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtCore import QFile, QDateTime, Qt
+from PySide6.QtCore import QFile, QDateTime, Qt, QLocale
 from PySide6.QtGui import QStandardItemModel, QStandardItem
 
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -139,6 +139,23 @@ class DBViewWindow(QMainWindow):
         self.ui.combo_group_activity.setItemText(3, self.tr("group_R"))
 
         self.ui.combo_event_type.setItemText(0, self.tr("db_all"))
+
+        locale_name = {
+            "uk": "uk_UA",
+            "en": "en_GB",
+            "pl": "pl_PL",
+        }.get(self.language, "uk_UA")
+
+        locale = QLocale(locale_name)
+
+        for name in (
+            "dateFrom_paed", "dateTo_paed",
+            "dateFrom_activity", "dateTo_activity",
+            "dateFrom_events", "dateTo_events",
+        ):
+            editor = getattr(self.ui, name)
+            editor.setLocale(locale)
+            editor.calendarWidget().setLocale(locale)
 
     def init_plots(self):
         """Инициализирует виджеты графиков для вкладок ПАЕД и Активность"""
@@ -532,7 +549,8 @@ class DBViewWindow(QMainWindow):
                             temperature,
                             low_status,
                             high_status,
-                            valid
+                            valid,
+                            temperature_valid
                         FROM measurements_cistern
                         WHERE device_id = ?
                           AND timestamp BETWEEN ? AND ?
@@ -559,7 +577,8 @@ class DBViewWindow(QMainWindow):
                             temperature,
                             low_status,
                             high_status,
-                            valid
+                            valid,
+                            temperature_valid
                         FROM measurements_cistern
                         WHERE device_id = ?
                           AND timestamp BETWEEN ? AND ?
@@ -584,7 +603,8 @@ class DBViewWindow(QMainWindow):
                         temperature,
                         low_status,
                         high_status,
-                        valid
+                        valid,
+                        temperature_valid
                     FROM measurements_wall
                     WHERE device_id = ?
                       AND timestamp BETWEEN ? AND ?
@@ -758,9 +778,16 @@ class DBViewWindow(QMainWindow):
             # ТЕМПЕРАТУРА
             # --------------------------------------------------------
 
-            try:
-                temp = f"{float(row[2]):.1f}"
-            except (TypeError, ValueError):
+            # try:
+            #     temp = f"{float(row[2]):.1f}"
+            # except (TypeError, ValueError):
+            #     temp = "—"
+            if row[6] == 1:
+                try:
+                    temp = f"{float(row[2]):.1f}"
+                except (TypeError, ValueError):
+                    temp = "—"
+            else:
                 temp = "—"
 
             # --------------------------------------------------------
@@ -1077,436 +1104,658 @@ class DBViewWindow(QMainWindow):
 
     #     self.fill_activity_table(rows)
 
+    # def load_activity_data(self):
+    #         """
+    #         Загружает исторические результаты активности цистерны,
+    #         строит график суммарной активности и заполняет таблицу.
+    #         """
+    
+    #         date_from, date_to = self.get_date_range(
+    #             "activity"
+    #         )
+    
+    #         # ------------------------------------------------------------
+    #         # 1. ПРОВЕРЯЕМ ПЕРИОД
+    #         # ------------------------------------------------------------
+    
+    #         if date_from > date_to:
+    #             QMessageBox.warning(
+    #                 self,
+    #                 self.tr("warning"),
+    #                 self.tr("db_start_date_error")
+    #             )
+    #             return
+    
+    #         # ------------------------------------------------------------
+    #         # 2. ВЫБРАННАЯ ЦИСТЕРНА
+    #         # ------------------------------------------------------------
+    
+    #         device_sn = (
+    #             self.ui.combo_device_activity.currentData()
+    #         )
+    
+    #         if not device_sn:
+    #             QMessageBox.warning(
+    #                 self,
+    #                 self.tr("warning"),
+    #                 self.tr("choose_cistern")
+    #             )
+    #             return
+    
+    #         # ------------------------------------------------------------
+    #         # 3. ПОЛУЧАЕМ ИСТОРИЧЕСКИЙ DEVICE_ID
+    #         # ------------------------------------------------------------
+    
+    #         device_id = (
+    #             self.db_manager.get_device_id_for_history(
+    #                 device_sn
+    #             )
+    #         )
+    
+    #         if device_id is None:
+    #             QMessageBox.warning(
+    #                 self,
+    #                 self.tr("error"),
+    #                 self.tr("db_device_not_found")
+    #             )
+    #             return
+    
+    #         group_filter = (
+    #             self.ui.combo_group_activity.currentData()
+    #         )
+    
+    #         conn = self.db_manager._get_connection()
+    #         cursor = conn.cursor()
+    
+    #         date_from_str = date_from.strftime(
+    #             "%Y-%m-%d %H:%M:%S"
+    #         )
+    
+    #         date_to_str = date_to.strftime(
+    #             "%Y-%m-%d %H:%M:%S"
+    #         )
+    
+    #         # ------------------------------------------------------------
+    #         # 4. ЧИТАЕМ ДАННЫЕ
+    #         # ------------------------------------------------------------
+    
+    #         try:
+    
+    #             if group_filter != "all":
+    
+    #                 cursor.execute(
+    #                     """
+    #                     SELECT
+    #                         timestamp,
+    #                         paed,
+    #                         activity,
+    #                         concentration,
+    #                         fullness_status,
+    #                     FROM measurements_cistern
+    #                     WHERE device_id = ?
+    #                       AND timestamp BETWEEN ? AND ?
+    #                       AND "group" = ?
+    #                     ORDER BY timestamp
+    #                     """,
+    #                     (
+    #                         device_id,
+    #                         date_from_str,
+    #                         date_to_str,
+    #                         group_filter
+    #                     )
+    #                 )
+    
+    #             else:
+    
+    #                 cursor.execute(
+    #                     """
+    #                     SELECT
+    #                         timestamp,
+    #                         paed,
+    #                         activity,
+    #                         concentration,
+    #                         fullness_status,
+    #                     FROM measurements_cistern
+    #                     WHERE device_id = ?
+    #                       AND timestamp BETWEEN ? AND ?
+    #                     ORDER BY timestamp
+    #                     """,
+    #                     (
+    #                         device_id,
+    #                         date_from_str,
+    #                         date_to_str
+    #                     )
+    #                 )
+    
+    #             rows = cursor.fetchall()
+    
+    #         except Exception as e:
+    
+    #             QMessageBox.critical(
+    #                 self,
+    #                 self.tr("error"),
+    #                 #f"Не вдалося прочитати дані активності:\n{e}"
+    #                 f"{self.tr("db_activity_unreadable")}\n{e}"
+    #             )
+    #             return
+    
+    #         # ------------------------------------------------------------
+    #         # 5. ЕСЛИ ДАННЫХ НЕТ
+    #         # ------------------------------------------------------------
+    
+    #         if not rows:
+    
+    #             self.ax_activity.clear()
+    
+    #             self.ax_activity.text(
+    #                 0.5,
+    #                 0.5,
+    #                 self.tr("db_no_data"),
+    #                 transform=self.ax_activity.transAxes,
+    #                 ha="center"
+    #             )
+    
+    #             self.canvas_activity.draw()
+    
+    #             self.fill_activity_table([])
+    
+    #             return
+    
+    #         # ------------------------------------------------------------
+    #         # 6. ГОТОВИМ ДАННЫЕ ДЛЯ ГРАФИКА
+    #         # ------------------------------------------------------------
+    
+    #         metric = self.ui.combo_activity_metric.currentData()
+
+    #         if metric == "concentration":
+    #             json_column = 3
+    #             ylabel = self.tr("table_concentration")
+    #         else:
+    #             json_column = 2
+    #             ylabel = self.tr("table_activity")
+
+    #         records = []
+    #         isotopes = set()
+
+    #         for row in rows:
+    #             try:
+    #                 timestamp = datetime.strptime(
+    #                     row[0],
+    #                     "%Y-%m-%d %H:%M:%S"
+    #                 )
+    #             except (TypeError, ValueError):
+    #                 continue
+
+    #             try:
+    #                 isotope_values = (
+    #                     json.loads(row[json_column])
+    #                     if row[json_column]
+    #                     else {}
+    #                 )
+    #             except (TypeError, ValueError, json.JSONDecodeError):
+    #                 isotope_values = {}
+
+    #             if not isinstance(isotope_values, dict):
+    #                 isotope_values = {}
+
+    #             values = {}
+    #             for isotope, value in isotope_values.items():
+    #                 try:
+    #                     values[str(isotope)] = float(value)
+    #                 except (TypeError, ValueError):
+    #                     continue
+
+    #             records.append((timestamp, values))
+    #             isotopes.update(values)
+
+
+    #         self.ax_activity.clear()
+
+    #         self.ax_activity.set_yscale("log" if self.ui.activity_log_checkbox.isChecked() else "linear" )
+
+    #         if records and isotopes:
+    #             records.sort(key=lambda record: record[0])
+    #             timestamps = [record[0] for record in records]
+
+    #             for isotope in sorted(isotopes):
+    #                 values = [
+    #                     record[1].get(isotope, float("nan"))
+    #                     for record in records
+    #                 ]
+    #                 if self.ui.activity_log_checkbox.isChecked():
+    #                     values = [
+    #                         value if value > 0 else float("nan")
+    #                         for value in values
+    #                     ]
+    #                 self.ax_activity.plot(
+    #                     timestamps,
+    #                     values,
+    #                     linewidth=1.5,
+    #                     label=isotope
+    #                 )
+
+    #             metric_title = (
+    #                 self.tr("table_concentration")
+    #                 if metric == "concentration"
+    #                 else self.tr("table_activity")
+    #             )
+    #             #self.ax_activity.set_xlabel("Час")
+    #             self.ax_activity.set_ylabel(ylabel)
+    #             self.ax_activity.set_title(f"{metric_title} - {device_sn}")
+    #             self.ax_activity.grid(True)
+    #             self.ax_activity.legend()
+    #             self.figure_activity.autofmt_xdate()
+    #         else:
+    #             self.ax_activity.text(
+    #                 0.5,
+    #                 0.5,
+    #                 self.tr("db_no_correct_data"),
+    #                 transform=self.ax_activity.transAxes,
+    #                 ha="center"
+    #             )
+
+    #         self.canvas_activity.draw()
+    
+    #         # ------------------------------------------------------------
+    #         # 8. ТАБЛИЦА
+    #         # ------------------------------------------------------------
+    
+    #         self.fill_activity_table(rows)
+
     def load_activity_data(self):
-            """
-            Загружает исторические результаты активности цистерны,
-            строит график суммарной активности и заполняет таблицу.
-            """
-    
-            date_from, date_to = self.get_date_range(
-                "activity"
+        date_from, date_to = self.get_date_range("activity")
+        if date_from > date_to:
+            QMessageBox.warning(self, self.tr("warning"), self.tr("db_start_date_error"))
+            return
+
+        device_sn = self.ui.combo_device_activity.currentData()
+        if not device_sn:
+            QMessageBox.warning(self, self.tr("warning"), self.tr("choose_cistern"))
+            return
+
+        device_id = self.db_manager.get_device_id_for_history(device_sn)
+        if device_id is None:
+            QMessageBox.warning(self, self.tr("error"), self.tr("db_device_not_found"))
+            return
+
+        group_filter = self.ui.combo_group_activity.currentData()
+        date_from_str = date_from.strftime("%Y-%m-%d %H:%M:%S")
+        date_to_str = date_to.strftime("%Y-%m-%d %H:%M:%S")
+        cursor = self.db_manager._get_connection().cursor()
+
+        query = """
+            SELECT timestamp, paed, activity, concentration,
+                fullness_status, tc_history
+            FROM measurements_cistern
+            WHERE device_id = ? AND timestamp BETWEEN ? AND ?
+        """
+        params = [device_id, date_from_str, date_to_str]
+
+        if group_filter != "all":
+            query += ' AND "group" = ?'
+            params.append(group_filter)
+
+        query += " ORDER BY timestamp"
+
+        try:
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+        except Exception as error:
+            QMessageBox.critical(
+                self,
+                self.tr("error"),
+                f"{self.tr('db_activity_unreadable')}\n{error}",
             )
-    
-            # ------------------------------------------------------------
-            # 1. ПРОВЕРЯЕМ ПЕРИОД
-            # ------------------------------------------------------------
-    
-            if date_from > date_to:
-                QMessageBox.warning(
-                    self,
-                    self.tr("warning"),
-                    self.tr("db_start_date_error")
-                )
-                return
-    
-            # ------------------------------------------------------------
-            # 2. ВЫБРАННАЯ ЦИСТЕРНА
-            # ------------------------------------------------------------
-    
-            device_sn = (
-                self.ui.combo_device_activity.currentData()
+            return
+
+        if not rows:
+            self.ax_activity.clear()
+            self.ax_activity.text(
+                0.5, 0.5, self.tr("db_no_data"),
+                transform=self.ax_activity.transAxes, ha="center",
             )
-    
-            if not device_sn:
-                QMessageBox.warning(
-                    self,
-                    self.tr("warning"),
-                    self.tr("choose_cistern")
-                )
-                return
-    
-            # ------------------------------------------------------------
-            # 3. ПОЛУЧАЕМ ИСТОРИЧЕСКИЙ DEVICE_ID
-            # ------------------------------------------------------------
-    
-            device_id = (
-                self.db_manager.get_device_id_for_history(
-                    device_sn
-                )
-            )
-    
-            if device_id is None:
-                QMessageBox.warning(
-                    self,
-                    self.tr("error"),
-                    self.tr("db_device_not_found")
-                )
-                return
-    
-            group_filter = (
-                self.ui.combo_group_activity.currentData()
-            )
-    
-            conn = self.db_manager._get_connection()
-            cursor = conn.cursor()
-    
-            date_from_str = date_from.strftime(
-                "%Y-%m-%d %H:%M:%S"
-            )
-    
-            date_to_str = date_to.strftime(
-                "%Y-%m-%d %H:%M:%S"
-            )
-    
-            # ------------------------------------------------------------
-            # 4. ЧИТАЕМ ДАННЫЕ
-            # ------------------------------------------------------------
-    
+            self.canvas_activity.draw()
+            self.fill_activity_table([])
+            return
+
+        metric = self.ui.combo_activity_metric.currentData()
+        json_column = 3 if metric == "concentration" else 2
+        ylabel = self.tr(
+            "table_concentration" if metric == "concentration" else "table_activity"
+        )
+
+        records = []
+        isotopes = set()
+
+        for row in rows:
             try:
-    
-                if group_filter != "all":
-    
-                    cursor.execute(
-                        """
-                        SELECT
-                            timestamp,
-                            paed,
-                            activity,
-                            concentration,
-                            fullness_status
-                        FROM measurements_cistern
-                        WHERE device_id = ?
-                          AND timestamp BETWEEN ? AND ?
-                          AND "group" = ?
-                        ORDER BY timestamp
-                        """,
-                        (
-                            device_id,
-                            date_from_str,
-                            date_to_str,
-                            group_filter
-                        )
-                    )
-    
-                else:
-    
-                    cursor.execute(
-                        """
-                        SELECT
-                            timestamp,
-                            paed,
-                            activity,
-                            concentration,
-                            fullness_status
-                        FROM measurements_cistern
-                        WHERE device_id = ?
-                          AND timestamp BETWEEN ? AND ?
-                        ORDER BY timestamp
-                        """,
-                        (
-                            device_id,
-                            date_from_str,
-                            date_to_str
-                        )
-                    )
-    
-                rows = cursor.fetchall()
-    
-            except Exception as e:
-    
-                QMessageBox.critical(
-                    self,
-                    self.tr("error"),
-                    #f"Не вдалося прочитати дані активності:\n{e}"
-                    f"{self.tr("db_activity_unreadable")}\n{e}"
-                )
-                return
-    
-            # ------------------------------------------------------------
-            # 5. ЕСЛИ ДАННЫХ НЕТ
-            # ------------------------------------------------------------
-    
-            if not rows:
-    
-                self.ax_activity.clear()
-    
-                self.ax_activity.text(
-                    0.5,
-                    0.5,
-                    self.tr("db_no_data"),
-                    transform=self.ax_activity.transAxes,
-                    ha="center"
-                )
-    
-                self.canvas_activity.draw()
-    
-                self.fill_activity_table([])
-    
-                return
-    
-            # ------------------------------------------------------------
-            # 6. ГОТОВИМ ДАННЫЕ ДЛЯ ГРАФИКА
-            # ------------------------------------------------------------
-    
-            metric = self.ui.combo_activity_metric.currentData()
+                timestamp = datetime.strptime(str(row[0]), "%Y-%m-%d %H:%M:%S")
+            except (TypeError, ValueError):
+                continue
 
-            if metric == "concentration":
-                json_column = 3
-                ylabel = self.tr("table_concentration")
-            else:
-                json_column = 2
-                ylabel = self.tr("table_activity")
+            try:
+                values = json.loads(row[json_column]) if row[json_column] else {}
+            except (TypeError, ValueError, json.JSONDecodeError):
+                values = {}
 
-            records = []
-            isotopes = set()
+            if not isinstance(values, dict):
+                values = {}
 
-            for row in rows:
+            clean_values = {}
+            for isotope, value in values.items():
                 try:
-                    timestamp = datetime.strptime(
-                        row[0],
-                        "%Y-%m-%d %H:%M:%S"
-                    )
+                    clean_values[str(isotope)] = max(0.0, float(value))
                 except (TypeError, ValueError):
                     continue
 
-                try:
-                    isotope_values = (
-                        json.loads(row[json_column])
-                        if row[json_column]
-                        else {}
-                    )
-                except (TypeError, ValueError, json.JSONDecodeError):
-                    isotope_values = {}
-
-                if not isinstance(isotope_values, dict):
-                    isotope_values = {}
-
-                values = {}
-                for isotope, value in isotope_values.items():
-                    try:
-                        values[str(isotope)] = float(value)
-                    except (TypeError, ValueError):
-                        continue
-
-                records.append((timestamp, values))
-                isotopes.update(values)
-
-            self.ax_activity.clear()
-
-            self.ax_activity.set_yscale("log" if self.ui.activity_log_checkbox.isChecked() else "linear" )
-
-            if records and isotopes:
-                records.sort(key=lambda record: record[0])
-                timestamps = [record[0] for record in records]
-
-                for isotope in sorted(isotopes):
-                    values = [
-                        record[1].get(isotope, float("nan"))
-                        for record in records
-                    ]
-                    if self.ui.activity_log_checkbox.isChecked():
-                        values = [
-                            value if value > 0 else float("nan")
-                            for value in values
-                        ]
-                    self.ax_activity.plot(
-                        timestamps,
-                        values,
-                        linewidth=1.5,
-                        label=isotope
-                    )
-
-                metric_title = (
-                    self.tr("table_concentration")
-                    if metric == "concentration"
-                    else self.tr("table_activity")
-                )
-                #self.ax_activity.set_xlabel("Час")
-                self.ax_activity.set_ylabel(ylabel)
-                self.ax_activity.set_title(f"{metric_title} - {device_sn}")
-                self.ax_activity.grid(True)
-                self.ax_activity.legend()
-                self.figure_activity.autofmt_xdate()
-            else:
-                self.ax_activity.text(
-                    0.5,
-                    0.5,
-                    self.tr("db_no_correct_data"),
-                    transform=self.ax_activity.transAxes,
-                    ha="center"
-                )
-
-            self.canvas_activity.draw()
-    
-            # ------------------------------------------------------------
-            # 8. ТАБЛИЦА
-            # ------------------------------------------------------------
-    
-            self.fill_activity_table(rows)
-
-
-    
-    def fill_activity_table(self, rows):
-        """
-        Заполняет таблицу результатов спектрального анализа.
-
-        Повреждение одной исторической записи не должно приводить
-        к ошибке всего окна просмотра БД.
-        """
-
-        model = QStandardItemModel()
-
-        model.setHorizontalHeaderLabels(
-            [
-                self.tr("db_time"),
-                self.tr("db_paed"),
-                self.tr("db_composition"),
-                self.tr("db_fullness")
-            ]
-        )
-
-        for row_idx, row in enumerate(rows):
-
-            # --------------------------------------------------------
-            # ВРЕМЯ
-            # --------------------------------------------------------
+            records.append((timestamp, clean_values))
+            isotopes.update(clean_values)
 
             try:
+                tc_points = json.loads(row[5]) if row[5] else []
+            except (TypeError, ValueError, json.JSONDecodeError):
+                tc_points = []
+
+            if isinstance(tc_points, list):
+                for point in tc_points:
+                    if not isinstance(point, dict):
+                        continue
+                    try:
+                        tc_timestamp = datetime.strptime(
+                            point["timestamp"], "%Y-%m-%d %H:%M:%S"
+                        )
+                        tc_value = max(0.0, float(point[metric]))
+                    except (KeyError, TypeError, ValueError):
+                        continue
+
+                    records.append((tc_timestamp, {"99mTc": tc_value}))
+                    isotopes.add("99mTc")
+
+        self.ax_activity.clear()
+        self.ax_activity.set_yscale(
+            "log" if self.ui.activity_log_checkbox.isChecked() else "linear"
+        )
+
+        if records and isotopes:
+            records.sort(key=lambda item: item[0])
+            for isotope in sorted(isotopes):
+                series = [
+                    (timestamp, values[isotope])
+                    for timestamp, values in records
+                    if isotope in values
+                ]
+                if self.ui.activity_log_checkbox.isChecked():
+                    series = [(timestamp, value) for timestamp, value in series if value > 0]
+                if series:
+                    self.ax_activity.plot(
+                        [item[0] for item in series],
+                        [item[1] for item in series],
+                        marker='o',
+                        linewidth=1.5,
+                        markersize=2,
+                        label=isotope,
+                    )
+
+            self.ax_activity.set_ylabel(ylabel)
+            self.ax_activity.set_title(f"{ylabel} - {device_sn}")
+            self.ax_activity.grid(True)
+            self.ax_activity.legend()
+            self.figure_activity.autofmt_xdate()
+        else:
+            self.ax_activity.text(
+                0.5, 0.5, self.tr("db_no_correct_data"),
+                transform=self.ax_activity.transAxes, ha="center",
+            )
+
+        self.canvas_activity.draw()
+        self.fill_activity_table(rows)
+    
+    # def fill_activity_table(self, rows):
+    #     """
+    #     Заполняет таблицу результатов спектрального анализа.
+
+    #     Повреждение одной исторической записи не должно приводить
+    #     к ошибке всего окна просмотра БД.
+    #     """
+
+    #     model = QStandardItemModel()
+
+    #     model.setHorizontalHeaderLabels(
+    #         [
+    #             self.tr("db_time"),
+    #             self.tr("db_paed"),
+    #             self.tr("db_composition"),
+    #             self.tr("db_fullness")
+    #         ]
+    #     )
+
+    #     for row_idx, row in enumerate(rows):
+
+    #         # --------------------------------------------------------
+    #         # ВРЕМЯ
+    #         # --------------------------------------------------------
+
+    #         try:
+    #             timestamp = datetime.strptime(
+    #                 row[0],
+    #                 "%Y-%m-%d %H:%M:%S"
+    #             ).strftime(
+    #                 "%d.%m.%Y %H:%M:%S"
+    #             )
+    #         except (TypeError, ValueError):
+    #             timestamp = str(row[0] or "—")
+
+    #         # --------------------------------------------------------
+    #         # ПАЕД
+    #         # --------------------------------------------------------
+
+    #         try:
+    #             paed = f"{float(row[1]):.2f}"
+    #         except (TypeError, ValueError):
+    #             paed = "—"
+
+    #         # --------------------------------------------------------
+    #         # СОСТОЯНИЕ ЦИСТЕРНЫ
+    #         # --------------------------------------------------------
+
+    #         if row[4] == "full":
+    #             fullness = self.tr("barrel_full")
+
+    #         elif row[4] == "empty":
+    #             fullness = self.tr("barrel_empty")
+
+    #         else:
+    #             fullness = "—"
+
+    #         # --------------------------------------------------------
+    #         # ACTIVITY / CONCENTRATION
+    #         # --------------------------------------------------------
+
+    #         activity_json = row[2]
+    #         concentration_json = row[3]
+
+    #         composition_parts = []
+
+    #         try:
+
+    #             activity_dict = (
+    #                 json.loads(activity_json)
+    #                 if activity_json
+    #                 else {}
+    #             )
+
+    #             concentration_dict = (
+    #                 json.loads(concentration_json)
+    #                 if concentration_json
+    #                 else {}
+    #             )
+
+    #             if not isinstance(activity_dict, dict):
+    #                 raise ValueError(
+    #                     "activity не является словарём"
+    #                 )
+
+    #             if not isinstance(concentration_dict, dict):
+    #                 concentration_dict = {}
+
+    #             if activity_dict:
+
+    #                 for isotope, activity in activity_dict.items():
+
+    #                     concentration = (
+    #                         concentration_dict.get(
+    #                             isotope
+    #                         )
+    #                     )
+
+    #                     try:
+    #                         activity_text = (
+    #                             f"{float(activity):.2f}"
+    #                         )
+    #                     except (TypeError, ValueError):
+    #                         activity_text = "—"
+
+    #                     try:
+    #                         concentration_text = (
+    #                             f"{float(concentration):.2f}"
+    #                         )
+    #                     except (TypeError, ValueError):
+    #                         concentration_text = "—"
+
+    #                     composition_parts.append(
+    #                         (
+    #                             f"{isotope}: "
+    #                             f"{activity_text} {self.tr("bq")}, "
+    #                             f"{concentration_text} {self.tr("bq_l")}"
+    #                         )
+    #                     )
+
+    #             else:
+
+    #                 composition_parts.append(
+    #                     self.tr("no_data")
+    #                 )
+
+    #         except (
+    #             TypeError,
+    #             ValueError,
+    #             json.JSONDecodeError
+    #         ):
+
+    #             composition_parts.append(
+    #                 #"помилка даних"
+    #                 self.tr("db_data_error")
+    #             )
+
+    #         composition_str = "; ".join(
+    #             composition_parts
+    #         )
+
+    #         # --------------------------------------------------------
+    #         # ЗАПОЛНЯЕМ СТРОКУ
+    #         # --------------------------------------------------------
+
+    #         model.setItem(
+    #             row_idx,
+    #             0,
+    #             QStandardItem(timestamp)
+    #         )
+
+    #         model.setItem(
+    #             row_idx,
+    #             1,
+    #             QStandardItem(paed)
+    #         )
+
+    #         model.setItem(
+    #             row_idx,
+    #             2,
+    #             QStandardItem(composition_str)
+    #         )
+
+    #         model.setItem(
+    #             row_idx,
+    #             3,
+    #             QStandardItem(fullness)
+    #         )
+
+    #     self.ui.tableView_activity.setModel(model)
+
+    #     self.ui.tableView_activity.horizontalHeader().setSectionResizeMode(
+    #         QHeaderView.Stretch
+    #     )
+
+
+    def fill_activity_table(self, rows):
+        model = QStandardItemModel()
+        model.setHorizontalHeaderLabels([
+            self.tr("db_time"),
+            self.tr("db_paed"),
+            self.tr("db_composition"),
+            self.tr("db_fullness"),
+        ])
+
+        for row_idx, row in enumerate(rows):
+            try:
                 timestamp = datetime.strptime(
-                    row[0],
-                    "%Y-%m-%d %H:%M:%S"
-                ).strftime(
-                    "%d.%m.%Y %H:%M:%S"
-                )
+                    str(row[0]), "%Y-%m-%d %H:%M:%S"
+                ).strftime("%d.%m.%Y %H:%M:%S")
             except (TypeError, ValueError):
                 timestamp = str(row[0] or "—")
-
-            # --------------------------------------------------------
-            # ПАЕД
-            # --------------------------------------------------------
 
             try:
                 paed = f"{float(row[1]):.2f}"
             except (TypeError, ValueError):
                 paed = "—"
 
-            # --------------------------------------------------------
-            # СОСТОЯНИЕ ЦИСТЕРНЫ
-            # --------------------------------------------------------
-
-            if row[4] == "full":
-                fullness = self.tr("barrel_full")
-
-            elif row[4] == "empty":
-                fullness = self.tr("barrel_empty")
-
-            else:
-                fullness = "—"
-
-            # --------------------------------------------------------
-            # ACTIVITY / CONCENTRATION
-            # --------------------------------------------------------
-
-            activity_json = row[2]
-            concentration_json = row[3]
+            fullness = (
+                self.tr("barrel_full") if row[4] == "full"
+                else self.tr("barrel_empty") if row[4] == "empty"
+                else "—"
+            )
 
             composition_parts = []
+            try:
+                activities = json.loads(row[2]) if row[2] else {}
+                concentrations = json.loads(row[3]) if row[3] else {}
+                if isinstance(activities, dict):
+                    for isotope, activity in activities.items():
+                        concentration = concentrations.get(isotope, "—")
+                        composition_parts.append(
+                            f"{isotope}: {max(0.0, float(activity)):.2f} {self.tr('bq')}, "
+                            f"{max(0.0, float(concentration)):.2f} {self.tr('bq_l')}"
+                        )
+            except (TypeError, ValueError, json.JSONDecodeError):
+                composition_parts.append(self.tr("db_data_error"))
 
             try:
+                tc_points = json.loads(row[5]) if row[5] else []
+            except (TypeError, ValueError, json.JSONDecodeError):
+                tc_points = []
 
-                activity_dict = (
-                    json.loads(activity_json)
-                    if activity_json
-                    else {}
-                )
-
-                concentration_dict = (
-                    json.loads(concentration_json)
-                    if concentration_json
-                    else {}
-                )
-
-                if not isinstance(activity_dict, dict):
-                    raise ValueError(
-                        "activity не является словарём"
-                    )
-
-                if not isinstance(concentration_dict, dict):
-                    concentration_dict = {}
-
-                if activity_dict:
-
-                    for isotope, activity in activity_dict.items():
-
-                        concentration = (
-                            concentration_dict.get(
-                                isotope
-                            )
-                        )
-
-                        try:
-                            activity_text = (
-                                f"{float(activity):.2f}"
-                            )
-                        except (TypeError, ValueError):
-                            activity_text = "—"
-
-                        try:
-                            concentration_text = (
-                                f"{float(concentration):.2f}"
-                            )
-                        except (TypeError, ValueError):
-                            concentration_text = "—"
-
-                        composition_parts.append(
-                            (
-                                f"{isotope}: "
-                                f"{activity_text} {self.tr("bq")}, "
-                                f"{concentration_text} {self.tr("bq_l")}"
-                            )
-                        )
-
-                else:
-
+            if isinstance(tc_points, list):
+                for point in tc_points:
+                    if not isinstance(point, dict):
+                        continue
+                    try:
+                        tc_time = str(point["timestamp"])
+                        activity = max(0.0, float(point["activity"]))
+                        concentration = max(0.0, float(point["concentration"]))
+                    except (KeyError, TypeError, ValueError):
+                        continue
                     composition_parts.append(
-                        self.tr("no_data")
+                        f"99mTc ({tc_time}): {activity:.2f} {self.tr('bq')}, "
+                        f"{concentration:.2f} {self.tr('bq_l')}"
                     )
 
-            except (
-                TypeError,
-                ValueError,
-                json.JSONDecodeError
-            ):
-
-                composition_parts.append(
-                    #"помилка даних"
-                    self.tr("db_data_error")
-                )
-
-            composition_str = "; ".join(
-                composition_parts
-            )
-
-            # --------------------------------------------------------
-            # ЗАПОЛНЯЕМ СТРОКУ
-            # --------------------------------------------------------
-
-            model.setItem(
-                row_idx,
-                0,
-                QStandardItem(timestamp)
-            )
-
-            model.setItem(
-                row_idx,
-                1,
-                QStandardItem(paed)
-            )
-
-            model.setItem(
-                row_idx,
-                2,
-                QStandardItem(composition_str)
-            )
-
-            model.setItem(
-                row_idx,
-                3,
-                QStandardItem(fullness)
-            )
+            model.appendRow([
+                QStandardItem(timestamp),
+                QStandardItem(paed),
+                QStandardItem("; ".join(composition_parts) or self.tr("no_data")),
+                QStandardItem(fullness),
+            ])
 
         self.ui.tableView_activity.setModel(model)
-
         self.ui.tableView_activity.horizontalHeader().setSectionResizeMode(
             QHeaderView.Stretch
         )
@@ -1879,7 +2128,7 @@ class DBViewWindow(QMainWindow):
     
     def export_csv(self, tab):
         """Экспорт таблицы в CSV"""
-        file_path, _ = QFileDialog.getSaveFileName(self, "Зберегти CSV", "", "CSV Files (*.csv)")
+        file_path, _ = QFileDialog.getSaveFileName(self, self.tr("save_csv"), "", "CSV Files (*.csv)")
         if not file_path:
             return
         
@@ -1915,7 +2164,7 @@ class DBViewWindow(QMainWindow):
     
     def export_png(self, tab):
         """Экспорт графика в PNG"""
-        file_path, _ = QFileDialog.getSaveFileName(self, "Зберегти графік", "", "PNG Files (*.png)")
+        file_path, _ = QFileDialog.getSaveFileName(self, self.tr("save_png"), "", "PNG Files (*.png)")
         if not file_path:
             return
         

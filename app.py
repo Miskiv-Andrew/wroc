@@ -103,9 +103,9 @@ class PasswordDialog(QDialog):
 
 
 class SpectrumWidget(QWidget):
-    def __init__(self):
+    def __init__(self, parent_app=None):
         super().__init__()
-
+        self.parent_app = parent_app
         self.figure = Figure()
         self.canvas = FigureCanvas(self.figure)
 
@@ -113,6 +113,11 @@ class SpectrumWidget(QWidget):
         layout.addWidget(self.canvas)
         self.ax = self.figure.add_subplot(111)
         self.data = []  # хранение текущих данных
+
+    def tr(self, key):
+            if self.parent_app is not None:
+                return self.parent_app.tr(key)
+            return TRANSLATIONS["uk"].get(key, key)
 
     def update_data(self, data):
         """Обновляет данные и перерисовывает график"""
@@ -170,9 +175,6 @@ class DeviceCardBarrel(QWidget):
         self.set_dose_icon()
         self.set_temp_icon()
         self.set_activity_icon()
-        self.set_isotope_icon()
-        self.set_isotope_icon2()
-        self.set_isotope_icon3()
         self.set_spectrum_ui_enabled(False)
 
         # Инициализация спектральных данных
@@ -191,6 +193,7 @@ class DeviceCardBarrel(QWidget):
         #     btn_hist.clicked.connect(self.plot_activity_histogram)
 
         self.last_temperature = 0.0
+        self.temperature_valid = False
 
         # Для хранения последних значений
         self.last_paed = 0.0
@@ -232,6 +235,7 @@ class DeviceCardBarrel(QWidget):
 
         self.spectrum_session_started_at = None
         self.spectrum_session_start_monotonic = None
+        self.spectrum_timer_frozen = False
         # ------------------------------------------------------------
         # ФАКТИЧЕСКАЯ ДЛИТЕЛЬНОСТЬ ЗАВЕРШЁННОГО ЦИКЛА
         # ------------------------------------------------------------
@@ -289,6 +293,9 @@ class DeviceCardBarrel(QWidget):
         if self.spectrum_session_start_monotonic is None:
             return
 
+        if self.spectrum_timer_frozen:
+            return
+
         elapsed_seconds = max(
             0,
             int(time.monotonic() - self.spectrum_session_start_monotonic)
@@ -301,6 +308,14 @@ class DeviceCardBarrel(QWidget):
             self.spectrum_ongoing_label.setText(
                 f"{days:02d}:{hours:02d}:{minutes:02d}:{seconds:02d}"
             )
+    
+    def freeze_spectrum_timer(self):
+        self.update_spectrum_ongoing_time()
+        self.spectrum_timer_frozen = True
+
+    def unfreeze_spectrum_timer(self):
+        self.spectrum_timer_frozen = False
+        self.update_spectrum_ongoing_time()
 
     def clear_history(self):
         """
@@ -456,33 +471,6 @@ class DeviceCardBarrel(QWidget):
         """Set the activity icon"""
         label = self.ui.findChild(QLabel, "iconActivity")
         path = os.path.abspath(os.path.join("_UI", "icons", "activity_icon.png"))
-        pixmap = QPixmap(path)
-        if label:
-            label.setPixmap(pixmap)
-
-    def set_isotope_icon(self):
-        """Set the isotope icon"""
-        label = self.ui.findChild(QLabel, "iconIsotope")
-
-        path = os.path.abspath(os.path.join("_UI", "icons", "isotope_icon.png"))
-        pixmap = QPixmap(path)
-        if label:
-            label.setPixmap(pixmap)
-    
-    def set_isotope_icon2(self):
-        """Set the isotope icon"""
-        label = self.ui.findChild(QLabel, "iconIsotope2")
-
-        path = os.path.abspath(os.path.join("_UI", "icons", "isotope_icon.png"))
-        pixmap = QPixmap(path)
-        if label:
-            label.setPixmap(pixmap)
-    
-    def set_isotope_icon3(self):
-        """Set the isotope icon"""
-        label = self.ui.findChild(QLabel, "iconIsotope3")
-
-        path = os.path.abspath(os.path.join("_UI", "icons", "isotope_icon.png"))
         pixmap = QPixmap(path)
         if label:
             label.setPixmap(pixmap)
@@ -1254,6 +1242,8 @@ class DeviceCardBarrel(QWidget):
 
         id_counter = 1
 
+        tc_history_points = []
+
         # ============================================================
         # 12. ОБРАБАТЫВАЕМ ИЗОТОПЫ
         # ============================================================
@@ -1464,9 +1454,7 @@ class DeviceCardBarrel(QWidget):
                 or
                 not math.isfinite(activity_upper)
                 or
-                not math.isfinite(
-                    concentration_upper
-                )
+                not math.isfinite(concentration_upper)
             ):
 
                 self.parent_app.ui.textEdit.append(
@@ -1478,6 +1466,22 @@ class DeviceCardBarrel(QWidget):
 
                 id_counter += 1
                 continue
+
+            activity = max(0.0, activity)
+            concentration = max(0.0, concentration)
+            activity_upper = max(0.0, activity_upper)
+            activity_lower = max(0.0, activity_lower)
+            concentration_upper = max(0.0, concentration_upper)
+            concentration_lower = max(0.0, concentration_lower)
+
+            data.update({
+                "activity": activity,
+                "concentration": concentration,
+                "activity_upper": activity_upper,
+                "activity_lower": activity_lower,
+                "conc_upper": concentration_upper,
+                "conc_lower": concentration_lower,
+            })
 
             # ========================================================
             # 12.4. ПЛОЩАДЬ — ТОЛЬКО ДИАГНОСТИКА
@@ -1735,6 +1739,13 @@ class DeviceCardBarrel(QWidget):
                     ):
                         continue
 
+                    historical_point = dict(historical_point)
+                    for key in required_values:
+                        historical_point[key] = max(
+                            0.0,
+                            float(historical_point[key])
+                        )
+
                     reference_hour = historical_point.get("reference_hour")
                     historical_timestamp_ms = cycle_timestamp_ms
 
@@ -1757,6 +1768,18 @@ class DeviceCardBarrel(QWidget):
                             historical_timestamp_ms -= (
                                 current_hour - reference_hour
                             ) * 3_600_000
+
+                    tc_history_points.append({
+                        "timestamp": datetime.fromtimestamp(
+                            historical_timestamp_ms / 1000
+                        ).strftime("%Y-%m-%d %H:%M:%S"),
+                        "activity": historical_point["activity"],
+                        "concentration": historical_point["concentration"],
+                        "activity_lower": historical_point["activity_lower"],
+                        "activity_upper": historical_point["activity_upper"],
+                        "conc_lower": historical_point["conc_lower"],
+                        "conc_upper": historical_point["conc_upper"],
+                    })
 
                     self.concentration_history.setdefault(name, []).append({
                         "timestamp_ms": historical_timestamp_ms,
@@ -2040,6 +2063,11 @@ class DeviceCardBarrel(QWidget):
                 ensure_ascii=False
             )
 
+            tc_history_json = json.dumps(
+                tc_history_points,
+                ensure_ascii=False
+            )
+
             device_id = (
                 self.parent_app.db_manager.get_device_id(
                     self.serial_number
@@ -2072,12 +2100,14 @@ class DeviceCardBarrel(QWidget):
                     activity_upper_json=activity_upper_json,
                     concentration_upper_json=concentration_upper_json,
                     result_meta_json=result_meta_json,
+                    tc_history_json=tc_history_json,
                     ready_to_drain=ready_to_drain,
                     measurement_valid=(
                         1
                         if measurement_valid
                         else 0
-                    )
+                    ),
+                    temperature_valid=self.temperature_valid,
                 )
 
                 self.parent_app.ui.textEdit.append(
@@ -2250,13 +2280,13 @@ class DeviceCardBarrel(QWidget):
                 activity_upper = float(data.get("activity_upper", 0))
 
                 # Concentration range
-                if conc_upper < 0:
+                if conc_upper < 0 or conc_upper == 0:
                     concentration = "≈ 0"
                 else:
                     concentration = f"{max(0, conc_lower):.2f} ÷ {conc_upper:.2f}"
 
                 # Activity range
-                if activity_upper < 0:
+                if activity_upper < 0 or activity_upper == 0:
                     activity = "≈ 0"
                 else:
                     activity = f"{max(0, activity_lower):.2f} ÷ {activity_upper:.2f}"
@@ -2276,62 +2306,6 @@ class DeviceCardBarrel(QWidget):
 
         table.resizeColumnsToContents()
         #table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-
-
-    # def plot_activity_histogram(self):
-    #     """
-    #     Строит гистограмму активности по сохранённой истории.
-    #     Вызывается по кнопке "Побудувати" на вкладке "Гістограма".
-    #     """
-    #     from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-    #     from matplotlib.figure import Figure
-        
-    #     if not self.activity_history:
-    #         if hasattr(self, 'parent_app') and self.parent_app:
-    #             self.parent_app.ui.textEdit.append(
-    #                 f"Цистерна №{self.posit_number}: немає даних активності для побудови графіка"
-    #             )
-    #         return
-        
-    #     # Получаем виджет для гистограммы
-    #     hist_widget = self.ui.findChild(QWidget, "histogramWidget")
-    #     if not hist_widget:
-    #         return
-        
-    #     # Очищаем старый график
-    #     for child in hist_widget.children():
-    #         if isinstance(child, FigureCanvas):
-    #             child.deleteLater()
-        
-    #     # Создаём новый график
-    #     figure = Figure()
-    #     canvas = FigureCanvas(figure)
-    #     ax = figure.add_subplot(111)
-        
-    #     # Подготовка данных
-    #     activities = [item["activity"] for item in self.activity_history]
-    #     indices = range(1, len(activities) + 1)
-        
-    #     # Построение гистограммы (столбцы)
-    #     ax.bar(indices, activities, width=0.8, color='steelblue')
-    #     ax.set_xlabel("Номер вимірювання")
-    #     ax.set_ylabel("Активність, кБк")
-    #     ax.set_title(f"Активність цистерни №{self.posit_number}")
-    #     ax.grid(True, alpha=0.3)
-        
-    #     # Добавляем подписи над столбцами
-    #     if activities:
-    #         max_activity = max(activities)
-    #         for i, act in enumerate(activities):
-    #             ax.text(i + 1, act + 0.01 * max_activity, f"{act:.1f}", 
-    #                     ha='center', va='bottom', fontsize=8)
-        
-    #     canvas.draw()
-        
-    #     # Размещаем график
-    #     layout = QVBoxLayout(hist_widget)
-    #     layout.setContentsMargins(0, 0, 0, 0)
-    #     layout.addWidget(canvas)
 
     def setup_concentration_plot(self):
         concentration_widget = self.ui.findChild(QWidget, "activityWidget")
@@ -2391,217 +2365,6 @@ class DeviceCardBarrel(QWidget):
 
         self.concentration_ax = self.concentration_figure.add_subplot(111)
         self.plot_concentration_history()
-
-    # def plot_concentration_history(self, isotope=None):
-    #     isotope = isotope or self.concentration_selector.currentText()
-    #     points = self.concentration_history.get(isotope, [])
-
-    #     self.concentration_ax.clear()
-
-    #     if not points:
-    #         self.concentration_ax.text(
-    #             0.5, 0.5, "Немає даних",
-    #             transform=self.concentration_ax.transAxes,
-    #             ha="center",
-    #             va="center"
-    #         )
-    #         self.concentration_canvas.draw()
-    #         return
-
-    #     points = sorted(points, key=lambda point: point["timestamp_ms"])
-    #     dates = [
-    #         datetime.fromtimestamp(point["timestamp_ms"] / 1000)
-    #         for point in points
-    #     ]
-
-    #     lower = [
-    #         min(point["conc_lower"], point["conc_upper"])
-    #         for point in points
-    #     ]
-    #     upper = [
-    #         max(point["conc_lower"], point["conc_upper"])
-    #         for point in points
-    #     ]
-
-    #     self.concentration_ax.vlines(
-    #         mdates.date2num(dates),
-    #         lower,
-    #         upper,
-    #         color="#7a8793",
-    #         linewidth=1,
-    #         label="Статистичні межі"
-    #     )
-
-    #     measured = [
-    #         (date, point["concentration"])
-    #         for date, point in zip(dates, points)
-    #         if point["measurement_valid"] and not point["extrapolated"]
-    #     ]
-    #     estimated = [
-    #         (date, point["concentration"])
-    #         for date, point in zip(dates, points)
-    #         if not point["measurement_valid"] or point["extrapolated"]
-    #     ]
-
-    #     if measured:
-    #         self.concentration_ax.plot(
-    #             [item[0] for item in measured],
-    #             [item[1] for item in measured],
-    #             marker="o",
-    #             markersize=1,
-    #             color="#247a68",
-    #             label="Концентрація"
-    #         )
-
-    #     # if estimated:
-    #     #     self.concentration_ax.scatter(
-    #     #         [item[0] for item in estimated],
-    #     #         [item[1] for item in estimated],
-    #     #         marker="^",
-    #     #         color="#d17a22",
-    #     #         label="Оцінка / невалідний цикл"
-    #     #     )
-
-    #     if estimated:
-    #         self.concentration_ax.plot(
-    #             [item[0] for item in estimated],
-    #             [item[1] for item in estimated],
-    #             marker="o",
-    #             markersize=1,
-    #             color="#d17a22",
-    #             label="Екстраполяція"
-    #         )
-
-    #     # self.concentration_ax.set_title(
-    #     #     f"{isotope}, цистерна №{self.posit_number}"
-    #     # )
-    #     #self.concentration_ax.set_xlabel("Час")
-    #     #self.concentration_ax.set_ylabel("Концентрація, Бк/л")
-    #     self.concentration_ax.xaxis_date()
-    #     self.concentration_ax.xaxis.set_major_formatter(
-    #         mdates.DateFormatter("%d-%m %H:%M")
-    #     )
-    #     self.concentration_ax.grid(True, alpha=0.3)
-    #     self.concentration_ax.legend()
-    #     self.concentration_figure.autofmt_xdate()
-    #     self.concentration_figure.tight_layout()
-    #     self.concentration_canvas.draw()
-
-
-    # def plot_concentration_history(self, isotope=None):
-    #     isotope = isotope or self.concentration_selector.currentText()
-    #     points = self.concentration_history.get(isotope, [])
-        
-    #     self.concentration_ax.clear()
-    #     if self.concentration_log_checkbox.isChecked():
-    #         self.concentration_ax.set_yscale("log")
-    #     else:
-    #         self.concentration_ax.set_yscale("linear")
-
-    #     if not points:
-    #         self.concentration_ax.text(
-    #             0.5, 0.5, "Немає даних",
-    #             transform=self.concentration_ax.transAxes,
-    #             ha="center",
-    #             va="center"
-    #         )
-    #         self.concentration_canvas.draw()
-    #         return
-
-    #     points = sorted(points, key=lambda point: point["timestamp_ms"])
-
-    #     dates = [
-    #         datetime.fromtimestamp(point["timestamp_ms"] / 1000)
-    #         for point in points
-    #     ]
-
-    #     lower = [
-    #         min(point["conc_lower"], point["conc_upper"])
-    #         for point in points
-    #     ]
-    #     upper = [
-    #         max(point["conc_lower"], point["conc_upper"])
-    #         for point in points
-    #     ]
-
-    #     # Statistical bounds
-    #     self.concentration_ax.vlines(
-    #         mdates.date2num(dates),
-    #         lower,
-    #         upper,
-    #         color="#7a8793",
-    #         linewidth=1.5,
-    #         capstyle='butt',
-    #         label="Статистичні межі"
-    #     )
-
-    #     concentrations = [
-    #         point["concentration"]
-    #         for point in points
-    #     ]
-
-    #     # True = measured, False = extrapolated or invalid
-    #     measured = [
-    #         point["measurement_valid"] and not point["extrapolated"]
-    #         for point in points
-    #     ]
-
-    #     # Draw a continuous line, coloring each segment by its starting point
-    #     for i in range(len(points) - 1):
-    #         color = "#247a68" if measured[i] else "#d17a22"
-
-    #         self.concentration_ax.plot(
-    #             dates[i:i + 2],
-    #             concentrations[i:i + 2],
-    #             marker="o",
-    #             markersize=2,
-    #             color=color,
-    #             linewidth=1.5
-    #         )
-
-    #     # Plot a single point if there is only one measurement
-    #     if len(points) == 1:
-    #         color = "#247a68" if measured[0] else "#d17a22"
-    #         self.concentration_ax.plot(
-    #             dates,
-    #             concentrations,
-    #             marker="o",
-    #             markersize=2,
-    #             linestyle="None",
-    #             color=color,
-    #             label="Концентрація" if measured[0] else "Екстраполяція"
-    #         )
-
-    #     # Legend entries
-    #     self.concentration_ax.plot(
-    #         [], [],
-    #         color="#247a68",
-    #         linewidth=1.5,
-    #         label="Концентрація"
-    #     )
-    #     self.concentration_ax.plot(
-    #         [], [],
-    #         color="#d17a22",
-    #         linewidth=1.5,
-    #         label="Екстраполяція"
-    #     )
-
-    #     # self.concentration_ax.set_title(
-    #     #     f"{isotope}, цистерна №{self.posit_number}"
-    #     # )
-    #     # self.concentration_ax.set_xlabel("Час")
-    #     # self.concentration_ax.set_ylabel("Концентрація, Бк/л")
-
-    #     self.concentration_ax.xaxis_date()
-    #     self.concentration_ax.xaxis.set_major_formatter(
-    #         mdates.DateFormatter("%d-%m %H:%M")
-    #     )
-
-    #     self.concentration_ax.grid(True, alpha=0.3)
-    #     self.concentration_ax.legend()
-    #     self.concentration_figure.autofmt_xdate()
-    #     self.concentration_figure.tight_layout()
-    #     self.concentration_canvas.draw()
 
     def _save_threshold(self, _value=None):
         isotope = self.concentration_selector.currentText()
@@ -3037,7 +2800,7 @@ class DeviceCardWall(QWidget):
 
 
     def add_spectrum(self):
-        self.spectrum = SpectrumWidget()
+        self.spectrum = SpectrumWidget(parent_app=self)
         layout = self.ui.spectrumWidget.layout()
         layout.setContentsMargins(0,0,0,0)
         layout.addWidget(self.spectrum)
@@ -3224,7 +2987,11 @@ class App(QObject):
         self.cistern_dict = {}  
 
         # мова 
-        self.language = "uk"
+        #self.language = "en"
+        self.language_config = self.load_config()
+        self.language = self.language_config.get("language", "uk")
+        if self.language not in TRANSLATIONS:
+            self.language = "uk"
 
         # атрибут - объект для работы с базами данных
         self.db_manager = DatabaseManager()
@@ -3301,13 +3068,13 @@ class App(QObject):
         # Пользователь может изменить его через диалог интервалов.
         # Новое значение применяется сразу, в том числе к уже
         # выполняющемуся спектральному циклу.
-        self.spectrum_accumulation_time = 60
+        self.spectrum_accumulation_time = 3600
 
         # ------------------------------------------------------------
         # НОВЫЕ АТРИБУТЫ ДЛЯ ИНТЕРВАЛОВ СОХРАНЕНИЯ В БД
         # ------------------------------------------------------------
         self.cistern_save_interval = 3600   # секунды (по умолчанию 1 час)
-        self.wall_save_interval = 60      # секунды (по умолчанию 30 минут)
+        self.wall_save_interval = 1800      # секунды (по умолчанию 30 минут)
 
         # Устанавливаем интервалы в DatabaseManager
         self.db_manager.set_cistern_save_interval(self.cistern_save_interval)
@@ -3602,6 +3369,46 @@ class App(QObject):
             # Якщо меню не знайдено — створюємо його (запасний варіант)
             self.ui.textEdit.append("Увага: меню 'Прилади' не знайдено")
 
+    def get_config_path(self):
+        """Return the path to config/config.json."""
+        project_dir = os.path.dirname(os.path.abspath(__file__))
+        config_dir = os.path.join(project_dir, "config")
+
+        # Create config folder if it doesn't exist
+        os.makedirs(config_dir, exist_ok=True)
+
+        return os.path.join(config_dir, "language.json")
+
+
+    def load_config(self):
+        """Load application configuration."""
+        config_path = self.get_config_path()
+
+        try:
+            with open(config_path, "r", encoding="utf-8") as file:
+                config = json.load(file)
+
+        except (FileNotFoundError, json.JSONDecodeError):
+            config = {}
+
+        return config
+
+
+    def save_config(self):
+        """Save application configuration."""
+        config_path = self.get_config_path()
+
+        try:
+            with open(config_path, "w", encoding="utf-8") as file:
+                json.dump(
+                    self.language_config,
+                    file,
+                    ensure_ascii=False,
+                    indent=4
+                )
+
+        except OSError as error:
+            print(f"Could not save configuration: {error}")
 
     def tr(self, key):
         """Get a translation for the current language."""
@@ -3613,7 +3420,15 @@ class App(QObject):
         if language not in TRANSLATIONS:
             return
 
+        # self.language = language
+        if language == self.language:
+            return
+
         self.language = language
+
+        # Save selected language
+        self.language_config["language"] = language
+        self.save_config()
         self.update_language()
 
 
@@ -5871,6 +5686,10 @@ class App(QObject):
         if hasattr(self, "butt_search_dev"):
             self.butt_search_dev.setEnabled(True)
 
+        for card in self.cards_by_sn.values():
+            if isinstance(card, DeviceCardBarrel):
+                card.freeze_spectrum_timer()
+
 
 
     def on_device_packet(self, packet):
@@ -6159,7 +5978,8 @@ class App(QObject):
                         group=group,
                         activity_json="{}",
                         concentration_json="{}",
-                        spectrum_active=card.spectrum_active
+                        spectrum_active=card.spectrum_active,
+                        temperature_valid=getattr(card, "temperature_valid", False)
                     )
 
                     zb_object = self._build_zb_raddose_update(
@@ -6188,9 +6008,10 @@ class App(QObject):
 
                 if temperature is None:
 
-                    if card.location_type == "room":
+                    # if card.location_type == "room":
 
-                        card.temperature_valid = False
+                    #     card.temperature_valid = False
+                    card.temperature_valid = False
 
                     self.ui.textEdit.append(
                         (
@@ -6212,9 +6033,10 @@ class App(QObject):
 
                 except (TypeError, ValueError):
 
-                    if card.location_type == "room":
+                    # if card.location_type == "room":
 
-                        card.temperature_valid = False
+                    #     card.temperature_valid = False
+                    card.temperature_valid = False
 
                     self.ui.textEdit.append(
                         (
@@ -6247,15 +6069,19 @@ class App(QObject):
                 # Для CZ фиксируем актуальность температуры
                 # ----------------------------------------------------
 
-                if card.location_type == "room":
+                # if card.location_type == "room":
 
-                    card.temperature_valid = True
+                #     card.temperature_valid = True
 
-                    card.last_temperature_timestamp = (
-                        time.strftime(
-                            "%Y-%m-%d %H:%M:%S"
-                        )
-                    )
+                #     card.last_temperature_timestamp = (
+                #         time.strftime(
+                #             "%Y-%m-%d %H:%M:%S"
+                #         )
+                #     )
+                card.temperature_valid = True
+                card.last_temperature_timestamp = time.strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                )
 
             # ========================================================
             # START SPECTRE
@@ -6480,7 +6306,8 @@ class App(QObject):
                         group=group,
                         activity_json="{}",
                         concentration_json="{}",
-                        spectrum_active=card.spectrum_active
+                        spectrum_active=card.spectrum_active,
+                        temperature_valid=getattr(card, "temperature_valid", False)
                     )
 
                 elif device_id is None:
@@ -6712,6 +6539,28 @@ class App(QObject):
 
         self.cards_by_sn.clear()
         self.clear_layout()
+
+        found_serials = {
+            str(device.get("serial_number", "")).strip()
+            for device in (devices or [])
+            if device.get("serial_number") is not None
+        }
+
+        active_devices = self.db_manager.get_all_active_devices()
+        missing_serials = {
+            str(device.get("serial_number", "")).strip()
+            for device in active_devices
+            if str(device.get("serial_number", "")).strip()
+            and str(device.get("serial_number", "")).strip() not in found_serials
+        }
+
+        # Make initially missing devices eligible for the existing replace dialog.
+        self._confirmed_offline_devices = missing_serials
+
+        if self.butt_replace_device:
+            self.butt_replace_device.setEnabled(
+                bool(missing_serials or self.db_manager.get_inactive_devices())
+            )
 
         # ============================================================
         # 2. ТЕКУЩИЙ ПОИСК НЕ ДАЛ НИ ОДНОГО ПРИБОРА
@@ -8303,6 +8152,10 @@ class App(QObject):
         self.ui.textEdit.append(
             self.tr("ui_system_started")
         )
+
+        for card in self.cards_by_sn.values():
+            if isinstance(card, DeviceCardBarrel):
+                card.unfreeze_spectrum_timer()
                    
     def on_device_connection_status(
         self,
@@ -8382,20 +8235,22 @@ class App(QObject):
             #     last_temperature_timestamp
             # ========================================================
 
-            if (
-                not connected
-                and getattr(
-                    card,
-                    "location_type",
-                    None
-                ) == "room"
-            ):
+            # if (
+            #     not connected
+            #     and getattr(
+            #         card,
+            #         "location_type",
+            #         None
+            #     ) == "room"
+            # ):
 
-                if hasattr(
-                    card,
-                    "temperature_valid"
-                ):
-                    card.temperature_valid = False
+            #     if hasattr(
+            #         card,
+            #         "temperature_valid"
+            #     ):
+            #         card.temperature_valid = False
+            if not connected and card:
+                card.temperature_valid = False
 
         # ============================================================
         # 4. ПРОВЕРЯЕМ НАЛИЧИЕ СПИСКА ПОДТВЕРЖДЁННО
@@ -13602,131 +13457,9 @@ def main():
     # ============================================================
 
     window = App()
-    from serial.tools import list_ports
+    
 
-    for port in list_ports.comports():
-        print(port.device, port.vid, port.pid, port.manufacturer, port.description)
-
-    # def run_series(position, card, files):
-    #     position = position
-    #     #card = DeviceCardBarrel(parent_app=window)
-    #     card=card
-    #     card.posit_number = position
-    #     card.serial_number = f"TEST-{position}"
-    #     card.location_type = "cistern"
-
-    #     card.set_position(position)
-    #     card.set_serial(card.serial_number)
-    #     card.set_group(window.cistern_groups[position])
-    #     card.set_barrel_image(True)
-    #     window.barrel_grid.addWidget(card, 0, 0)
-    #     window.cards_by_sn[card.serial_number] = card
-
-    #     history = {}
-
-    #     card.concentration_history.clear()
-    #     card.concentration_selector.clear()
-    #     series_start_ms = QDateTime.currentDateTime().toMSecsSinceEpoch()
-    #     for cycle, path in enumerate(files, start=1):
-    #         spectrum = np.loadtxt(path, dtype=float).reshape(-1)
-
-    #         if spectrum.size == 1023:
-    #             spectrum = np.append(spectrum, 3600.0)
-    #         if spectrum.size != 1024:
-    #             raise ValueError(f"{path}: expected 1023 counts plus optional time")
-
-    #         result, history = window.identify_isotopes_alim(
-    #             spectrum,
-    #             cistern_position=position,
-    #             history=history,
-    #         )
-
-    #         if not result:
-    #             print(f"Position {position}, cycle {cycle}: no result; check the app log")
-    #             continue
-
-    #         card.spectrum.update_data(spectrum[:1023])
-    #         card.update_isotopes_table(result)
-
-    #         timestamp_ms = QDateTime.currentDateTime().toMSecsSinceEpoch()
-    #         #series_start_ms = QDateTime.currentDateTime().toMSecsSinceEpoch()
-    #         for isotope in result["isotopes"]:
-    #             data = result.get(isotope, {})
-    #             points = [data]
-
-    #             if isotope == "99mTc":
-    #                 points.extend(history.get("tc_backfill_results", []))
-
-    #                 previous_tc = result.get("tc_previous_hour_result")
-    #                 if previous_tc:
-    #                     points.insert(0, previous_tc)
-
-    #             for point in points:
-    #                 if point.get("available", True) is False:
-    #                     continue
-
-    #                 concentration = point.get("concentration")
-    #                 lower = point.get("conc_lower")
-    #                 upper = point.get("conc_upper")
-
-    #                 activity = point.get("activity")
-    #                 activity_lower = point.get("activity_lower")
-    #                 activity_upper = point.get("activity_upper")
-                    
-    #                 if any(value is None for value in (
-    #                     concentration, lower, upper,
-    #                     activity, activity_lower, activity_upper,
-    #                 )):
-    #                     continue
-
-    #                 reference_hour = point.get("reference_hour")
-    #                 point_cycle = (
-    #                     reference_hour
-    #                     if isotope == "99mTc" and reference_hour is not None
-    #                     else cycle
-    #                 )
-    #                 timestamp_ms = series_start_ms + (point_cycle - 1) * 3_600_000
-
-    #                 card.concentration_history.setdefault(isotope, []).append({
-    #                     "timestamp_ms": timestamp_ms,
-    #                     "concentration": concentration,
-    #                     "conc_lower": lower,
-    #                     "conc_upper": upper,
-    #                     "activity": activity,
-    #                     "activity_lower": activity_lower,
-    #                     "activity_upper": activity_upper,
-    #                     "measurement_valid": result.get("measurement_valid", True),
-    #                     "extrapolated": point.get("extrapolated", False),
-    #                 })
-
-    #             if card.concentration_selector.findText(isotope) < 0:
-    #                 card.concentration_selector.addItem(isotope)
-
-    #         card.plot_concentration_history()
-    #         print(f"Concentration history: {card.concentration_history}")
-    #         print(f"Position {position}, cycle {cycle}: {history}")
-    #card = DeviceCardBarrel(parent_app=window)
-    #run_series(1, card, [r"test_spectra\A_cycle1.txt", r"test_spectra\A_cycle2.txt", r"test_spectra\A_cycle3.txt", r"test_spectra\A_cycle4.txt" ])
-    #run_series(1, card, [
-                        #r"test_spectra\A_cycle1_alim.txt", r"test_spectra\A_cycle2_alim.txt", r"test_spectra\A_cycle3_alim.txt", r"test_spectra\A_cycle4_alim.txt", r"test_spectra\A_cycle5_alim.txt", r"test_spectra\A_cycle6_alim.txt", r"test_spectra\A_cycle7_alim.txt", r"test_spectra\A_cycle8_alim.txt", r"test_spectra\A_cycle9_alim.txt", r"test_spectra\A_cycle10_alim.txt",
-                        #r"test_spectra\A_cycle11_alim.txt", r"test_spectra\A_cycle12_alim.txt", r"test_spectra\A_cycle13_alim.txt", 
-                        #r"test_spectra\A_cycle14_alim.txt", r"test_spectra\A_cycle15_alim.txt", r"test_spectra\A_cycle16_alim.txt", r"test_spectra\A_cycle17_alim.txt", r"test_spectra\A_cycle18_alim.txt", r"test_spectra\A_cycle19_alim.txt", r"test_spectra\A_cycle20_alim.txt",
-    #                     r"test_spectra\A_cycle21_alim.txt", r"test_spectra\A_cycle22_alim.txt", r"test_spectra\A_cycle23_alim.txt", r"test_spectra\A_cycle24_alim.txt", r"test_spectra\A_cycle25_alim.txt", r"test_spectra\A_cycle26_alim.txt", r"test_spectra\A_cycle27_alim.txt", r"test_spectra\A_cycle28_alim.txt", r"test_spectra\A_cycle29_alim.txt", r"test_spectra\A_cycle30_alim.txt",
-    #                     r"test_spectra\A_cycle31_alim.txt", r"test_spectra\A_cycle32_alim.txt", r"test_spectra\A_cycle33_alim.txt", r"test_spectra\A_cycle34_alim.txt", r"test_spectra\A_cycle35_alim.txt", r"test_spectra\A_cycle36_alim.txt", r"test_spectra\A_cycle37_alim.txt", r"test_spectra\A_cycle38_alim.txt", r"test_spectra\A_cycle39_alim.txt", r"test_spectra\A_cycle40_alim.txt"
-    #                ])
-    # run_series(3, card, [r"test_spectra\R_cycle1_alim.txt", r"test_spectra\R_cycle2_alim.txt", r"test_spectra\R_cycle3_alim.txt", r"test_spectra\R_cycle4_alim.txt", r"test_spectra\R_cycle5_alim.txt", r"test_spectra\R_cycle6_alim.txt", r"test_spectra\R_cycle7_alim.txt", r"test_spectra\R_cycle8_alim.txt", r"test_spectra\R_cycle9_alim.txt", r"test_spectra\R_cycle10_alim.txt",
-    #                     r"test_spectra\R_cycle11_alim.txt", r"test_spectra\R_cycle12_alim.txt", r"test_spectra\R_cycle13_alim.txt", r"test_spectra\R_cycle14_alim.txt", r"test_spectra\R_cycle15_alim.txt", r"test_spectra\R_cycle16_alim.txt", r"test_spectra\R_cycle17_alim.txt", r"test_spectra\R_cycle18_alim.txt", r"test_spectra\R_cycle19_alim.txt", r"test_spectra\R_cycle20_alim.txt",
-    #                     r"test_spectra\R_cycle21_alim.txt", r"test_spectra\R_cycle22_alim.txt", r"test_spectra\R_cycle23_alim.txt", r"test_spectra\R_cycle24_alim.txt", r"test_spectra\R_cycle25_alim.txt", r"test_spectra\R_cycle26_alim.txt", r"test_spectra\R_cycle27_alim.txt", r"test_spectra\R_cycle28_alim.txt", r"test_spectra\R_cycle29_alim.txt", r"test_spectra\R_cycle30_alim.txt",
-    #                     r"test_spectra\R_cycle31_alim.txt", r"test_spectra\R_cycle32_alim.txt", r"test_spectra\R_cycle33_alim.txt", r"test_spectra\R_cycle34_alim.txt", r"test_spectra\R_cycle35_alim.txt", r"test_spectra\R_cycle36_alim.txt", r"test_spectra\R_cycle37_alim.txt", r"test_spectra\R_cycle38_alim.txt", r"test_spectra\R_cycle39_alim.txt", r"test_spectra\R_cycle40_alim.txt",
-    #                     r"test_spectra\R_cycle41_alim.txt", r"test_spectra\R_cycle42_alim.txt", r"test_spectra\R_cycle43_alim.txt", r"test_spectra\R_cycle44_alim.txt", r"test_spectra\R_cycle45_alim.txt", r"test_spectra\R_cycle46_alim.txt", r"test_spectra\R_cycle47_alim.txt", r"test_spectra\R_cycle48_alim.txt", r"test_spectra\R_cycle49_alim.txt", r"test_spectra\R_cycle50_alim.txt",
-    #                     r"test_spectra\R_cycle51_alim.txt", r"test_spectra\R_cycle52_alim.txt", r"test_spectra\R_cycle53_alim.txt", r"test_spectra\R_cycle54_alim.txt", r"test_spectra\R_cycle55_alim.txt", r"test_spectra\R_cycle56_alim.txt", r"test_spectra\R_cycle57_alim.txt", r"test_spectra\R_cycle58_alim.txt", r"test_spectra\R_cycle59_alim.txt", r"test_spectra\R_cycle60_alim.txt",
-    #                     r"test_spectra\R_cycle61_alim.txt", r"test_spectra\R_cycle62_alim.txt", r"test_spectra\R_cycle63_alim.txt", r"test_spectra\R_cycle64_alim.txt", r"test_spectra\R_cycle65_alim.txt", r"test_spectra\R_cycle66_alim.txt", r"test_spectra\R_cycle67_alim.txt", r"test_spectra\R_cycle68_alim.txt", r"test_spectra\R_cycle69_alim.txt", r"test_spectra\R_cycle70_alim.txt",
-    #                     r"test_spectra\R_cycle71_alim.txt", r"test_spectra\R_cycle72_alim.txt", r"test_spectra\R_cycle73_alim.txt", r"test_spectra\R_cycle74_alim.txt", r"test_spectra\R_cycle75_alim.txt", r"test_spectra\R_cycle76_alim.txt", r"test_spectra\R_cycle77_alim.txt", r"test_spectra\R_cycle78_alim.txt", r"test_spectra\R_cycle79_alim.txt", r"test_spectra\R_cycle80_alim.txt",
-    #                     r"test_spectra\R_cycle81_alim.txt", r"test_spectra\R_cycle82_alim.txt", r"test_spectra\R_cycle83_alim.txt", r"test_spectra\R_cycle84_alim.txt", r"test_spectra\R_cycle85_alim.txt", r"test_spectra\R_cycle86_alim.txt", r"test_spectra\R_cycle87_alim.txt", r"test_spectra\R_cycle88_alim.txt", r"test_spectra\R_cycle89_alim.txt", r"test_spectra\R_cycle90_alim.txt",
-    #                     r"test_spectra\R_cycle91_alim.txt", r"test_spectra\R_cycle92_alim.txt", r"test_spectra\R_cycle93_alim.txt", r"test_spectra\R_cycle94_alim.txt", r"test_spectra\R_cycle95_alim.txt", r"test_spectra\R_cycle96_alim.txt", r"test_spectra\R_cycle97_alim.txt", r"test_spectra\R_cycle98_alim.txt", r"test_spectra\R_cycle99_alim.txt", r"test_spectra\R_cycle100_alim.txt"
-    #                    ])
-    # run_series(3, card, [r"test_spectra\R_cycle1.txt", r"test_spectra\R_cycle2.txt", r"test_spectra\R_cycle3.txt", r"test_spectra\R_cycle4.txt", r"test_spectra\R_cycle5.txt", r"test_spectra\R_cycle6.txt", r"test_spectra\R_cycle7.txt", r"test_spectra\R_cycle8.txt" ])
-    #print(f"Concentration history: {card.concentration_history}")
+    
     # Перед повним завершенням QApplication викликаємо cleanup(),
     # щоб коректно зупинити потоки, таймери, Bridge і БД.
     app.aboutToQuit.connect(window.cleanup)

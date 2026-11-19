@@ -1714,7 +1714,7 @@ class DeviceManager(QObject):
                     (
                         # f"Прилад {device.serial_number} "
                         # "автоматично активовано при пошуку"
-                        f"{self.translate("device_paed")} {device.serial_number} {"dm_device_activated"}"
+                        f"{self.translate("device_paed")} {device.serial_number} {self.translate("dm_device_activated")}"
 
                     )
                 )
@@ -2782,7 +2782,7 @@ class DeviceManager(QObject):
                                     COMMAND_START_SIMPLE_SPECTRE
                                 )
 
-                                device.spectrum_active = True
+                                #device.spectrum_active = True
 
                         # ---------------------------------------------
                         # Спектр уже запущен
@@ -3504,7 +3504,7 @@ class DeviceManager(QObject):
                     "rx_buffer_overflow",
                     (
                         #"Переповнення буфера приймання: "
-                        f"{self.translate()}"
+                        f"{self.translate("dm_buffer_overflow")}"
                         f"{len(self.rx_buffer)} байт."
                     )
                 )
@@ -3895,6 +3895,7 @@ class DeviceManager(QObject):
                 # StartSpectre успешно подтверждён прибором.
 
                 device.start_spectre_retries = 0
+                device.spectrum_active = True
 
             # ============================================================
             # 15. GET SPECTRE
