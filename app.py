@@ -11,7 +11,10 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 import matplotlib.dates as mdates
 import json, numpy as np
-import os, math, time
+import os, math, time, subprocess
+import logging
+import traceback
+from logging.handlers import RotatingFileHandler
 from datetime import datetime
 from translations import TRANSLATIONS
 from PySide6.QtCore import QRegularExpression
@@ -1850,15 +1853,15 @@ class DeviceCardBarrel(QWidget):
                     "  Фон: віднято"
                 )
 
-        self.parent_app.ui.textEdit.append(
-            "\n".join(
-                output_lines
-            )
-        )
+        # self.parent_app.ui.textEdit.append(
+        #     "\n".join(
+        #         output_lines
+        #     )
+        # )
 
-        self.parent_app.ui.textEdit.append(
-            "---"
-        )
+        # self.parent_app.ui.textEdit.append(
+        #     "---"
+        # )
 
         self.update_isotopes_table(
             result
@@ -1887,7 +1890,8 @@ class DeviceCardBarrel(QWidget):
         with open(
             os.path.join(
                 export_dir,
-                "spectrum_total.txt"
+                #"spectrum_total.txt"
+                f"spectrum_total_ZB{self.posit_number}.txt"
             ),
             "w"
         ) as f:
@@ -1904,10 +1908,17 @@ class DeviceCardBarrel(QWidget):
             "components",
             {}
         )
+        #поки що не треба
+        SKIP_EXPORT_COMPONENTS = {
+            "iodine_scaled",
+            "after_iodine_subtraction",
+        }
 
         for name, component_spectrum in (
             components.items()
         ):
+            if name in SKIP_EXPORT_COMPONENTS:
+                continue
 
             if not isinstance(
                 component_spectrum,
@@ -1921,7 +1932,8 @@ class DeviceCardBarrel(QWidget):
             )
 
             filename = (
-                f"spectrum_{name}.txt"
+                #f"spectrum_{name}.txt"
+                f"spectrum_{name}_ZB{self.posit_number}.txt"
             )
 
             with open(
@@ -2110,15 +2122,15 @@ class DeviceCardBarrel(QWidget):
                     temperature_valid=self.temperature_valid,
                 )
 
-                self.parent_app.ui.textEdit.append(
-                    f"Цистерна "
-                    f"№{self.posit_number}: "
-                    f"збережено повний результат у БД "
-                    f"(ready_to_drain="
-                    f"{ready_to_drain}, "
-                    f"measurement_valid="
-                    f"{1 if measurement_valid else 0})"
-                )
+                # self.parent_app.ui.textEdit.append(
+                #     f"Цистерна "
+                #     f"№{self.posit_number}: "
+                #     f"збережено повний результат у БД "
+                #     f"(ready_to_drain="
+                #     f"{ready_to_drain}, "
+                #     f"measurement_valid="
+                #     f"{1 if measurement_valid else 0})"
+                # )
 
         # ============================================================
         # 17. КОЛИЧЕСТВО ПОЗИЦИЙ BRIDGE
@@ -2184,30 +2196,30 @@ class DeviceCardBarrel(QWidget):
                 else 0
             ),
 
-            "temperature": (
-                self.last_temperature
-            ),
+            # "temperature": (
+            #     self.last_temperature
+            # ),
 
             "paed": (
                 self.last_paed_from_spectrum
             ),
 
             "high_sensitivity": (
-                1
+                0
                 if self.last_high_status == 1
-                else 0
+                else 1
             ),
 
             "low_sensitivity": (
-                1
+                0
                 if self.last_low_status == 1
-                else 0
+                else 1
             ),
 
             "valid": (
-                1
+                0
                 if self.last_valid == 1
-                else 0
+                else 1
             ),
 
             "device_connection": 1,
@@ -2220,6 +2232,8 @@ class DeviceCardBarrel(QWidget):
                 isotopes_for_bridge_final
             )
         }
+        if self.temperature_valid:
+            zb_object["temperature"] = self.last_temperature
 
         # ============================================================
         # 20. ОТПРАВЛЯЕМ В BRIDGE
@@ -2993,6 +3007,21 @@ class App(QObject):
         if self.language not in TRANSLATIONS:
             self.language = "uk"
 
+        # Інтервали збереження в БД: читаємо з налаштувань, інакше типові значення
+        try:
+            self.cistern_save_interval = int(
+                self.language_config.get("cistern_save_interval", 3600)
+            )
+        except (TypeError, ValueError):
+            self.cistern_save_interval = 3600
+
+        try:
+            self.wall_save_interval = int(
+                self.language_config.get("wall_save_interval", 1800)
+            )
+        except (TypeError, ValueError):
+            self.wall_save_interval = 1800
+
         # атрибут - объект для работы с базами данных
         self.db_manager = DatabaseManager()
 
@@ -3073,8 +3102,12 @@ class App(QObject):
         # ------------------------------------------------------------
         # НОВЫЕ АТРИБУТЫ ДЛЯ ИНТЕРВАЛОВ СОХРАНЕНИЯ В БД
         # ------------------------------------------------------------
-        self.cistern_save_interval = 3600   # секунды (по умолчанию 1 час)
-        self.wall_save_interval = 1800      # секунды (по умолчанию 30 минут)
+        # self.cistern_save_interval = 3600   # секунды (по умолчанию 1 час)
+        # self.wall_save_interval = 1800      # секунды (по умолчанию 30 минут)
+        # self.language_config["cistern_save_interval"] = self.cistern_save_interval
+        # self.language_config["wall_save_interval"] = self.wall_save_interval
+        # self.save_config()
+
 
         # Устанавливаем интервалы в DatabaseManager
         self.db_manager.set_cistern_save_interval(self.cistern_save_interval)
@@ -3190,7 +3223,56 @@ class App(QObject):
         )
 
         # связывание кнопок и сигналов
-        self.setup_connections()   
+        self.setup_connections()  
+
+
+    def _setup_file_log(self):
+        """
+        Дублює всі повідомлення журналу textEdit у файл logs/Wroclaw_app.log.
+
+        - формат як у ModBusBridgeService.log: "yyyy-MM-dd HH:mm:ss текст";
+        - ротація: 5 МБ на файл, зберігається 10 попередніх
+          (Wroclaw_app.log.1 … .10), тобто не більше ~55 МБ;
+        - необроблені винятки (зокрема у слотах Qt) теж пишуться у файл
+          з повним traceback.
+        """
+        os.makedirs("logs", exist_ok=True)
+
+        logger = logging.getLogger("wroclaw")
+
+        if not logger.handlers:
+            handler = RotatingFileHandler(
+                os.path.join("logs", "Wroclaw_app.log"),
+                maxBytes=5 * 1024 * 1024,
+                backupCount=10,
+                encoding="utf-8"
+            )
+            handler.setFormatter(
+                logging.Formatter(
+                    "%(asctime)s %(message)s",
+                    "%Y-%m-%d %H:%M:%S"
+                )
+            )
+            logger.addHandler(handler)
+            logger.setLevel(logging.INFO)
+            logger.propagate = False
+
+        self.file_logger = logger
+
+        # ------------------------------------------------------------
+        # Перехоплюємо textEdit.append: текст іде і в GUI, і у файл
+        # ------------------------------------------------------------
+        text_edit = self.ui.textEdit
+        original_append = text_edit.append
+
+        def append_and_log(text):
+            original_append(text)
+            try:
+                logger.info(str(text))
+            except Exception:
+                pass    # збій запису в файл не повинен ламати GUI
+
+        text_edit.append = append_and_log 
 
 
 
@@ -3271,6 +3353,8 @@ class App(QObject):
                 100
             )
 
+            self._setup_file_log()
+
         # ============================================================
         # 6. ПОКАЗЫВАЕМ ГЛАВНОЕ ОКНО
         # ============================================================
@@ -3325,6 +3409,12 @@ class App(QObject):
         # Встановлюємо значення порту за замовчуванням (502 — стандартний порт ModBus TCP)
         self.plc_port_spin.setValue(502)
 
+        saved_ip = self.language_config.get("plc_ip")
+        if saved_ip:
+            self.plc_ip_edit.setText(saved_ip)
+        self.plc_port_spin.setValue(int(self.language_config.get("plc_port", 502)))
+
+
         # --------------------------------------------------------------------
         # 3. НАЛАШТУВАННЯ ІНДИКАТОРІВ (початковий стан — червоний, немає підключень)
         # --------------------------------------------------------------------
@@ -3377,7 +3467,7 @@ class App(QObject):
         # Create config folder if it doesn't exist
         os.makedirs(config_dir, exist_ok=True)
 
-        return os.path.join(config_dir, "language.json")
+        return os.path.join(config_dir, "settings.json")
 
 
     def load_config(self):
@@ -3741,7 +3831,7 @@ class App(QObject):
         if self.bridge_process is not None:
             state = self.bridge_process.state()
             if state == QProcess.ProcessState.Running or state == QProcess.ProcessState.Starting:
-                self.ui.textEdit.append("bridge_already_started")
+                self.ui.textEdit.append(self.tr("bridge_already_started"))
                 return False
         
         # --------------------------------------------------------------------
@@ -3758,6 +3848,22 @@ class App(QObject):
         args = [str(plc_ip), str(plc_port)]
         
         self.ui.textEdit.append(f"{self.tr("plc_start")} {executable} {self.tr("plc_arg")} {args}")
+
+        # Завершуємо залишені попередніми сеансами екземпляри Bridge
+        # (аварійне закриття Python, Stop в IDE). Інакше новий Bridge
+        # не зможе відкрити порт 12345, а Python підключиться до старого.
+        if self.bridge_process is None:
+            try:
+                subprocess.run(
+                    ["taskkill", "/F", "/IM", "ModBusBridgeService.exe"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                    timeout=5
+                )
+                time.sleep(0.5)        # дати Windows звільнити порт
+            except Exception:
+                pass
         
         # --------------------------------------------------------------------
         # 4. Створюємо та налаштовуємо QProcess
@@ -3774,6 +3880,10 @@ class App(QObject):
         self.bridge_process.errorOccurred.connect(self.on_bridge_error)
         self.bridge_process.readyReadStandardOutput.connect(self.on_bridge_stdout)
         self.bridge_process.readyReadStandardError.connect(self.on_bridge_stderr)
+        #self.bridge_process.setWorkingDirectory(os.path.abspath("ModBusBridgeService_Runtime"))
+        logs_dir = os.path.abspath("logs")
+        os.makedirs(logs_dir, exist_ok=True)
+        self.bridge_process.setWorkingDirectory(logs_dir)
         
         # --------------------------------------------------------------------
         # 6. Запускаємо процес
@@ -3813,7 +3923,7 @@ class App(QObject):
         # Чекаємо 3 секунди
         if not self.bridge_process.waitForFinished(3000):
             # Якщо не завершився — примусово завершуємо
-            self.ui.textEdit.append("bridge_emergency_exit")
+            self.ui.textEdit.append(self.tr("bridge_emergency_exit"))
             self.bridge_process.kill()
             self.bridge_process.waitForFinished(1000)
         
@@ -3879,6 +3989,14 @@ class App(QObject):
         # ============================================================
 
         self.bridge_process = None
+        if exit_code == 2:
+            # Bridge не відкрив порт 12345 — його тримає інша програма.
+            self.ui.textEdit.append(self.tr("bridge_port_busy"))
+            self._plc_connection_requested = False
+            self.update_plc_indicators(plc_connected=False, bridge_connected=False)
+            if self.btn_connect_plc is not None:
+                self.btn_connect_plc.setText(self.tr("connect_plc"))
+            return
 
         # ============================================================
         # 3. СОСТОЯНИЕ PLC БОЛЬШЕ НЕ ПОДТВЕРЖДЕНО
@@ -4178,6 +4296,7 @@ class App(QObject):
             # ========================================================
 
             new_spectrum_time = dialog.get_spectrum_time()
+            #new_spectrum_time = 3600
 
             self.spectrum_accumulation_time = new_spectrum_time
             self.db_write_interval = dialog.get_db_interval()
@@ -4242,6 +4361,10 @@ class App(QObject):
                 self.db_manager.set_wall_save_interval(
                     self.wall_save_interval
                 )
+
+            self.language_config["cistern_save_interval"] = int(self.cistern_save_interval)
+            self.language_config["wall_save_interval"] = int(self.wall_save_interval)
+            self.save_config()
 
             # ========================================================
             # 5. ЛОГ
@@ -4565,6 +4688,11 @@ class App(QObject):
             )
 
             return
+
+        self.language_config["plc_ip"] = ip
+        self.language_config["plc_port"] = port
+        self.save_config()
+
 
         # ============================================================
         # 5. ФИКСИРУЕМ НАМЕРЕНИЕ ОПЕРАТОРА
@@ -5372,6 +5500,11 @@ class App(QObject):
         Вхід:
             message - str текст повідомлення
         """
+        if (
+            message.startswith("Sent ")
+            or message.startswith("Received JSON message")
+        ):
+            return
         self.ui.textEdit.append(f"[Bridge] {message}")
 
 
@@ -5922,19 +6055,21 @@ class App(QObject):
                             if sn.isdigit()
                             else 0
                         ),
-                        "temperature": temp_value,
+                        #"temperature": temp_value,
                         "paed": dose,
                         "high_sensitivity": (
-                            1 if high_failure else 0
+                            0 if high_failure else 1
                         ),
                         "low_sensitivity": (
-                            1 if low_failure else 0
+                            0 if low_failure else 1
                         ),
                         "valid": (
-                            1 if result_valid else 0
+                            0 if result_valid else 1
                         ),
                         "device_connection": 1
                     }
+                    if temperature_valid:   # змінна вже обчислена вище в цій гілці
+                        cz_object["temperature"] = temp_value
 
                     self._send_cz_data(
                         [cz_object]
@@ -5989,7 +6124,8 @@ class App(QObject):
                         paed=dose,
                         high_failure=high_failure,
                         low_failure=low_failure,
-                        result_valid=result_valid
+                        result_valid=result_valid,
+                        temperature_valid=getattr(card, "temperature_valid", False)
                     )
 
                     self._send_zb_data(
@@ -6244,6 +6380,21 @@ class App(QObject):
                     high_failure,
                     result_valid
                 )
+
+                if card.location_type == "cistern":
+                    self._send_zb_data([
+                        self._build_zb_raddose_update(
+                            card=card,
+                            serial_number=sn,
+                            temperature=getattr(card, "last_temperature", 0.0),
+                            paed=paed_value,
+                            high_failure=high_failure,
+                            low_failure=low_failure,
+                            result_valid=result_valid,
+                            temperature_valid=getattr(card, "temperature_valid", False)
+                        )
+                    ])
+
 
                 # ----------------------------------------------------
                 # НАКОПЛЕНИЕ ОЧЕРЕДНОГО УЧАСТКА
@@ -6938,7 +7089,7 @@ class App(QObject):
             
             Выводит сообщение в textEdit, чтобы администратор видел проблему.
         """
-        #self.ui.textEdit.append(f"Помилка в  {source} : {message}")
+        self.ui.textEdit.append(f"{self.tr("error")}  {source} : {message}")
         if getattr(self.device_manager, "running", False):
             return
         # Разблокируем кнопку поиска при ошибке        
@@ -8699,6 +8850,14 @@ class App(QObject):
         #     parent=self.ui,
         #     app=self
         # )
+        if getattr(self.device_manager, "running", False):
+            QMessageBox.warning(
+                self.ui,
+                self.tr("ui_replace_title"),
+                #"Спочатку зупиніть систему, потім виконайте заміну приладу."
+                self.tr("dr_error_stop_replace_running")
+            )
+            return
 
         # dialog.exec()
         failed_serials = set(
@@ -12373,7 +12532,8 @@ class App(QObject):
         paed,
         high_failure,
         low_failure,
-        result_valid
+        result_valid,
+        temperature_valid = False
     ):
         """
         Формирует ОБЫЧНОЕ обновление ZB после пакета RadDose.
@@ -12460,29 +12620,35 @@ class App(QObject):
         # ready_to_drain и isotopes здесь специально отсутствуют.
         # ============================================================
 
-        return {
+        update =  {
             "number": position,
 
             "sn": serial_value,
 
-            "temperature": temperature,
+            #"temperature": temperature,
 
             "paed": paed,
 
             "high_sensitivity": (
-                1 if high_failure else 0
+                0 if high_failure else 1
             ),
 
             "low_sensitivity": (
-                1 if low_failure else 0
+                0 if low_failure else 1
             ),
 
             "valid": (
-                1 if result_valid else 0
+                0 if result_valid else 1
             ),
 
             "device_connection": 1
         }
+        # Температуру передаємо лише після першого успішного вимірювання,
+        # інакше в ПЛК піде фіктивне 0.0 °C.
+        if temperature_valid:
+            update["temperature"] = temperature
+
+        return update
 
 
 
@@ -13334,7 +13500,7 @@ class App(QObject):
         if (
             concentration_ratio_sum <= 1.0
             and
-            activity_ratio_sum <= 1000.0
+            activity_ratio_sum <= 1000.0 #1000.0 or 1.0
         ):
             return 1
 
@@ -13458,7 +13624,7 @@ def main():
 
     window = App()
     
-
+    
     
     # Перед повним завершенням QApplication викликаємо cleanup(),
     # щоб коректно зупинити потоки, таймери, Bridge і БД.

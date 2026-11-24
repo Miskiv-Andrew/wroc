@@ -17937,3 +17937,357 @@
 2026-10-29 14:42:08 [LOG] Disconnected from PLC
 2026-10-29 14:42:08 Server stopped
 2026-10-29 14:42:08 [SYSTEM] Application stopped
+2026-11-24 12:33:13 [SYSTEM] Starting ModBusBridgeService
+2026-11-24 12:33:13 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-11-24 12:33:13 Failed to start server on port 12345: The bound address is already in use
+2026-11-24 12:33:13 [SYSTEM] Port 12345 is busy (another Bridge instance?). Exiting.
+2026-11-24 12:33:32 [SYSTEM] Starting ModBusBridgeService
+2026-11-24 12:33:32 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-11-24 12:33:32 Failed to start server on port 12345: The bound address is already in use
+2026-11-24 12:33:32 [SYSTEM] Port 12345 is busy (another Bridge instance?). Exiting.
+2026-11-24 12:35:54 [SYSTEM] Starting ModBusBridgeService
+2026-11-24 12:35:54 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-11-24 12:35:54 Server is running on port 12345
+2026-11-24 12:35:54 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-11-24 12:35:54 [LOG] Attempting to connect to PLC...
+2026-11-24 12:35:54 [SYSTEM] Starting event loop
+2026-11-24 12:35:54 [LOG] Connection to PLC established
+2026-11-24 12:35:54 [SYSTEM] Connection to PLC established
+2026-11-24 12:35:54 Client connected: 127.0.0.1:10857
+2026-11-24 12:35:54 Received 16 bytes
+2026-11-24 12:35:54 [LOG] Request sent, transaction 1, function 0x03, 12 bytes
+2026-11-24 12:35:54 [LOG] Response received, transaction 1, function 0x03, 4 bytes PDU
+2026-11-24 12:35:54 [LOG] Reading 0x242c = 0
+2026-11-24 12:35:54 [LOG] Request sent, transaction 2, function 0x03, 12 bytes
+2026-11-24 12:35:54 [LOG] Response received, transaction 2, function 0x03, 4 bytes PDU
+2026-11-24 12:35:54 [LOG] Reading 0x242d = 0
+2026-11-24 12:35:54 [LOG] Request sent, transaction 3, function 0x03, 12 bytes
+2026-11-24 12:35:54 [LOG] Response received, transaction 3, function 0x03, 4 bytes PDU
+2026-11-24 12:35:54 [LOG] Reading 0x242e = 0
+2026-11-24 12:35:54 [LOG] Request sent, transaction 4, function 0x03, 12 bytes
+2026-11-24 12:35:54 [LOG] Response received, transaction 4, function 0x03, 4 bytes PDU
+2026-11-24 12:35:54 [LOG] Reading 0x242f = 0
+2026-11-24 12:35:54 [LOG] Request sent, transaction 5, function 0x03, 12 bytes
+2026-11-24 12:35:54 [LOG] Response received, transaction 5, function 0x03, 4 bytes PDU
+2026-11-24 12:35:54 [LOG] Reading 0x2430 = 0
+2026-11-24 12:35:54 [LOG] Request sent, transaction 6, function 0x03, 12 bytes
+2026-11-24 12:35:54 [LOG] Response received, transaction 6, function 0x03, 4 bytes PDU
+2026-11-24 12:35:54 [LOG] Reading 0x2431 = 0
+2026-11-24 12:35:54 [LOG] Request sent, transaction 7, function 0x03, 12 bytes
+2026-11-24 12:35:54 [LOG] Response received, transaction 7, function 0x03, 4 bytes PDU
+2026-11-24 12:35:54 [LOG] Reading 0x2432 = 0
+2026-11-24 12:35:54 [LOG] Request sent, transaction 8, function 0x03, 12 bytes
+2026-11-24 12:35:54 [LOG] Response received, transaction 8, function 0x03, 4 bytes PDU
+2026-11-24 12:35:54 [LOG] Reading 0x2433 = 0
+2026-11-24 12:35:54 [LOG] Request sent, transaction 9, function 0x03, 12 bytes
+2026-11-24 12:35:54 [LOG] Response received, transaction 9, function 0x03, 4 bytes PDU
+2026-11-24 12:35:54 [LOG] Reading 0x2434 = 0
+2026-11-24 12:35:54 Broadcast sent to client 127.0.0.1:10857, 266 bytes
+2026-11-24 12:36:04 [LOG] Request sent, transaction 10, function 0x06, 12 bytes
+2026-11-24 12:36:04 [LOG] Response received, transaction 10, function 0x06, 5 bytes PDU
+2026-11-24 12:36:04 [LOG] Recording 0x234b = 1
+2026-11-24 12:36:14 [LOG] Request sent, transaction 11, function 0x03, 12 bytes
+2026-11-24 12:36:14 [LOG] Response received, transaction 11, function 0x03, 4 bytes PDU
+2026-11-24 12:36:14 [LOG] Reading 0x242c = 0
+2026-11-24 12:36:14 [LOG] Request sent, transaction 12, function 0x03, 12 bytes
+2026-11-24 12:36:14 [LOG] Response received, transaction 12, function 0x03, 4 bytes PDU
+2026-11-24 12:36:14 [LOG] Reading 0x242d = 0
+2026-11-24 12:36:14 [LOG] Request sent, transaction 13, function 0x03, 12 bytes
+2026-11-24 12:36:14 [LOG] Response received, transaction 13, function 0x03, 4 bytes PDU
+2026-11-24 12:36:14 [LOG] Reading 0x242e = 0
+2026-11-24 12:36:14 [LOG] Request sent, transaction 14, function 0x03, 12 bytes
+2026-11-24 12:36:14 [LOG] Response received, transaction 14, function 0x03, 4 bytes PDU
+2026-11-24 12:36:14 [LOG] Reading 0x242f = 0
+2026-11-24 12:36:14 [LOG] Request sent, transaction 15, function 0x03, 12 bytes
+2026-11-24 12:36:14 [LOG] Response received, transaction 15, function 0x03, 4 bytes PDU
+2026-11-24 12:36:14 [LOG] Reading 0x2430 = 0
+2026-11-24 12:36:14 [LOG] Request sent, transaction 16, function 0x03, 12 bytes
+2026-11-24 12:36:14 [LOG] Response received, transaction 16, function 0x03, 4 bytes PDU
+2026-11-24 12:36:14 [LOG] Reading 0x2431 = 0
+2026-11-24 12:36:14 [LOG] Request sent, transaction 17, function 0x03, 12 bytes
+2026-11-24 12:36:14 [LOG] Response received, transaction 17, function 0x03, 4 bytes PDU
+2026-11-24 12:36:14 [LOG] Reading 0x2432 = 0
+2026-11-24 12:36:14 [LOG] Request sent, transaction 18, function 0x03, 12 bytes
+2026-11-24 12:36:14 [LOG] Response received, transaction 18, function 0x03, 4 bytes PDU
+2026-11-24 12:36:14 [LOG] Reading 0x2433 = 0
+2026-11-24 12:36:14 [LOG] Request sent, transaction 19, function 0x03, 12 bytes
+2026-11-24 12:36:14 [LOG] Response received, transaction 19, function 0x03, 4 bytes PDU
+2026-11-24 12:36:14 [LOG] Reading 0x2434 = 0
+2026-11-24 12:36:14 Broadcast sent to client 127.0.0.1:10857, 266 bytes
+2026-11-24 12:36:34 [LOG] Request sent, transaction 20, function 0x03, 12 bytes
+2026-11-24 12:36:34 [LOG] Response received, transaction 20, function 0x03, 4 bytes PDU
+2026-11-24 12:36:34 [LOG] Reading 0x242c = 0
+2026-11-24 12:36:34 [LOG] Request sent, transaction 21, function 0x03, 12 bytes
+2026-11-24 12:36:34 [LOG] Response received, transaction 21, function 0x03, 4 bytes PDU
+2026-11-24 12:36:34 [LOG] Reading 0x242d = 0
+2026-11-24 12:36:34 [LOG] Request sent, transaction 22, function 0x03, 12 bytes
+2026-11-24 12:36:34 [LOG] Response received, transaction 22, function 0x03, 4 bytes PDU
+2026-11-24 12:36:34 [LOG] Reading 0x242e = 0
+2026-11-24 12:36:34 [LOG] Request sent, transaction 23, function 0x03, 12 bytes
+2026-11-24 12:36:34 [LOG] Response received, transaction 23, function 0x03, 4 bytes PDU
+2026-11-24 12:36:34 [LOG] Reading 0x242f = 0
+2026-11-24 12:36:34 [LOG] Request sent, transaction 24, function 0x03, 12 bytes
+2026-11-24 12:36:34 [LOG] Response received, transaction 24, function 0x03, 4 bytes PDU
+2026-11-24 12:36:34 [LOG] Reading 0x2430 = 0
+2026-11-24 12:36:34 [LOG] Request sent, transaction 25, function 0x03, 12 bytes
+2026-11-24 12:36:34 [LOG] Response received, transaction 25, function 0x03, 4 bytes PDU
+2026-11-24 12:36:34 [LOG] Reading 0x2431 = 0
+2026-11-24 12:36:34 [LOG] Request sent, transaction 26, function 0x03, 12 bytes
+2026-11-24 12:36:34 [LOG] Response received, transaction 26, function 0x03, 4 bytes PDU
+2026-11-24 12:36:34 [LOG] Reading 0x2432 = 0
+2026-11-24 12:36:34 [LOG] Request sent, transaction 27, function 0x03, 12 bytes
+2026-11-24 12:36:34 [LOG] Response received, transaction 27, function 0x03, 4 bytes PDU
+2026-11-24 12:36:34 [LOG] Reading 0x2433 = 0
+2026-11-24 12:36:34 [LOG] Request sent, transaction 28, function 0x03, 12 bytes
+2026-11-24 12:36:34 [LOG] Response received, transaction 28, function 0x03, 4 bytes PDU
+2026-11-24 12:36:34 [LOG] Reading 0x2434 = 0
+2026-11-24 12:36:34 Broadcast sent to client 127.0.0.1:10857, 266 bytes
+2026-11-24 12:36:49 Client disconnected
+2026-11-24 12:36:49 [LOG] Connection to PLC lost
+2026-11-24 12:36:49 [SYSTEM] Communication with PLC lost
+2026-11-24 12:36:49 [LOG] Disconnected from PLC
+2026-11-24 12:36:49 Server stopped
+2026-11-24 12:36:49 [SYSTEM] Application stopped
+2026-11-24 12:37:32 [SYSTEM] Starting ModBusBridgeService
+2026-11-24 12:37:32 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-11-24 12:37:32 Server is running on port 12345
+2026-11-24 12:37:32 [LOG] Parameters set: IP=127.0.0.1, port=502
+2026-11-24 12:37:32 [LOG] Attempting to connect to PLC...
+2026-11-24 12:37:32 [SYSTEM] Starting event loop
+2026-11-24 12:37:32 [LOG] Connection to PLC established
+2026-11-24 12:37:32 [SYSTEM] Connection to PLC established
+2026-11-24 12:37:33 Client connected: 127.0.0.1:10869
+2026-11-24 12:37:33 Received 16 bytes
+2026-11-24 12:37:33 [LOG] Request sent, transaction 1, function 0x03, 12 bytes
+2026-11-24 12:37:33 [LOG] Response received, transaction 1, function 0x03, 4 bytes PDU
+2026-11-24 12:37:33 [LOG] Reading 0x242c = 0
+2026-11-24 12:37:33 [LOG] Request sent, transaction 2, function 0x03, 12 bytes
+2026-11-24 12:37:33 [LOG] Response received, transaction 2, function 0x03, 4 bytes PDU
+2026-11-24 12:37:33 [LOG] Reading 0x242d = 0
+2026-11-24 12:37:33 [LOG] Request sent, transaction 3, function 0x03, 12 bytes
+2026-11-24 12:37:33 [LOG] Response received, transaction 3, function 0x03, 4 bytes PDU
+2026-11-24 12:37:33 [LOG] Reading 0x242e = 0
+2026-11-24 12:37:33 [LOG] Request sent, transaction 4, function 0x03, 12 bytes
+2026-11-24 12:37:33 [LOG] Response received, transaction 4, function 0x03, 4 bytes PDU
+2026-11-24 12:37:33 [LOG] Reading 0x242f = 0
+2026-11-24 12:37:33 [LOG] Request sent, transaction 5, function 0x03, 12 bytes
+2026-11-24 12:37:33 [LOG] Response received, transaction 5, function 0x03, 4 bytes PDU
+2026-11-24 12:37:33 [LOG] Reading 0x2430 = 0
+2026-11-24 12:37:33 [LOG] Request sent, transaction 6, function 0x03, 12 bytes
+2026-11-24 12:37:33 [LOG] Response received, transaction 6, function 0x03, 4 bytes PDU
+2026-11-24 12:37:33 [LOG] Reading 0x2431 = 0
+2026-11-24 12:37:33 [LOG] Request sent, transaction 7, function 0x03, 12 bytes
+2026-11-24 12:37:33 [LOG] Response received, transaction 7, function 0x03, 4 bytes PDU
+2026-11-24 12:37:33 [LOG] Reading 0x2432 = 0
+2026-11-24 12:37:33 [LOG] Request sent, transaction 8, function 0x03, 12 bytes
+2026-11-24 12:37:33 [LOG] Response received, transaction 8, function 0x03, 4 bytes PDU
+2026-11-24 12:37:33 [LOG] Reading 0x2433 = 0
+2026-11-24 12:37:33 [LOG] Request sent, transaction 9, function 0x03, 12 bytes
+2026-11-24 12:37:33 [LOG] Response received, transaction 9, function 0x03, 4 bytes PDU
+2026-11-24 12:37:33 [LOG] Reading 0x2434 = 0
+2026-11-24 12:37:33 Broadcast sent to client 127.0.0.1:10869, 266 bytes
+2026-11-24 12:37:42 [LOG] Request sent, transaction 10, function 0x06, 12 bytes
+2026-11-24 12:37:42 [LOG] Response received, transaction 10, function 0x06, 5 bytes PDU
+2026-11-24 12:37:42 [LOG] Recording 0x234b = 1
+2026-11-24 12:37:52 [LOG] Request sent, transaction 11, function 0x03, 12 bytes
+2026-11-24 12:37:52 [LOG] Response received, transaction 11, function 0x03, 4 bytes PDU
+2026-11-24 12:37:52 [LOG] Reading 0x242c = 0
+2026-11-24 12:37:52 [LOG] Request sent, transaction 12, function 0x03, 12 bytes
+2026-11-24 12:37:52 [LOG] Response received, transaction 12, function 0x03, 4 bytes PDU
+2026-11-24 12:37:52 [LOG] Reading 0x242d = 0
+2026-11-24 12:37:52 [LOG] Request sent, transaction 13, function 0x03, 12 bytes
+2026-11-24 12:37:52 [LOG] Response received, transaction 13, function 0x03, 4 bytes PDU
+2026-11-24 12:37:52 [LOG] Reading 0x242e = 0
+2026-11-24 12:37:52 [LOG] Request sent, transaction 14, function 0x03, 12 bytes
+2026-11-24 12:37:52 [LOG] Response received, transaction 14, function 0x03, 4 bytes PDU
+2026-11-24 12:37:52 [LOG] Reading 0x242f = 0
+2026-11-24 12:37:52 [LOG] Request sent, transaction 15, function 0x03, 12 bytes
+2026-11-24 12:37:52 [LOG] Response received, transaction 15, function 0x03, 4 bytes PDU
+2026-11-24 12:37:52 [LOG] Reading 0x2430 = 0
+2026-11-24 12:37:52 [LOG] Request sent, transaction 16, function 0x03, 12 bytes
+2026-11-24 12:37:52 [LOG] Response received, transaction 16, function 0x03, 4 bytes PDU
+2026-11-24 12:37:52 [LOG] Reading 0x2431 = 0
+2026-11-24 12:37:52 [LOG] Request sent, transaction 17, function 0x03, 12 bytes
+2026-11-24 12:37:52 [LOG] Response received, transaction 17, function 0x03, 4 bytes PDU
+2026-11-24 12:37:52 [LOG] Reading 0x2432 = 0
+2026-11-24 12:37:52 [LOG] Request sent, transaction 18, function 0x03, 12 bytes
+2026-11-24 12:37:52 [LOG] Response received, transaction 18, function 0x03, 4 bytes PDU
+2026-11-24 12:37:52 [LOG] Reading 0x2433 = 0
+2026-11-24 12:37:52 [LOG] Request sent, transaction 19, function 0x03, 12 bytes
+2026-11-24 12:37:52 [LOG] Response received, transaction 19, function 0x03, 4 bytes PDU
+2026-11-24 12:37:52 [LOG] Reading 0x2434 = 0
+2026-11-24 12:37:52 Broadcast sent to client 127.0.0.1:10869, 266 bytes
+2026-11-24 12:38:12 [LOG] Request sent, transaction 20, function 0x03, 12 bytes
+2026-11-24 12:38:12 [LOG] Response received, transaction 20, function 0x03, 4 bytes PDU
+2026-11-24 12:38:12 [LOG] Reading 0x242c = 0
+2026-11-24 12:38:12 [LOG] Request sent, transaction 21, function 0x03, 12 bytes
+2026-11-24 12:38:12 [LOG] Response received, transaction 21, function 0x03, 4 bytes PDU
+2026-11-24 12:38:12 [LOG] Reading 0x242d = 0
+2026-11-24 12:38:12 [LOG] Request sent, transaction 22, function 0x03, 12 bytes
+2026-11-24 12:38:12 [LOG] Response received, transaction 22, function 0x03, 4 bytes PDU
+2026-11-24 12:38:12 [LOG] Reading 0x242e = 0
+2026-11-24 12:38:12 [LOG] Request sent, transaction 23, function 0x03, 12 bytes
+2026-11-24 12:38:12 [LOG] Response received, transaction 23, function 0x03, 4 bytes PDU
+2026-11-24 12:38:12 [LOG] Reading 0x242f = 0
+2026-11-24 12:38:12 [LOG] Request sent, transaction 24, function 0x03, 12 bytes
+2026-11-24 12:38:12 [LOG] Response received, transaction 24, function 0x03, 4 bytes PDU
+2026-11-24 12:38:12 [LOG] Reading 0x2430 = 0
+2026-11-24 12:38:12 [LOG] Request sent, transaction 25, function 0x03, 12 bytes
+2026-11-24 12:38:12 [LOG] Response received, transaction 25, function 0x03, 4 bytes PDU
+2026-11-24 12:38:12 [LOG] Reading 0x2431 = 0
+2026-11-24 12:38:12 [LOG] Request sent, transaction 26, function 0x03, 12 bytes
+2026-11-24 12:38:12 [LOG] Response received, transaction 26, function 0x03, 4 bytes PDU
+2026-11-24 12:38:12 [LOG] Reading 0x2432 = 0
+2026-11-24 12:38:12 [LOG] Request sent, transaction 27, function 0x03, 12 bytes
+2026-11-24 12:38:12 [LOG] Response received, transaction 27, function 0x03, 4 bytes PDU
+2026-11-24 12:38:12 [LOG] Reading 0x2433 = 0
+2026-11-24 12:38:12 [LOG] Request sent, transaction 28, function 0x03, 12 bytes
+2026-11-24 12:38:12 [LOG] Response received, transaction 28, function 0x03, 4 bytes PDU
+2026-11-24 12:38:12 [LOG] Reading 0x2434 = 0
+2026-11-24 12:38:12 Broadcast sent to client 127.0.0.1:10869, 266 bytes
+2026-11-24 12:38:32 [LOG] Request sent, transaction 29, function 0x03, 12 bytes
+2026-11-24 12:38:32 [LOG] Response received, transaction 29, function 0x03, 4 bytes PDU
+2026-11-24 12:38:32 [LOG] Reading 0x242c = 0
+2026-11-24 12:38:32 [LOG] Request sent, transaction 30, function 0x03, 12 bytes
+2026-11-24 12:38:32 [LOG] Response received, transaction 30, function 0x03, 4 bytes PDU
+2026-11-24 12:38:32 [LOG] Reading 0x242d = 0
+2026-11-24 12:38:32 [LOG] Request sent, transaction 31, function 0x03, 12 bytes
+2026-11-24 12:38:32 [LOG] Response received, transaction 31, function 0x03, 4 bytes PDU
+2026-11-24 12:38:32 [LOG] Reading 0x242e = 0
+2026-11-24 12:38:32 [LOG] Request sent, transaction 32, function 0x03, 12 bytes
+2026-11-24 12:38:32 [LOG] Response received, transaction 32, function 0x03, 4 bytes PDU
+2026-11-24 12:38:32 [LOG] Reading 0x242f = 0
+2026-11-24 12:38:32 [LOG] Request sent, transaction 33, function 0x03, 12 bytes
+2026-11-24 12:38:32 [LOG] Response received, transaction 33, function 0x03, 4 bytes PDU
+2026-11-24 12:38:32 [LOG] Reading 0x2430 = 0
+2026-11-24 12:38:32 [LOG] Request sent, transaction 34, function 0x03, 12 bytes
+2026-11-24 12:38:32 [LOG] Response received, transaction 34, function 0x03, 4 bytes PDU
+2026-11-24 12:38:32 [LOG] Reading 0x2431 = 0
+2026-11-24 12:38:32 [LOG] Request sent, transaction 35, function 0x03, 12 bytes
+2026-11-24 12:38:32 [LOG] Response received, transaction 35, function 0x03, 4 bytes PDU
+2026-11-24 12:38:32 [LOG] Reading 0x2432 = 0
+2026-11-24 12:38:32 [LOG] Request sent, transaction 36, function 0x03, 12 bytes
+2026-11-24 12:38:32 [LOG] Response received, transaction 36, function 0x03, 4 bytes PDU
+2026-11-24 12:38:32 [LOG] Reading 0x2433 = 0
+2026-11-24 12:38:32 [LOG] Request sent, transaction 37, function 0x03, 12 bytes
+2026-11-24 12:38:32 [LOG] Response received, transaction 37, function 0x03, 4 bytes PDU
+2026-11-24 12:38:32 [LOG] Reading 0x2434 = 0
+2026-11-24 12:38:32 Broadcast sent to client 127.0.0.1:10869, 266 bytes
+2026-11-24 12:38:52 [LOG] Request sent, transaction 38, function 0x03, 12 bytes
+2026-11-24 12:38:52 [LOG] Response received, transaction 38, function 0x03, 4 bytes PDU
+2026-11-24 12:38:52 [LOG] Reading 0x242c = 0
+2026-11-24 12:38:52 [LOG] Request sent, transaction 39, function 0x03, 12 bytes
+2026-11-24 12:38:52 [LOG] Response received, transaction 39, function 0x03, 4 bytes PDU
+2026-11-24 12:38:52 [LOG] Reading 0x242d = 0
+2026-11-24 12:38:52 [LOG] Request sent, transaction 40, function 0x03, 12 bytes
+2026-11-24 12:38:52 [LOG] Response received, transaction 40, function 0x03, 4 bytes PDU
+2026-11-24 12:38:52 [LOG] Reading 0x242e = 0
+2026-11-24 12:38:52 [LOG] Request sent, transaction 41, function 0x03, 12 bytes
+2026-11-24 12:38:52 [LOG] Response received, transaction 41, function 0x03, 4 bytes PDU
+2026-11-24 12:38:52 [LOG] Reading 0x242f = 0
+2026-11-24 12:38:52 [LOG] Request sent, transaction 42, function 0x03, 12 bytes
+2026-11-24 12:38:52 [LOG] Response received, transaction 42, function 0x03, 4 bytes PDU
+2026-11-24 12:38:52 [LOG] Reading 0x2430 = 0
+2026-11-24 12:38:52 [LOG] Request sent, transaction 43, function 0x03, 12 bytes
+2026-11-24 12:38:52 [LOG] Response received, transaction 43, function 0x03, 4 bytes PDU
+2026-11-24 12:38:52 [LOG] Reading 0x2431 = 0
+2026-11-24 12:38:52 [LOG] Request sent, transaction 44, function 0x03, 12 bytes
+2026-11-24 12:38:52 [LOG] Response received, transaction 44, function 0x03, 4 bytes PDU
+2026-11-24 12:38:52 [LOG] Reading 0x2432 = 0
+2026-11-24 12:38:52 [LOG] Request sent, transaction 45, function 0x03, 12 bytes
+2026-11-24 12:38:52 [LOG] Response received, transaction 45, function 0x03, 4 bytes PDU
+2026-11-24 12:38:52 [LOG] Reading 0x2433 = 0
+2026-11-24 12:38:52 [LOG] Request sent, transaction 46, function 0x03, 12 bytes
+2026-11-24 12:38:52 [LOG] Response received, transaction 46, function 0x03, 4 bytes PDU
+2026-11-24 12:38:52 [LOG] Reading 0x2434 = 0
+2026-11-24 12:38:52 Broadcast sent to client 127.0.0.1:10869, 266 bytes
+2026-11-24 12:39:12 [LOG] Request sent, transaction 47, function 0x03, 12 bytes
+2026-11-24 12:39:12 [LOG] Response received, transaction 47, function 0x03, 4 bytes PDU
+2026-11-24 12:39:12 [LOG] Reading 0x242c = 0
+2026-11-24 12:39:12 [LOG] Request sent, transaction 48, function 0x03, 12 bytes
+2026-11-24 12:39:12 [LOG] Response received, transaction 48, function 0x03, 4 bytes PDU
+2026-11-24 12:39:12 [LOG] Reading 0x242d = 0
+2026-11-24 12:39:12 [LOG] Request sent, transaction 49, function 0x03, 12 bytes
+2026-11-24 12:39:12 [LOG] Response received, transaction 49, function 0x03, 4 bytes PDU
+2026-11-24 12:39:12 [LOG] Reading 0x242e = 0
+2026-11-24 12:39:12 [LOG] Request sent, transaction 50, function 0x03, 12 bytes
+2026-11-24 12:39:12 [LOG] Response received, transaction 50, function 0x03, 4 bytes PDU
+2026-11-24 12:39:12 [LOG] Reading 0x242f = 0
+2026-11-24 12:39:12 [LOG] Request sent, transaction 51, function 0x03, 12 bytes
+2026-11-24 12:39:12 [LOG] Response received, transaction 51, function 0x03, 4 bytes PDU
+2026-11-24 12:39:12 [LOG] Reading 0x2430 = 0
+2026-11-24 12:39:12 [LOG] Request sent, transaction 52, function 0x03, 12 bytes
+2026-11-24 12:39:12 [LOG] Response received, transaction 52, function 0x03, 4 bytes PDU
+2026-11-24 12:39:12 [LOG] Reading 0x2431 = 0
+2026-11-24 12:39:12 [LOG] Request sent, transaction 53, function 0x03, 12 bytes
+2026-11-24 12:39:12 [LOG] Response received, transaction 53, function 0x03, 4 bytes PDU
+2026-11-24 12:39:12 [LOG] Reading 0x2432 = 0
+2026-11-24 12:39:12 [LOG] Request sent, transaction 54, function 0x03, 12 bytes
+2026-11-24 12:39:12 [LOG] Response received, transaction 54, function 0x03, 4 bytes PDU
+2026-11-24 12:39:12 [LOG] Reading 0x2433 = 0
+2026-11-24 12:39:12 [LOG] Request sent, transaction 55, function 0x03, 12 bytes
+2026-11-24 12:39:12 [LOG] Response received, transaction 55, function 0x03, 4 bytes PDU
+2026-11-24 12:39:12 [LOG] Reading 0x2434 = 0
+2026-11-24 12:39:12 Broadcast sent to client 127.0.0.1:10869, 266 bytes
+2026-11-24 12:39:32 [LOG] Request sent, transaction 56, function 0x03, 12 bytes
+2026-11-24 12:39:32 [LOG] Response received, transaction 56, function 0x03, 4 bytes PDU
+2026-11-24 12:39:32 [LOG] Reading 0x242c = 0
+2026-11-24 12:39:32 [LOG] Request sent, transaction 57, function 0x03, 12 bytes
+2026-11-24 12:39:32 [LOG] Response received, transaction 57, function 0x03, 4 bytes PDU
+2026-11-24 12:39:32 [LOG] Reading 0x242d = 0
+2026-11-24 12:39:32 [LOG] Request sent, transaction 58, function 0x03, 12 bytes
+2026-11-24 12:39:32 [LOG] Response received, transaction 58, function 0x03, 4 bytes PDU
+2026-11-24 12:39:32 [LOG] Reading 0x242e = 0
+2026-11-24 12:39:32 [LOG] Request sent, transaction 59, function 0x03, 12 bytes
+2026-11-24 12:39:32 [LOG] Response received, transaction 59, function 0x03, 4 bytes PDU
+2026-11-24 12:39:32 [LOG] Reading 0x242f = 0
+2026-11-24 12:39:32 [LOG] Request sent, transaction 60, function 0x03, 12 bytes
+2026-11-24 12:39:32 [LOG] Response received, transaction 60, function 0x03, 4 bytes PDU
+2026-11-24 12:39:32 [LOG] Reading 0x2430 = 0
+2026-11-24 12:39:32 [LOG] Request sent, transaction 61, function 0x03, 12 bytes
+2026-11-24 12:39:32 [LOG] Response received, transaction 61, function 0x03, 4 bytes PDU
+2026-11-24 12:39:32 [LOG] Reading 0x2431 = 0
+2026-11-24 12:39:32 [LOG] Request sent, transaction 62, function 0x03, 12 bytes
+2026-11-24 12:39:32 [LOG] Response received, transaction 62, function 0x03, 4 bytes PDU
+2026-11-24 12:39:32 [LOG] Reading 0x2432 = 0
+2026-11-24 12:39:32 [LOG] Request sent, transaction 63, function 0x03, 12 bytes
+2026-11-24 12:39:32 [LOG] Response received, transaction 63, function 0x03, 4 bytes PDU
+2026-11-24 12:39:32 [LOG] Reading 0x2433 = 0
+2026-11-24 12:39:32 [LOG] Request sent, transaction 64, function 0x03, 12 bytes
+2026-11-24 12:39:32 [LOG] Response received, transaction 64, function 0x03, 4 bytes PDU
+2026-11-24 12:39:32 [LOG] Reading 0x2434 = 0
+2026-11-24 12:39:32 Broadcast sent to client 127.0.0.1:10869, 266 bytes
+2026-11-24 12:39:52 [LOG] Request sent, transaction 65, function 0x03, 12 bytes
+2026-11-24 12:39:52 [LOG] Response received, transaction 65, function 0x03, 4 bytes PDU
+2026-11-24 12:39:52 [LOG] Reading 0x242c = 0
+2026-11-24 12:39:52 [LOG] Request sent, transaction 66, function 0x03, 12 bytes
+2026-11-24 12:39:52 [LOG] Response received, transaction 66, function 0x03, 4 bytes PDU
+2026-11-24 12:39:52 [LOG] Reading 0x242d = 0
+2026-11-24 12:39:52 [LOG] Request sent, transaction 67, function 0x03, 12 bytes
+2026-11-24 12:39:52 [LOG] Response received, transaction 67, function 0x03, 4 bytes PDU
+2026-11-24 12:39:52 [LOG] Reading 0x242e = 0
+2026-11-24 12:39:52 [LOG] Request sent, transaction 68, function 0x03, 12 bytes
+2026-11-24 12:39:52 [LOG] Response received, transaction 68, function 0x03, 4 bytes PDU
+2026-11-24 12:39:52 [LOG] Reading 0x242f = 0
+2026-11-24 12:39:52 [LOG] Request sent, transaction 69, function 0x03, 12 bytes
+2026-11-24 12:39:52 [LOG] Response received, transaction 69, function 0x03, 4 bytes PDU
+2026-11-24 12:39:52 [LOG] Reading 0x2430 = 0
+2026-11-24 12:39:52 [LOG] Request sent, transaction 70, function 0x03, 12 bytes
+2026-11-24 12:39:52 [LOG] Response received, transaction 70, function 0x03, 4 bytes PDU
+2026-11-24 12:39:52 [LOG] Reading 0x2431 = 0
+2026-11-24 12:39:52 [LOG] Request sent, transaction 71, function 0x03, 12 bytes
+2026-11-24 12:39:52 [LOG] Response received, transaction 71, function 0x03, 4 bytes PDU
+2026-11-24 12:39:52 [LOG] Reading 0x2432 = 0
+2026-11-24 12:39:52 [LOG] Request sent, transaction 72, function 0x03, 12 bytes
+2026-11-24 12:39:52 [LOG] Response received, transaction 72, function 0x03, 4 bytes PDU
+2026-11-24 12:39:52 [LOG] Reading 0x2433 = 0
+2026-11-24 12:39:52 [LOG] Request sent, transaction 73, function 0x03, 12 bytes
+2026-11-24 12:39:52 [LOG] Response received, transaction 73, function 0x03, 4 bytes PDU
+2026-11-24 12:39:52 [LOG] Reading 0x2434 = 0
+2026-11-24 12:39:52 Broadcast sent to client 127.0.0.1:10869, 266 bytes
+2026-11-24 12:39:59 Client disconnected
+2026-11-24 12:39:59 [LOG] Connection to PLC lost
+2026-11-24 12:39:59 [SYSTEM] Communication with PLC lost
+2026-11-24 12:39:59 [LOG] Disconnected from PLC
+2026-11-24 12:39:59 Server stopped
+2026-11-24 12:39:59 [SYSTEM] Application stopped

@@ -49,6 +49,10 @@ class IntervalsDialog(QDialog):
         # Отримуємо посилання на елементи
         # --------------------------------------------------------------------
         self.spin_spectrum_time = self.ui.findChild(QSpinBox, "spin_spectrum_time")
+        # self.spin_spectrum_time.setRange(3600, 3600)
+        # self.spin_spectrum_time.setValue(3600)
+        # self.spin_spectrum_time.setEnabled(False)
+
         self.spin_db_interval = self.ui.findChild(QSpinBox, "spin_db_interval")
         self.spin_zb_interval = self.ui.findChild(QSpinBox, "spin_zb_interval")
         self.spin_cz_interval = self.ui.findChild(QSpinBox, "spin_cz_interval")

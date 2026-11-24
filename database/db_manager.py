@@ -7,6 +7,30 @@ import hashlib
 from   PySide6.QtCore import QTimer
 from   datetime import datetime, timedelta
 
+def atomic_write_bytes(path, data: bytes):
+    """
+    Атомарно записує файл: спочатку в path.tmp, потім os.replace.
+    Після збою на диску лишається або старий, або новий файл —
+    ніколи не обрізаний.
+    """
+    tmp_path = path + ".tmp"
+    with open(tmp_path, "wb") as f:
+        f.write(data)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp_path, path)
+
+
+def write_config_and_hash(config_bytes: bytes,
+                          config_path="config/config.txt",
+                          hash_path="config/hash.txt"):
+    """
+    Готує обидва вмісти заздалегідь і записує їх один за одним,
+    щоб вікно неузгодженості config.txt / hash.txt було мінімальним.
+    """
+    hash_bytes = hashlib.sha256(config_bytes).hexdigest().encode("ascii")
+    atomic_write_bytes(config_path, config_bytes)
+    atomic_write_bytes(hash_path, hash_bytes)
 
 class DatabaseManager:
 
@@ -1902,12 +1926,13 @@ class DatabaseManager:
                 )
 
             config_bytes = "".join(updated_lines).encode("utf-8")
-            with open(config_path, "wb") as f:
-                f.write(config_bytes)
+            # with open(config_path, "wb") as f:
+            #     f.write(config_bytes)
             config_written = True
+            write_config_and_hash(config_bytes, config_path, hash_path)
 
-            with open(hash_path, "w", encoding="utf-8") as f:
-                f.write(hashlib.sha256(config_bytes).hexdigest())
+            # with open(hash_path, "w", encoding="utf-8") as f:
+            #     f.write(hashlib.sha256(config_bytes).hexdigest())
 
             conn.execute(
                 """
@@ -1932,12 +1957,14 @@ class DatabaseManager:
             conn.rollback()
 
             if config_written:
-                with open(config_path, "wb") as f:
-                    f.write(original_config)
+                # with open(config_path, "wb") as f:
+                #     f.write(original_config)
+                atomic_write_bytes(config_path, original_config)
 
                 if original_hash is not None:
-                    with open(hash_path, "wb") as f:
-                        f.write(original_hash)
+                    # with open(hash_path, "wb") as f:
+                    #     f.write(original_hash)
+                    atomic_write_bytes(hash_path, original_hash)
 
             raise
         finally:

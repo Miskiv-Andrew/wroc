@@ -6,6 +6,10 @@ __pycache__/
 dist/
 build/
 
+*.log
+data/*.db
+logs/
+
 # Virtual Environment
 venv/
 env/

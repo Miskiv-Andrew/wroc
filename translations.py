@@ -377,6 +377,7 @@ TRANSLATIONS = {
         "bridge_replacement_not_sent": "не відправлено",
         "bridge_replacement_error": "[REPLACEMENT] Помилка при відправці заміни ZB",
         "bridge_replacement_exception": "[REPLACEMENT] Виняток при відправці заміни ZB",
+        "bridge_port_busy": "Порт 12345 зайнятий іншою програмою. Bridge не запущено. Перевірте Диспетчер завдань.",
 
         "dm_error_com": "Помилка отримання списку COM-портів:",
         "dm_error_rpii": "Не знайдено жодного розширювача портів RTII",
@@ -446,6 +447,7 @@ TRANSLATIONS = {
         "dm_error_data_devices_empty": "Отримано дані, але список приладів порожній.",
         "dm_error_data_device_current": "Отримано дані без коректного поточного приладу.",
         "dm_error_data_command_current": "Отримано дані без визначеної поточної команди.",
+        "dr_error_stop_replace_running": "Спочатку зупиніть систему, потім виконайте заміну приладу.",
 
 
 
@@ -838,6 +840,7 @@ TRANSLATIONS = {
         "bridge_replacement_not_sent": "not sent",
         "bridge_replacement_error": "[REPLACEMENT] Error sending ZB replacement command",
         "bridge_replacement_exception": "[REPLACEMENT] Exception while sending ZB replacement command",
+        "bridge_port_busy": "Port 12345 is in use by another program. Bridge has not started. Check Task Manager.",
 
 
         "dm_error_com": "Error retrieving the COM port list:",
@@ -908,6 +911,7 @@ TRANSLATIONS = {
         "dm_error_data_devices_empty": "Data received, but the device list is empty.",
         "dm_error_data_device_current": "Data received without a valid current device.",
         "dm_error_data_command_current": "Data received without a defined current command.",
+        "dr_error_stop_replace_running": "First, stop the system, then replace the device.",
 
 
 
@@ -928,8 +932,8 @@ TRANSLATIONS = {
         "window_title": "Monitorowanie",
         "menu_devices": "Urządzenia",
         "menu_find_devices": "Wyszukaj urządzenia",
-        "menu_start_system": "Uruchom systemu",
-        "menu_stop_system": "Zatrzymaj systemu",
+        "menu_start_system": "Uruchom system",
+        "menu_stop_system": "Zatrzymaj system",
         "menu_intervals": "Ustawienia interwałów",
         "menu_device_replacement": "Wymiana urządzenia",
         "menu_database": "Baza danych",
@@ -974,7 +978,7 @@ TRANSLATIONS = {
         "device_status_wall": "<div style='line-height:80%'>Status<br></div>",
         "status_normal": "Prawidłowy",
         "status_failure": "Awaria",
-        "status_invalid": "Nieprawidłowy",
+        "status_invalid": "Nieważny",
         "status_no_connection": "Brak połączenia",
         "status_crc_error": "Błąd CRC",
         "group_unknown": "Nieznana grupa",
@@ -1284,6 +1288,7 @@ TRANSLATIONS = {
         "bridge_replacement_not_sent": "nie zostały wysłane",
         "bridge_replacement_error": "[REPLACEMENT] Błąd podczas wysyłania polecenia wymiany ZB",
         "bridge_replacement_exception": "[REPLACEMENT] Wyjątek podczas wysyłania polecenia wymiany ZB",
+        "bridge_port_busy": "Port 12345 jest używany przez inny program. Most (bridge) nie został uruchomiony. Sprawdź Menedżer zadań.",
 
 
         "dm_error_com": "Błąd pobierania listy portów COM:",
@@ -1354,6 +1359,7 @@ TRANSLATIONS = {
         "dm_error_data_devices_empty": "Otrzymano dane, ale lista urządzeń jest pusta.",
         "dm_error_data_device_current": "Otrzymano dane bez prawidłowego bieżącego urządzenia.",
         "dm_error_data_command_current": "Otrzymano dane bez określonego bieżącego polecenia.",
+        "dr_error_stop_replace_running": "Najpierw zatrzymaj system, a następnie wymień urządzenie.",
 
 
 

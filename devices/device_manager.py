@@ -7,7 +7,7 @@ from PySide6.QtSerialPort import QSerialPort
 import serial.tools.list_ports
 from devices.device_info import DeviceInfo
 from devices.device_package import DevicePacket
-
+from database.db_manager import write_config_and_hash, atomic_write_bytes
 from collections.abc import Callable
 
 from devices.commands import (
@@ -1518,49 +1518,56 @@ class DeviceManager(QObject):
 
             try:
 
-                with open(
-                    "config/config.txt",
-                    "w",
-                    encoding="utf-8"
-                ) as f:
+                # with open(
+                #     "config/config.txt",
+                #     "w",
+                #     encoding="utf-8"
+                # ) as f:
 
-                    f.write(
-                        config_text
-                    )
+                #     f.write(
+                #         config_text
+                #     )
 
-                with open(
-                    "config/config.txt",
-                    "rb"
-                ) as f:
+                # with open(
+                #     "config/config.txt",
+                #     "rb"
+                # ) as f:
 
-                    data = f.read()
+                #     data = f.read()
 
-                sha256_hash = hashlib.sha256(
-                    data
-                ).hexdigest()
+                # sha256_hash = hashlib.sha256(
+                #     data
+                # ).hexdigest()
 
-                with open(
-                    "config/hash.txt",
-                    "w",
-                    encoding="utf-8"
-                ) as f:
+                # with open(
+                #     "config/hash.txt",
+                #     "w",
+                #     encoding="utf-8"
+                # ) as f:
 
-                    f.write(
-                        sha256_hash
-                    )
+                #     f.write(
+                #         sha256_hash
+                #     )
 
-                with open(
+                # with open(
+                #     "config/cistern.json",
+                #     "w",
+                #     encoding="utf-8"
+                # ) as f:
+
+                #     json.dump(
+                #         cistern_json_data,
+                #         f,
+                #         ensure_ascii=False,
+                #         indent=4
+                #     )
+                write_config_and_hash(config_text.encode("utf-8"))
+
+                atomic_write_bytes(
                     "config/cistern.json",
-                    "w",
-                    encoding="utf-8"
-                ) as f:
-
-                    json.dump(
-                        cistern_json_data,
-                        f,
-                        ensure_ascii=False,
-                        indent=4
-                    )
+                    json.dumps(cistern_json_data, ensure_ascii=False, indent=4)
+                        .encode("utf-8")
+                )
 
             except Exception as e:
 
@@ -3299,7 +3306,7 @@ class DeviceManager(QObject):
         # 8. ПЯТЬ ПОСЛЕДОВАТЕЛЬНЫХ НЕОТВЕТОВ
         # ============================================================
 
-        if device.no_answer_count >= 5:
+        if device.no_answer_count >= 10:
 
             # --------------------------------------------------------
             # Событие исчезновения создаём только один раз.

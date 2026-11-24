@@ -9,7 +9,7 @@ from PySide6.QtUiTools import QUiLoader
 from PySide6.QtCore import QFile
 
 from devices.address_changer import AddressChanger
-from database.db_manager import DatabaseManager
+from database.db_manager import DatabaseManager, write_config_and_hash, atomic_write_bytes
 from translations import TRANSLATIONS
 
 class DeviceReplaceDialog(QDialog):
@@ -433,15 +433,19 @@ class DeviceReplaceDialog(QDialog):
             raise ValueError(f"SN {old_sn} не знайдено в config.txt")
         
         # Записуємо оновлений config.txt
-        with open(config_path, "w", encoding="utf-8") as f:
-            f.writelines(lines)
+        # with open(config_path, "w", encoding="utf-8") as f:
+        #     f.writelines(lines)
         
-        # Перераховуємо hash.txt
-        with open(config_path, "rb") as f:
-            data = f.read()
-        sha256_hash = hashlib.sha256(data).hexdigest()
-        with open("config/hash.txt", "w", encoding="utf-8") as f:
-            f.write(sha256_hash)
+        # # Перераховуємо hash.txt
+        # with open(config_path, "rb") as f:
+        #     data = f.read()
+        # sha256_hash = hashlib.sha256(data).hexdigest()
+        # with open("config/hash.txt", "w", encoding="utf-8") as f:
+        #     f.write(sha256_hash)
+        
+        # Записуємо config.txt і hash.txt атомарно
+        config_bytes = "".join(lines).encode("utf-8")
+        write_config_and_hash(config_bytes)
         
         # ------------------------------------------------------------
         # Якщо замінюється цистерна — оновлюємо cistern.json
@@ -478,8 +482,12 @@ class DeviceReplaceDialog(QDialog):
             # Якщо запис вже є словником — нічого не змінюємо
             
             # Записуємо оновлений cistern.json
-            with open(cistern_path, "w", encoding="utf-8") as f:
-                json.dump(cistern_data, f, ensure_ascii=False, indent=4)   
+            # with open(cistern_path, "w", encoding="utf-8") as f:
+            #     json.dump(cistern_data, f, ensure_ascii=False, indent=4)  
+            atomic_write_bytes(
+                cistern_path,
+                json.dumps(cistern_data, ensure_ascii=False, indent=4).encode("utf-8")
+            )
 
 
 

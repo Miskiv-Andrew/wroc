@@ -8,7 +8,7 @@
         "group": "A"
     },
     "2": {
-        "full": false,
+        "full": true,
         "isotopes": [
             "18F",
             "99mTc"
@@ -16,7 +16,7 @@
         "group": "A"
     },
     "3": {
-        "full": false,
+        "full": true,
         "isotopes": [
             "133I",
             "177Lu",
@@ -27,7 +27,7 @@
         "group": "reserve"
     },
     "4": {
-        "full": false,
+        "full": true,
         "isotopes": [
             "133I",
             "177Lu",

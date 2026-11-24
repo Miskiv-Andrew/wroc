@@ -1,0 +1,7 @@
+{
+    "language": "uk",
+    "plc_ip": "127.0.0.1",
+    "plc_port": 502,
+    "cistern_save_interval": 3600,
+    "wall_save_interval": 1800
+}
